@@ -63,7 +63,7 @@ res.signals;    // [{ type: '1B', price, barIdx, note, … }]
 res.summary;    // human-readable narrative built from the actual numbers
 ```
 
-> **Honest simplifications** (documented in code and in the UI): segments use the 3-stroke fractal approximation rather than the full feature-sequence gap handling; pivots are stroke-level; divergence is numeric (area-ratio thresholds 0.92 / 0.85). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> **Honest simplifications** (documented in code and in the UI): segments use the 3-stroke fractal approximation rather than the full feature-sequence gap handling; pivots are stroke-level; divergence is numeric (area-ratio thresholds 0.92 / 0.85). See [docs/MOBILE.md · docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### 2. Four markets, free data, graceful degradation
 
