@@ -125,7 +125,14 @@ async function mobileFlows() {
     await cdp.eval(`document.getElementById('ovEdit').click()`);
     await sleep(1800);
     const sheetHas = await cdp.eval(`(() => { const i=document.getElementById('wCode'); return { hasInput: !!i, hasAdd: !!document.getElementById('wAdd'), ids: [...document.querySelectorAll('#sheet input,#sheet button')].map(e=>e.id||e.className).join(',') }; })()`);
+    const stack = await cdp.eval(`(() => {
+      const s = document.getElementById('sheet'); const r = s.getBoundingClientRect();
+      const el = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + 60));
+      const bg = getComputedStyle(s).backgroundColor;
+      return { inside: !!el && s.contains(el), bg, top: Math.round(r.top), h: Math.round(r.height) };
+    })()`);
     check('手机版·自选池弹层', sheetHas.hasInput && sheetHas.hasAdd, sheetHas.ids);
+    check('手机版·弹层层级与背景', stack.inside && !/rgba\(0, 0, 0, 0\)/.test(stack.bg), `命中层内=${stack.inside}，背景=${stack.bg}，top=${stack.top}px h=${stack.h}px`);
     // 弹层默认跟随当前页面的市场（搜索后可能是 CR），先切回 A 股再测增删
     await cdp.eval(`document.querySelector('#wMarket .sq[data-m="A"]')?.click()`);
     await sleep(1500);
