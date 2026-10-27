@@ -347,12 +347,13 @@ const MIME = {
 const GZIP_EXT = new Set(['.html', '.css', '.js', '.json', '.webmanifest', '.svg', '.md', '.txt']);
 
 function sendBuffer(req, res, buf, ext, extra = {}) {
+  const ver = assetVersion();
   const etag = 'W/"' + buf.length.toString(16) + '-' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 12) + '"';
   const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Cache-Control': GZIP_EXT.has(ext) ? 'no-cache' : 'public, max-age=300',
     ETag: etag,
-    'X-Asset-Version': ASSET_V,
+    'X-Asset-Version': ver,
     Vary: 'Accept-Encoding',
     ...extra,
   };
@@ -383,29 +384,35 @@ function sendJSON(res, code, obj) {
 
 /* ---------------- 构建指纹 ----------------
    手机端"改了却还是旧的"绝大多数是缓存：Service Worker + HTTP 缓存叠加。
-   这里在启动时给 web/ 下的代码资源算一个内容哈希，HTML 里的 __ASSET_V__ 会被替换成它，
+   把 web/ 下代码资源的 mtime+size 汇总成一个指纹，HTML 里的 __ASSET_V__ 会被替换成它，
    于是每次部署 CSS/JS 的 URL 都会变，任何缓存层都不可能再拿旧文件糊弄用户。 */
-function computeAssetVersion() {
+/* 只统计 mtime+size，不读内容：便宜到可以每 1.5 秒重算，
+   这样"改完文件不重启"也能立刻换 URL（否则哈希会停在启动那一刻）。 */
+let _vCache = { at: 0, v: 'dev' };
+function assetVersion() {
+  const now = Date.now();
+  if (now - _vCache.at < 1500) return _vCache.v;
   const h = crypto.createHash('sha1');
-  const files = [];
   const walk = (dir) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    let list = [];
+    let ents;
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return list; }
+    for (const e of ents) {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) {
-        if (['downloads', 'vendor'].includes(e.name)) continue;
-        walk(p);
-      } else if (/\.(js|css|html|webmanifest)$/.test(e.name)) files.push(p);
+        if (['downloads', 'node_modules'].includes(e.name)) continue;
+        list = list.concat(walk(p));
+      } else if (/\.(js|css|html|webmanifest)$/.test(e.name)) {
+        try { const st = fs.statSync(p); h.update(path.relative(WEB_ROOT, p) + ':' + st.size + ':' + st.mtimeMs + ';'); } catch (e2) {}
+      }
     }
+    return list;
   };
-  try { walk(WEB_ROOT); } catch (e) { return 'dev'; }
-  files.sort();
-  for (const f of files) {
-    h.update(path.relative(WEB_ROOT, f));
-    h.update(fs.readFileSync(f));
-  }
-  return h.digest('hex').slice(0, 10);
+  walk(WEB_ROOT);
+  _vCache = { at: now, v: h.digest('hex').slice(0, 10) };
+  return _vCache.v;
 }
-const ASSET_V = computeAssetVersion();
+const ASSET_V = assetVersion(); // 仅用于日志/兼容，取值为启动瞬间
 
 const MOBILE_UA = /Android|iPhone|iPod|iPad|Mobile|HarmonyOS|MicroMessenger/i;
 
@@ -433,9 +440,10 @@ function serveStatic(req, res, pathname) {
       // 注入构建指纹：?v=__ASSET_V__ → 每次部署都变，绕开一切缓存
       fs.readFile(file, 'utf8', (e2, html) => {
         if (e2) { res.writeHead(500).end('read error'); return; }
+        const ver = assetVersion();
         const out = html
-          .replace(/__ASSET_V__/g, ASSET_V)
-          .replace('</head>', `<script>window.__ASSET_V__=${JSON.stringify(ASSET_V)};</script></head>`);
+          .replace(/__ASSET_V__/g, ver)
+          .replace('</head>', `<script>window.__ASSET_V__=${JSON.stringify(ver)};</script></head>`);
         sendBuffer(req, res, Buffer.from(out), '.html', { 'Cache-Control': 'no-cache, no-store, must-revalidate' });
       });
       return;
@@ -450,7 +458,7 @@ function serveStatic(req, res, pathname) {
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Cache-Control': noCache ? 'no-cache' : 'public, max-age=300',
-      'X-Asset-Version': ASSET_V,
+      'X-Asset-Version': ver,
       'Content-Length': st.size,
     });
     fs.createReadStream(file).pipe(res);
@@ -458,7 +466,7 @@ function serveStatic(req, res, pathname) {
 }
 
 const routes = {
-  '/api/health': async () => ({ ok: true, uptimeSec: Math.round((Date.now() - START) / 1000), cache: cacheStats(), node: process.version, assetVersion: ASSET_V }),
+  '/api/health': async () => ({ ok: true, uptimeSec: Math.round((Date.now() - START) / 1000), cache: cacheStats(), node: process.version, assetVersion: assetVersion() }),
   '/api/markets': async () => ({
     markets: S.MARKETS,
     watchlist: WATCHLIST,
