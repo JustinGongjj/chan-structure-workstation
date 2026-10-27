@@ -12,7 +12,7 @@
     last: null,
     history: [],
     busy: false,
-    timing: { methods: ['ganzhi', 'meihua', 'liuyao', 'jianchu', 'cycle'], data: null, valid: null },
+    timing: { methods: ['ganzhi', 'meihua', 'liuyao', 'jianchu', 'cycle', 'ziwei', 'qimen'], data: null, valid: null },
   };
 
   /* ---------------- 工具 ---------------- */
@@ -275,6 +275,8 @@
     ['liuyao', '六爻纳甲'],
     ['jianchu', '建除十二神'],
     ['cycle', '日历周期因子'],
+    ['ziwei', '紫微斗数'],
+    ['qimen', '奇门遁甲'],
   ];
 
   function renderTimingChips() {
@@ -332,7 +334,48 @@
         <div class="hint" style="text-align:right;max-width:220px">${U.esc(res.verdict.text)}</div>
       </div>
       ${rows}
+      ${renderZiweiPlate(res)}
+      ${renderQimenPlate(res)}
       <div class="hint" style="margin-top:8px">${U.esc(res.disclaimer)}</div>`;
+  }
+
+  function renderZiweiPlate(res) {
+    const z = res.methods.ziwei && res.methods.ziwei.detail;
+    if (!z || !z.palaces) return '';
+    const cells = z.palaces
+      .map(
+        (p) => `<div class="zw-cell${p.name === '命宫' ? ' soul' : ''}">
+        <div class="zw-h">${U.esc(p.stem + p.branch)} <span>${U.esc(p.name)}</span></div>
+        <div class="zw-s">${p.stars.length ? p.stars.map((x) => U.esc(x)).join(' ') : '<span class="hint">空宫</span>'}</div>
+      </div>`
+      )
+      .join('');
+    return `<div class="tm-plate">
+      <div class="tm-plate-h">紫微斗数 · 流日盘 <span class="hint">${U.esc(z.lunar)} · ${U.esc(z.hour)} · ${U.esc(z.fiveElements)} · 紫微在${U.esc(z.ziwei)}</span></div>
+      <div class="zw-grid">${cells}</div>
+      <div class="hint" style="margin-top:6px">命宫 ${U.esc(z.soul.stem + z.soul.branch)}：${z.soul.stars.map(U.esc).join('、') || '无主星'}${z.soul.hua.length ? '（' + z.soul.hua.map((h) => '化' + h).join('') + '）' : ''}</div>
+    </div>`;
+  }
+
+  function renderQimenPlate(res) {
+    const q = res.methods.qimen && res.methods.qimen.detail;
+    if (!q || !q.cells) return '';
+    const byPalace = Object.fromEntries(q.cells.map((c) => [c.palace, c]));
+    const cells = (q.layout || [4, 9, 2, 3, 5, 7, 8, 1, 6])
+      .map((p) => {
+        const c = byPalace[p];
+        return `<div class="qm-cell${c && c.hourStem ? ' hg' : ''}">
+        <div class="qm-h">${U.esc(c.name)}<span>${U.esc(c.dir)}</span></div>
+        <div class="qm-yi">${U.esc(c.yi || '')}</div>
+        <div class="qm-s">${U.esc(c.door || '—')} · ${U.esc(c.star || '')} · ${U.esc(c.god || '—')}</div>
+      </div>`;
+      })
+      .join('');
+    return `<div class="tm-plate">
+      <div class="tm-plate-h">奇门遁甲 · 时家 <span class="hint">${U.esc(q.dun)}遁${q.ju}局 · ${U.esc(q.term)}${U.esc(q.yuan)} · 值符${U.esc(q.zhiFu.star)} 值使${U.esc(q.zhiShi.door)}</span></div>
+      <div class="qm-grid">${cells}</div>
+      <div class="hint" style="margin-top:6px">高亮宫＝时干所临（用神宫）· 中宫不排门神，天禽寄坤</div>
+    </div>`;
   }
 
   async function runTimingValidate() {

@@ -10,7 +10,7 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-e0b15a"></a>
   <a href="https://nodejs.org"><img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A518-3c873a"></a>
   <img alt="dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen">
-  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-27%20passing-22b884"></a>
+  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-35%20passing-22b884"></a>
   <a href="https://huggingface.co/spaces"><img alt="HF Space" src="https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face%20Space-ffd21e"></a>
 </p>
 
@@ -95,9 +95,9 @@ Every concept in the theory library has an **"annotate it on the chart →"** ac
 
 ### 3.5 Timing lab (算卦页新增)
 
-Five independent timing methods run side by side — **四柱·节气五行 / 梅花易数 / 六爻纳甲 / 建除十二神 / 日历周期因子** — each returning a 0–100 "顺逆分" with readable reasons, plus a weighted composite, an agreement/spread read-out, and a **per-method historical validation**: for the selected symbol we recompute the score for the last N sessions and correlate it with next-session returns.
+Seven independent timing methods run side by side — **四柱·节气五行 / 梅花易数 / 六爻纳甲 / 建除十二神 / 日历周期因子 / 紫微斗数·流日 / 奇门遁甲·时家** — each returning a 0–100 "顺逆分" with readable reasons, plus a weighted composite, an agreement/spread read-out, and a **per-method historical validation**: for the selected symbol we recompute the score for the last N sessions and correlate it with next-session returns.
 
-The verdict is deliberately blunt: on the shipped sample it usually says *"no significant edge — use it as a discipline tool, not a signal source."* Method cards (theory page → 择时方法) state the same thing, and 紫微/奇门 are listed as "next, but only if measurable".
+The verdict is deliberately blunt: on the shipped sample it usually says *"no significant edge — use it as a discipline tool, not a signal source."* 紫微斗数流日盘（十二宫＋十四主星＋四化）与奇门遁甲时家盘（阴阳遁·局数·三奇六仪·九星·八门·八神）都按同一标准接入：先排盘、再打分、最后必须过 `/api/timing/validate` 的逐日回测。方法卡（理论页 → 择时方法）对每一法都写明局限。
 
 ### 4. Trading radar, live refresh, editable watchlist
 
@@ -215,7 +215,7 @@ space/                Hugging Face Space (Docker SDK)
 - [x] Teaching annotations (concept → chart)
 - [x] Mobile PWA with iOS / Android skins
 - [x] Signal backtest (hit rate / profit factor / edge vs baseline) and the timing-method lab
-- [ ] 紫微斗数 / 奇门遁甲 methods (only with the same measurable standard)
+- [x] 紫微斗数流日盘 + 奇门遁甲时家盘（农历排盘 → 统一打分 → 接入回测）
 - [ ] English UI (i18n layer) — [help wanted](CONTRIBUTING.md)
 - [ ] Python package (`pip install chanx`) wrapping the same rules with parity tests
 - [ ] Publish computed structures as a Hugging Face **Dataset** (`chan-structures`) for reproducible research

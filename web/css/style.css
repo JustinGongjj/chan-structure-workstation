@@ -461,6 +461,24 @@ button{font-family:inherit}
 .bib-m{font-size:10.5px;color:var(--faint);margin-top:4px}
 .bib-n{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.6}
 
+
+/* 紫微 / 奇门 盘面 */
+.tm-plate{margin-top:12px;border-top:1px dashed var(--dash);padding-top:10px}
+.tm-plate-h{font-size:11.5px;color:var(--ink-gold);margin-bottom:8px}
+.zw-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.zw-cell{border:1px solid var(--line);border-radius:8px;padding:5px 6px;background:var(--elev);min-height:52px}
+.zw-cell.soul{border-color:var(--gold);background:var(--gold-tint)}
+.zw-h{font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between;gap:4px}
+.zw-h span{color:var(--faint)}
+.zw-s{font-size:11px;color:var(--text);margin-top:4px;line-height:1.5}
+.qm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.qm-cell{border:1px solid var(--line);border-radius:8px;padding:5px 6px;background:var(--elev);min-height:56px}
+.qm-cell.hg{border-color:var(--gold);background:var(--gold-tint)}
+.qm-h{font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between}
+.qm-h span{color:var(--faint)}
+.qm-yi{font-size:12px;color:var(--ink-gold);font-family:"Songti SC",serif;margin-top:2px}
+.qm-s{font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4}
+
 /* toast */
 .toast{
   position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);

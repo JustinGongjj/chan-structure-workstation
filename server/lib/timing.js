@@ -11,6 +11,8 @@
 
 const G = require('./ganzhi');
 const V = require('./divination');
+const ZW = require('./ziwei');
+const QM = require('./qimen');
 const { hash32 } = require('./divination');
 
 const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, Math.round(v)));
@@ -51,6 +53,20 @@ const METHODS = [
     school: '量化',
     weight: 0.2,
     desc: '节气窗口、月初月末、周内效应等可回测的日历因子（作为对照组）',
+  },
+  {
+    id: 'ziwei',
+    name: '紫微斗数·流日',
+    school: '星曜',
+    weight: 0.15,
+    desc: '以当日农历排紫微命盘（十二宫＋十四主星＋四化），按命宫主星与四化打分',
+  },
+  {
+    id: 'qimen',
+    name: '奇门遁甲·时家',
+    school: '历法',
+    weight: 0.15,
+    desc: '按节气三元起阴阳遁局数，排地盘三奇六仪、天盘九星、八门八神，取时干宫打分',
   },
 ];
 
@@ -228,7 +244,48 @@ function scoreCycle(ctx) {
   return { score: clamp(score), reasons };
 }
 
-const SCORERS = { ganzhi: scoreGanzhi, meihua: scoreMeihua, liuyao: scoreLiuyao, jianchu: scoreJianchu, cycle: scoreCycle };
+function scoreZiwei(ctx) {
+  const d = new Date(ctx.ts + 8 * 3600000);
+  const hourIdx = Math.floor((((d.getUTCHours() + 1) % 24) / 2));
+  const r = ZW.score(new Date(ctx.ts), hourIdx, symbolJitter(ctx.market, ctx.code, 'ziwei'));
+  const c = r.chart;
+  return {
+    score: clamp(r.score),
+    reasons: r.reasons,
+    detail: {
+      lunar: `${c.lunar.year}年${c.lunar.isLeap ? '闰' : ''}${c.lunar.month}月${c.lunar.day}日`,
+      hour: c.hour.name,
+      soul: { branch: c.soul.branch, stem: c.soul.stem, stars: c.soul.stars, hua: c.soul.hua },
+      body: { branch: c.body.branch, stars: c.body.stars },
+      fiveElements: c.fiveElements,
+      ziwei: c.ziwei.branch,
+      palaces: c.palaces.map((p) => ({ name: p.name, stem: p.stem, branch: p.branch, stars: p.starsHua })),
+      sihua: c.sihua,
+    },
+  };
+}
+
+function scoreQimen(ctx) {
+  const r = QM.score(new Date(ctx.ts), symbolJitter(ctx.market, ctx.code, 'qimen'));
+  const c = r.chart;
+  return {
+    score: clamp(r.score),
+    reasons: r.reasons,
+    detail: {
+      dun: c.dun,
+      ju: c.ju,
+      term: c.term,
+      yuan: c.yuan,
+      xun: c.xun,
+      zhiFu: c.zhiFu,
+      zhiShi: c.zhiShi,
+      cells: c.cells.map((x) => ({ palace: x.palace, name: x.name, dir: x.dir, yi: x.yi, star: x.star, door: x.door, god: x.god, hourStem: x.hourStem })),
+      layout: c.layout,
+    },
+  };
+}
+
+const SCORERS = { ganzhi: scoreGanzhi, meihua: scoreMeihua, liuyao: scoreLiuyao, jianchu: scoreJianchu, cycle: scoreCycle, ziwei: scoreZiwei, qimen: scoreQimen };
 
 function labelOf(score) {
   if (score >= 68) return '顺';

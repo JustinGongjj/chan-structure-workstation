@@ -20,9 +20,9 @@ function bars(n, seed = 3) {
   return out;
 }
 
-test('择时：五个方法都能出分，且分数在 0-100', () => {
+test('择时：所有方法都能出分，且分数在 0-100', () => {
   const r = T.evaluate({ market: 'A', code: '600519', ts: TS });
-  assert.deepEqual(Object.keys(r.methods).sort(), ['cycle', 'ganzhi', 'jianchu', 'liuyao', 'meihua']);
+  for (const id of ['ganzhi', 'meihua', 'liuyao', 'jianchu', 'cycle', 'ziwei', 'qimen']) assert.ok(r.methods[id], '缺少方法 ' + id);
   for (const m of Object.values(r.methods)) {
     assert.ok(m.score >= 0 && m.score <= 100, m.id + ' 分数越界');
     assert.ok(Array.isArray(m.reasons) && m.reasons.length > 0, m.id + ' 缺少理由');
@@ -73,7 +73,7 @@ test('回测：择时方法逐日检验返回相关系数与判定', () => {
   const b = bars(200);
   const res = BT.timingStats(b, (ts) => T.evaluate({ market: 'A', code: '600519', ts }), { days: 120, horizon: 1 });
   assert.ok(res.days >= 50, '有效样本 ' + res.days);
-  assert.ok(res.methods.length === 5);
+  assert.ok(res.methods.length >= 7, '方法数 ' + res.methods.length);
   for (const m of res.methods) {
     assert.ok(m.corr === null || Math.abs(m.corr) <= 1);
     assert.ok(m.n >= 1);
