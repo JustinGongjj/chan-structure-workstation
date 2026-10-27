@@ -155,6 +155,10 @@ async function mobileFlows() {
       const after2 = await cdp.eval(`(async () => (await (await fetch('/api/watchlist')).json()).list.A.length)()`);
       check('手机版·自选池删除', after2 === before, `${after} → ${after2}`);
     } else check('手机版·自选池删除', true, '新建项已在列表（跳过 UI 删除）');
+    await cdp.eval(`document.getElementById('sheetClose')?.click()`);
+    await sleep(2200);
+    const ovCount = await cdp.eval(`document.querySelectorAll('#view .list-item[data-c]').length`);
+    check('手机版·自选池变更后总览同步', ovCount >= before + 1, `总览列表 ${before} → ${ovCount}`);
     if (SHOTS) await cdp.shot(path.join(SHOTS, 'm-watch.png'));
     await cleanWatch('600036');
     await cdp.eval(`document.querySelector('#sheetClose')?.click()`);
@@ -172,6 +176,16 @@ async function mobileFlows() {
       `「${c1.name}」第${c1.occ}占 → 「${c2.name}」第${c2.occ}占`);
     if (SHOTS) await cdp.shot(path.join(SHOTS, 'm-div.png'));
 
+    // 3.5) 结构页：切换市场要自动退回兼容周期（QA 报的 major：港股+60分 空白图）
+    await cdp.eval(`document.querySelector('[data-tab="structure"]').click()`);
+    await sleep(5000);
+    await cdp.eval(`document.querySelector('#sPeriod .sq[data-p="60m"]')?.click()`);
+    await sleep(3000);
+    await cdp.eval(`document.querySelector('#sMarket .sq[data-m="HK"]')?.click()`);
+    await sleep(5000);
+    const hk = await cdp.eval(`({ period: document.querySelector('#sPeriod .sq.active')?.textContent || '', canvas: !!document.querySelector('#view canvas'), state: (document.querySelector('#sState')?.innerText || '').slice(0, 24) })`);
+    check('手机版·切市场自动退回兼容周期', hk.canvas && /日线/.test(hk.period) && !/加载中|失败/.test(hk.state), `周期=${hk.period.trim()} canvas=${hk.canvas} 状态=${hk.state.replace(/\s+/g, ' ')}`);
+
     // 4) 理论弹层
     await cdp.eval(`document.querySelector('[data-tab="theory"]').click()`);
     await sleep(2600);
@@ -183,6 +197,12 @@ async function mobileFlows() {
     check('手机版·理论可展开', t1 > 0 && t2 > 0 && t3 > 60, `条目 ${t1}，弹层 ${t2}，内容 ${t3} 字`);
     if (SHOTS) await cdp.shot(path.join(SHOTS, 'm-theory.png'));
     await cdp.eval(`document.querySelector('#sheetClose')?.click()`);
+
+    // 4.5) 教学标注：19 种结构都在，且从深链带进来的 hl 会显示为激活项
+    await cdp.eval(`location.href = '/m/?tab=structure&hl=xianduan'`);
+    await sleep(5200);
+    const chips = await cdp.eval(`({ n: document.querySelectorAll('#view .chip[data-hl]').length, active: document.querySelector('#view .chip[data-hl].gold')?.textContent || '' })`);
+    check('手机版·教学标注选项齐全', chips.n >= 19 && /线段/.test(chips.active), `选项 ${chips.n} 个，激活「${chips.active.trim()}」`);
 
     // 5) 深链
     await cdp.eval(`location.href = '/m/?tab=structure&hl=a_A_b'`);

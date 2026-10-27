@@ -144,7 +144,7 @@
       ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
       ctx.clearRect(0, 0, g.w, g.h);
       if (!this.data || !this.data.bars || !this.data.bars.length) {
-        ctx.fillStyle = COL.text;
+        ctx.fillStyle = palette().text;
         ctx.font = '12px -apple-system,sans-serif';
         ctx.fillText('等待数据…', g.padL + 10, 30);
         return;

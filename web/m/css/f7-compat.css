@@ -1,0 +1,159 @@
+/* =====================================================================
+   Framework7 兼容层 · f7-compat.css
+   ---------------------------------------------------------------------
+   我们只把 Framework7 8.3.3 当作"组件样式底座"用（没有任何 F7 JS 运行时），
+   但它的 CSS 是给"整站由 F7 布局"的场景写的，直接叠在我们的页面上会连锁出事。
+   这个文件是**唯一**允许抵消 F7 规则的地方，其它样式文件不再出现 !important 级别
+   的框架对抗。改动这里之前先读注释，并跑 `npm run check:css`。
+
+   加载顺序（顺序错了会失效）：
+     framework7-bundle.min.css  →  f7-compat.css  →  mobile.css
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   1. 文档滚动：F7 写的是 html{position:relative;height:100%} + body{height:100%;
+      overflow:hidden;overflow-y:scroll}，结果 body 成了固定一屏高的独立滚动容器，
+      内容被裁在首屏，手指怎么划都不动。
+   2. 根元素溢出：按 CSS 规范，根元素 overflow-y 为 visible 时视口会去继承 body 的值，
+      视口于是不再是滚动容器。诡异点是 window.scrollTo() 仍然能动 —— 用
+      "编程滚动是否有效"根本查不出来，必须看真实手势。
+   3. overscroll-behavior 只能写在 html 上：写在 body 上（contain/none）时 Chrome 会把
+      整个视口的用户滚动一起吞掉（滚轮和手指都无效，scrollTo 仍然能动）。
+   --------------------------------------------------------------------- */
+html,
+body {
+  height: auto !important;
+  min-height: 100% !important;
+  position: static !important;
+  overscroll-behavior-y: auto !important;
+}
+html {
+  width: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none; /* 只要禁横向/下拉回弹，禁在 html 上才安全 */
+}
+/* body 必须是 visible：F7 的 body{overflow:hidden;overflow-y:scroll} 会把 body 变成
+   一屏高的独立滚动容器（内容被裁、手指划不动）。横向由 html 的 hidden 兜住。 */
+body {
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  width: auto !important;
+}
+
+/* 元素级 reset：F7 用元素选择器（优先级高于我们的 * 通配），必须逐条压回 */
+p { margin: 0 !important; }
+h1, h2, h3, h4, h5, h6 { margin: 0 !important; font-weight: inherit; }
+ul, ol { margin: 0 !important; padding: 0 !important; list-style: none; }
+/* F7: button{width:100%} —— 图标按钮会撑满整行。这里不能无脑 !important，
+   否则 .btn.block（整宽主按钮）也会被压回 auto。同特异性 + 后加载即可覆盖 F7。 */
+button { width: auto; }
+button:not(.btn):not(.button) { width: auto !important; }
+input, textarea, select { width: auto !important; margin: 0 !important; }
+small { font-size: inherit; }
+
+/* .view / .views：F7 给的就是弹层杀手
+   .view,.views{position:relative;height:100%;z-index:5000;overflow:hidden}
+   ① 内容被裁、页面滚不动；② 视图层级 5000 压住 z-index:60 的弹层，弹层文字透在页面文字下面 */
+main.view,
+#view,
+.view {
+  position: static !important;
+  z-index: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+  box-sizing: border-box;
+}
+/* 弹层打开时锁住真正的滚动容器（html），而不是 body */
+html.sheet-open { overflow: hidden !important; }
+
+/* .button：F7 默认 width:100% / 固定高度(--f7-button-height 28/40) + overflow:hidden 会裁字 */
+.button:not(.block),
+.button.btn:not(.block),
+.btn.button:not(.block),
+.section-head .button,
+.section-head .chip,
+.chips .chip.button {
+  width: auto !important;
+}
+/* 整宽按钮（.btn.block）必须能真占满：F7 的 .button{width:100%} 也会命中它，
+   但我们自己的 .btn.block{width:100%} 才是设计意图，交给 mobile.css 决定 */
+.button { text-transform: none !important; }
+.btn,
+.button.btn {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  line-height: 1.35 !important;
+}
+
+/* .segmented：F7 自带阴影与 flex:wrap，我们的分段控件要自己控制外观；
+   真正的皮肤激活态（.seg .sq.active / .md 金色胶囊）要在 mobile.css 里赢，所以这里只压结构属性 */
+.segmented {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-self: auto !important;
+  box-shadow: none !important;
+  padding: 3px !important;
+}
+.segmented .button {
+  flex: 1;
+  margin: 0 !important;
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  white-space: nowrap;
+  text-transform: none !important;
+  font-size: 12px !important;
+  transform: none !important;
+  box-shadow: none;
+}
+
+/* .chip / .badge：F7 强制高度 28/32 与 20，会把小标签顶成胖块 */
+.chip,
+.badge {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+.chip { padding: 2px 8px !important; margin: 0 !important; }  /* F7 给 chip 加了 margin:2px 0 */
+.badge { padding: 1px 6px !important; display: inline-flex !important; align-items: center; }
+
+/* .list / .card：F7 的 --f7-list-margin-vertical、--f7-card-margin-*、font-size 会改我们的节奏 */
+.list,
+.card {
+  margin: 0 0 12px !important;
+  font-size: inherit !important;
+  z-index: auto !important;
+}
+
+/* .toast：F7 有 .ios .toast{left:0;width:100%} / .md .toast{left:8px} 这类更具体的选择器，
+   会让 toast 贴边半个出屏。这里提权回居中，外观仍由 mobile.css 决定 */
+html .toast,
+html.ios .toast,
+html.md .toast {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  width: auto !important;
+  max-width: 88vw !important;
+  z-index: 90 !important;
+  transform: translate(-50%, 10px) !important;
+}
+html .toast.show,
+html.ios .toast.show,
+html.md .toast.show {
+  transform: translate(-50%, 0) !important; /* 居中位移动画必须由我们定义，否则 F7 的 scale(.9) 抢走 */
+}
+
+/* .page / .page-content / .navbar：F7 给的是 absolute+100% 高的整页容器；我们没有用它们，
+   但类名可能出现在第三方片段里，统一打回普通流 */
+.page,
+.page-content {
+  position: static !important;
+  height: auto !important;
+  overflow: visible !important;
+  transform: none !important;
+}

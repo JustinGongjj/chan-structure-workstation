@@ -107,7 +107,9 @@ async function connect() {
     if (p.type === 'error') errors.push('CONSOLE ' + p.args.map(a => a.value ?? a.description ?? '').join(' ').slice(0, 160));
   });
   cdp.on('Log.entryAdded', p => {
-    if (p.entry.level === 'error' && !/favicon/.test(p.entry.text || '')) errors.push('LOG ' + (p.entry.text || '').slice(0, 160));
+    // 浏览器自身的策略提示（震动需用户手势、autoplay 等）不算应用错误
+    const noise = /navigator\.vibrate|favicon|Autoplay|third-party cookie/i;
+    if (p.entry.level === "error" && !noise.test(p.entry.text || '')) errors.push('LOG ' + (p.entry.text || '').slice(0, 160));
   });
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');

@@ -26,21 +26,45 @@
 
   const PNAME = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1时', '4h': '4时', day: '日线', week: '周线', month: '月线' };
   const PERIODS = { A: ['day', 'week', '60m', '30m', '15m', '5m'], HK: ['day', 'week'], US: ['day', 'week'], CR: ['day', '4h', '60m', '15m', '5m'] };
+  /* 教学标注可选结构：与 web/js/highlight.js 的 HL_TITLE 保持一致（19 种全开） */
   const HL_CHOICES = [
     ['', '不标注'],
     ['fenxing', '分型'],
     ['bi', '笔'],
+    ['xianduan', '线段'],
     ['zhongshu', '中枢'],
+    ['zhongshu_kuozhan', '中枢扩展'],
     ['a_A_b', 'a+A+b'],
-    ['beichi', '背驰'],
+    ['zoushi_wanmei', '走势终完美'],
+    ['zoushi_jibie', '级别'],
+    ['zoushi_digui', '走势递归'],
+    ['tongjibie_fenjie', '同级别分解'],
+    ['beichi', '趋势背驰'],
+    ['panzheng_beichi', '盘整背驰'],
     ['buy1', '一买'],
+    ['buy2', '二买'],
     ['buy3', '三买'],
+    ['qujian_tao', '区间套'],
+    ['zhongyin', '中阴阶段'],
+    ['jiehelv', '结合律'],
+    ['xiaozhuanda', '小转大']
   ];
 
   const BUILD = 'v1.1 · 2026-10-27';
 
   /* ---------------- 基础 ---------------- */
+  /* 轻触感反馈：只有用户真的操作过之后才触发（否则 Chrome 会打 policy 警告） */
+  let userTouched = false;
+  function haptic(ms) {
+    if (!userTouched) return;
+    try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch (e) {}
+  }
+  ['pointerdown', 'touchstart', 'keydown'].forEach((ev) =>
+    window.addEventListener(ev, () => { userTouched = true; }, { passive: true, once: true })
+  );
+
   function toast(msg) {
+    haptic(5);
     const el = $('#toast');
     el.textContent = msg;
     el.classList.add('show');
@@ -346,9 +370,15 @@
       <div class="section">
         <div class="section-head"><h3>教学标注</h3><span class="hint">在图上圈出对应结构</span></div>
         <div class="hscroll">
-          ${HL_CHOICES.map(
-            ([k, n]) => `<button class="chip ${(state.hl || '') === k ? 'gold' : ''}" data-hl="${k}" style="padding:6px 12px;font-size:12px">${n}</button>`
-          ).join('')}
+          ${(() => {
+            const cur = state.hl || '';
+            const known = HL_CHOICES.some(([k]) => k === cur);
+            // 从理论页或 ?hl= 带过来的 key 可能不在选项里：补一个激活项，避免"图上画了但没选中"
+            const extra = !known && cur ? [['' + cur, (window.CHAN_HL?.HL_TITLE?.[cur] || cur)]] : [];
+            return HL_CHOICES.concat(extra).map(
+              ([k, n]) => `<button class="chip ${cur === k ? 'gold' : ''}" data-hl="${k}" style="padding:6px 12px;font-size:12px">${n}</button>`
+            ).join('');
+          })()}
         </div>
       </div>
       <div id="teachBox"></div>
@@ -359,6 +389,10 @@
     U.$$('#sMarket .sq[data-m]').forEach((b) =>
       b.addEventListener('click', () => {
         state.market = b.dataset.m;
+        // 每个市场支持的周期不同（港股/美股只有日线·周线）；不兼容就退回日线，
+        // 否则会请求一个不存在的周期：图表空白 + 一直"加载中"+ 服务端 500
+        if (!PERIODS[state.market].includes(state.period)) state.period = 'day';
+        if (!state.symbol[state.market]) state.symbol[state.market] = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' }[state.market];
         renderStructure();
       })
     );
@@ -606,8 +640,13 @@
         d.market = b.dataset.m;
         d.code = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' }[b.dataset.m];
         d.nonce = 0;
+        d.last = null;
         $('#dCode').value = d.code;
         U.$$('#dMarket .sq').forEach((x) => x.classList.toggle('active', x === b));
+        // 旧卦象/择时是上一个标的的，必须清掉再重算，否则会显示 A股 600519 的价格配美股代码
+        const resBox = $('#dResult');
+        if (resBox) resBox.innerHTML = '<div class="card empty">点「起卦」按新标的起卦</div>';
+        loadMobileTiming();
       })
     );
     U.$$('#dMode .sq').forEach((b) =>
@@ -643,6 +682,7 @@
     const box = $('#dTiming');
     if (!box) return;
     try {
+      if (stale('divination')) return;
       const res = await API.timing({ market: state.div.market, code: state.div.code });
       const c = res.composite;
       const color = c >= 58 ? 'var(--down-text)' : c <= 42 ? 'var(--up-text)' : 'var(--gold)';
@@ -800,6 +840,12 @@
     );
   }
 
+  /* 自选池变了 → 总览/雷达要立刻反映（之前关掉弹层后列表还是旧的） */
+  function refreshAfterWatchChange() {
+    if (state.tab === 'overview') renderOverview();
+    else if (state.tab === 'radar') renderRadar();
+  }
+
   async function openWatchlist() {
     const SK = { market: state.market };
     const render = async () => {
@@ -838,6 +884,7 @@
               try {
                 await API.watchDel({ market: SK.market, code: b.dataset.del });
                 render();
+                refreshAfterWatchChange();
                 toast('已删除');
               } catch (e) {
                 toast('删除失败');
@@ -851,6 +898,7 @@
               const r = await API.watchAdd({ market: SK.market, code });
               toast('已添加 ' + (r.added.name || r.added.code));
               render();
+              refreshAfterWatchChange();
             } catch (e) {
               toast(e.message);
             }
@@ -861,6 +909,7 @@
               await API.watchReset();
               toast('已恢复默认');
               render();
+              refreshAfterWatchChange();
             } catch (e) {
               toast('恢复失败');
             }
@@ -903,6 +952,8 @@
         U.$$('#mSkin .sq').forEach((b) =>
           b.addEventListener('click', () => {
             document.documentElement.dataset.skin = b.dataset.k;
+            document.documentElement.classList.toggle('ios', b.dataset.k === 'ios');
+            document.documentElement.classList.toggle('md', b.dataset.k === 'android');
             localStorage.setItem('chan-skin', b.dataset.k);
             U.$$('#mSkin .sq').forEach((x) => x.classList.toggle('active', x === b));
             toast('已切换为 ' + (b.dataset.k === 'ios' ? 'iOS' : 'Android') + ' 风格');
@@ -984,9 +1035,78 @@
     });
   }
 
+  /* ---------------- 下拉刷新 ----------------
+     html 上禁掉了原生下拉刷新（避免误触整页重载），所以自己做一个：
+     只在页面顶部、单指、纵向超过 12px 时接管；列表/图表内部的滚动不受影响。 */
+  function bindPullToRefresh() {
+    const el = document.getElementById('ptr');
+    if (!el) return;
+    let startY = 0;
+    let pulling = false;
+    let dy = 0;
+    const THRESHOLD = 64;
+    const label = el.querySelector('.ptr-label');
+    const top = () => (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+
+    document.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length !== 1 || !top() || document.documentElement.classList.contains('sheet-open')) return;
+        startY = e.touches[0].clientY;
+        pulling = true;
+        dy = 0;
+      },
+      { passive: true }
+    );
+
+    document.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!pulling) return;
+        dy = e.touches[0].clientY - startY;
+        if (dy <= 0) { pulling = false; el.classList.remove('show', 'ready'); return; }
+        if (dy > 12) {
+          el.classList.add('show');
+          el.classList.toggle('ready', dy >= THRESHOLD);
+          if (label) label.textContent = dy >= THRESHOLD ? '松手刷新' : '下拉刷新';
+        }
+      },
+      { passive: true }
+    );
+
+    document.addEventListener(
+      'touchend',
+      async () => {
+        if (!pulling) { el.classList.remove('show', 'ready'); return; }
+        pulling = false;
+        const fire = dy >= THRESHOLD;
+        el.classList.remove('ready');
+        if (!fire) { el.classList.remove('show'); return; }
+        el.classList.add('busy');
+        if (label) label.textContent = '刷新中…';
+        haptic(12);
+        try {
+          if (state.tab === 'overview') { const ov = await API.overview(); patchOverview(ov); await renderOverview(); }
+          else if (state.tab === 'radar') await renderRadar();
+          else if (state.tab === 'structure') await renderStructure();
+          else if (state.tab === 'divination') await renderDivination();
+          else renderTheory();
+          toast('已刷新');
+        } catch (e) {
+          toast('刷新失败：' + e.message);
+        } finally {
+          el.classList.remove('busy', 'show');
+          if (label) label.textContent = '下拉刷新';
+        }
+      },
+      { passive: true }
+    );
+  }
+
   /* ---------------- 启动 ---------------- */
   function boot() {
-    U.$$('#tabbar .tab').forEach((b) => b.addEventListener('click', () => go(b.dataset.tab)));
+    U.$$('#tabbar .tab').forEach((b) => b.addEventListener('click', () => { haptic(6); go(b.dataset.tab); }));
+    bindPullToRefresh();
     const sb = $('#searchBtn');
     if (sb) sb.addEventListener('click', openSearch);
     const mb = $('#moreBtn');

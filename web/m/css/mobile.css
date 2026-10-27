@@ -56,17 +56,7 @@
 }
 
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-/* F7 有 p{margin:1em 0} / .chip{height:28px} / .badge{height:20px}：元素选择器优先级高于 *，要显式压回 */
-p{margin:0}
-/* Framework7 会把 html/body 锁成 height:100% + overflow:hidden，页面就再也滑不动了。
-   这里显式恢复"文档自身滚动"（iOS/Android 都是最稳的做法）。 */
-html,body{height:auto!important;min-height:100%!important;position:static!important}
-/* 关键：根元素必须是 auto。若 html 的 overflow-y 是 visible，视口会去继承 body 的值，
-   视口就不再是滚动容器 —— 手指/滚轮都滑不动（滚 scrollTo 却能动，极难排查）。 */
-html{overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior-y:none}
-/* 注意：overscroll-behavior 只能加在 html 上。加在 body 上（contain/none）会让
-   Chrome 把整个视口的用户滚动一并吞掉——滚轮和手指都滑不动，只有 scrollTo 能动。 */
-body{overflow-x:hidden!important;overflow-y:visible!important;overscroll-behavior-y:auto}
+/* 框架对抗规则统一放在 f7-compat.css（本文件只写本站设计，不再和 F7 抢属性） */
 body{
   background:var(--bg); color:var(--text); font-family:var(--font);
   font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
@@ -113,7 +103,7 @@ a{color:inherit;text-decoration:none}
 /* ---------- 卡片 ---------- */
 .card{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);
-  padding:13px 14px;margin:0 0 12px;
+  padding:13px 14px;
 }
 [data-skin="ios"] .card{box-shadow:var(--shadow)}
 [data-skin="android"] .card{box-shadow:0 1px 2px rgba(0,0,0,.16)}
@@ -151,7 +141,7 @@ display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
 .idx-chip .c{font-size:10.5px;margin-top:1px}
 
 /* 列表行 */
-.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;margin:0 0 12px;z-index:auto}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
 .list-item{display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--line)}
 .list-item:last-child{border-bottom:0}
 .list-item:active{background:var(--panel2)}
@@ -163,7 +153,7 @@ display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
 .badge{font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap}
 .badge.buy{background:var(--down-tint);color:var(--down-text);border:1px solid var(--down-tint)}
 .badge.sell{background:var(--up-tint);color:var(--up-text);border:1px solid var(--up-tint)}
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);background:transparent;height:auto!important;min-height:0!important;line-height:1.5!important}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);background:transparent;line-height:1.5}
 .chip.gold{color:var(--ink-gold);border-color:var(--gold-tint);background:var(--gold-tint)}
 .chip.red{color:var(--up-text);border-color:var(--up-tint);background:var(--up-tint)}
 .chip.green{color:var(--down-text);border-color:var(--down-tint);background:var(--down-tint)}
@@ -177,38 +167,12 @@ display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
 [data-skin="ios"] .seg .sq.active{background:var(--panel2);color:var(--accent)}
 [data-skin="android"] .seg .sq.active{background:var(--accent);color:var(--accent-ink)}
 
-/* Framework7 的 .view,.views{position:relative;height:100%;z-index:5000;overflow:hidden}
-   同时造成两个毛病：① 内容被裁、页面滚不动；② 视图层级 5000 压住弹层（z-index 60），
-   弹层内容会透在页面文字下面。把 main.view 打回普通块。 */
-/* 弹层打开时锁住 html（真正的滚动容器） */
-html.sheet-open{overflow:hidden!important}
-
-main.view,#view{position:static!important;z-index:auto!important;height:auto!important;overflow:visible!important;box-sizing:border-box}
-
-/* Framework7 组件覆盖（保持本站视觉） */
-.segmented{display:flex!important;background:var(--elev)!important;border:1px solid var(--line)!important;border-radius:12px!important;padding:3px!important}
-.segmented .button{flex:1;margin:0!important;background:transparent!important;color:var(--muted)!important;
-  font-size:12px!important;text-transform:none!important;min-height:0!important;height:auto!important;padding:7px 10px!important;border-radius:9px!important;
-  min-width:0!important;overflow:visible!important;white-space:nowrap}
-/* 激活态交回皮肤规则（.seg .sq.active / .md 金色胶囊），这里只在没有皮肤规则时兜底 */
-.segmented .button:not(.active){box-shadow:none!important}
-.segmented .button.active{background:transparent!important;color:inherit!important;font-weight:650!important}
-html.md .segmented .button.active{color:var(--accent-ink)!important}
-.button.btn,.button.btn.primary,.chip.button,.seg .button{text-transform:none!important}
-/* Framework7 的 .button 默认 width:100%，会挤掉同行的标题 */
-.button{width:auto!important}
-.button.btn,.btn.button{width:auto!important;display:inline-flex!important}
-.section-head .button,.section-head .chip{width:auto!important;flex:0 0 auto!important}
-.chips .chip.button{width:auto!important}
-.card.button,.btn.button{display:inline-flex;align-items:center;justify-content:center}
-
 /* 按钮 */
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
   padding:10px 16px;border-radius:var(--r-btn);font-size:14px;font-weight:600;
   background:var(--panel2);border:1px solid var(--line2);color:var(--text);transition:.15s;
-  height:auto!important;min-height:0!important;line-height:1.35!important;overflow:visible!important;
-  text-transform:none!important;letter-spacing:0;
+  letter-spacing:0;
 }
 .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
@@ -327,16 +291,34 @@ html.md .segmented .button.active{color:var(--accent-ink)!important}
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
 /* toast */
-html .toast,.ios .toast,.md .toast{
-  position:fixed!important;left:50%!important;right:auto!important;width:auto!important;max-width:88vw!important;
-  bottom:calc(var(--tab-h) + var(--safe-b) + 16px)!important;transform:translate(-50%,10px);
+.toast{
+  bottom:calc(var(--tab-h) + var(--safe-b) + 16px);transform:translate(-50%,10px);
   background:var(--panel2);border:1px solid var(--line2);color:var(--text);
   padding:9px 15px;border-radius:12px;font-size:12.5px;opacity:0;pointer-events:none;transition:.2s;z-index:80;max-width:88vw;text-align:center;
 }
-.toast.show,.ios .toast.show,.md .toast.show{opacity:1!important;transform:translate(-50%,0)!important}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* 平板/大屏 */
 @media (min-width:680px){
   .view{max-width:720px;padding-top:16px}
   .pulse-grid{grid-template-columns:repeat(4,1fr)}
+}
+
+/* ---------- 下拉刷新 ---------- */
+.ptr{
+  position:fixed;left:50%;top:calc(var(--safe-t) + 6px);transform:translate(-50%,-140%);
+  display:flex;align-items:center;gap:7px;z-index:70;
+  padding:7px 14px;border-radius:999px;font-size:12px;
+  background:var(--panel2);border:1px solid var(--line2);color:var(--muted);
+  box-shadow:var(--shadow);transition:transform .18s ease,opacity .18s;opacity:0;pointer-events:none;
+}
+.ptr.show{transform:translate(-50%,0);opacity:1}
+.ptr.ready{color:var(--gold);border-color:var(--gold)}
+.ptr.busy .ptr-dot{animation:spin .8s linear infinite;border-top-color:var(--gold)}
+.ptr-dot{width:12px;height:12px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--accent)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* 尊重系统"减少动态效果" */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
 }

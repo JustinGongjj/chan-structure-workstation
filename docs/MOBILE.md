@@ -99,3 +99,30 @@ npx cap open ios       # Xcode（需 macOS + 开发者账号）
 ```
 ✅ ios-dark  390x844  滚动容器=document 可滚=1573px 手势位移=506px 横向溢出=0px
 ```
+
+## 7. 样式分层与自动审计
+
+Framework7 只作为"组件外观底座"接入（无 F7 JS 运行时）。三个文件的职责被刻意分开：
+
+| 文件 | 职责 | `!important` 数量 |
+| --- | --- | --- |
+| `web/vendor/f7/framework7-bundle.min.css` | 组件外观（按钮/列表/分段/弹层…） | 框架自带 |
+| `web/m/css/f7-compat.css` | **唯一**的框架对抗层：把 F7 会影响布局/层级/滚动的规则抵消掉 | 55 |
+| `web/m/css/mobile.css` | 本站设计（tokens、卡片、图表、弹层外观） | 0 |
+
+加载顺序必须是 `f7 → f7-compat → mobile`，顺序错了 `f7-compat` 的覆盖会失效。
+
+`npm run check:css`（`scripts/cssaudit.js`）做三件事：
+
+1. 解析 vendored F7 CSS（5706 条规则，含 `@media` 展开、`@keyframes` 剔除）；
+2. 只保留**可能命中我们 DOM** 的规则——裸元素选择器、`html/.ios/.md` 作祖先、类名在我们实际使用的集合内（`body>.progressbar-infinite`、`swipeout-actions-right>button` 这类直接排除，避免噪声）；
+3. 对 `position/z-index/overflow/height/width/display/transform/touch-action/overscroll-behavior` 等结构属性，比较**选择器特异性**，判断我们的声明是否真能覆盖 F7；外观属性只在值不等价时才算冲突。
+
+已被人工确认无害的冲突写在脚本的 `ACCEPTED` 白名单里并附带理由，其余一律让命令失败。
+这轮 QA 前它抓到过：`body{overflow:hidden}` 未抵消（会重新锁死滚动）、`.toast` 的 `transform` 被 `.md .toast{transform:scale(.9)}` 抢走（居中位移动画失效）。
+
+## 8. 手势与刷新
+
+- 图表 `canvas`：`touch-action:pan-y`，`touchmove` 里做方向仲裁（纵向放行页面滚动，`dx>6 且 dx≥dy` 才 `preventDefault` 接管为平移）；双指抬起一指降级为单指平移，`touchcancel` 清定时器。
+- 横向滚动容器（`.hscroll/.seg/.theory-tabs`）标 `touch-action:pan-x`，避免把对角滑动锁死。
+- 下拉刷新是自绘的（原生下拉在 `html{overscroll-behavior-y:none}` 下被禁用）：仅在页面顶部、单指、纵向 >12px 时接管，阈值 64px，松手后调用当前 Tab 的渲染函数。

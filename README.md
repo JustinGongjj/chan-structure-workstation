@@ -204,16 +204,37 @@ All responses are `{ ok: true, … }`; failures are `{ ok: false, error }` with 
 | `npm run check:api` | 逐条打 39 个接口：四市场报价/K线/缠论、多级别、雷达、择时七法、择时验证、回测、算卦可变性、自选池增删+去重+垃圾代码拒绝、静态资源 | **39/39** |
 | `npm run check:ui` | 真实 Chromium(CDP)：桌面 1440/1024、iOS 390×844、Android 412×915 × 深浅色。查 JS 报错、横向溢出、**内容超出却滚不动**、轮询是否打回滚动位置、5 个 Tab 是否都有内容 | **6/6** |
 | `npm run check:sheet` | 弹层矩阵：5 Tab × 3 弹层 × 2 皮肤 × 2 主题，断言弹层背景不透明、不被页面压住、无零宽标题、无超宽元素 | **48/48** |
-| `npm run check:flow` | 交互链路：搜索→进结构、自选池增删、**算卦两次必换卦**、理论弹层、深链、桌面 6 页与弹窗 | **17/17** |
+| `npm run check:flow` | 交互链路：搜索→进结构、自选池增删、**算卦两次必换卦**、切市场自动退回兼容周期、教学标注齐全、理论弹层、深链、桌面 6 页与弹窗 | **20/20** |
+| `npm run check:css` | 框架冲突审计：把 F7 的 5706 条规则里"会命中我们 DOM"的 111 个危险属性逐条比对，缺一条不是危险就是覆盖不足，直接失败 | **111/111 已抵消** |
+| `npm run check:perf` | 首屏传输基线（真实浏览器 + CDP Network，gzip 后字节）：手机版 **200 KB / 13 请求 / FCP 0.8s**，桌面版 151 KB | 预算 420 KB 内 |
 
 ```bash
 npm test              # 只需单元测试（无网络）
 npm run check:all     # 全量：单测 + 接口 + UI + 弹层 + 交互（需本机 8931 已在跑）
 ```
 
-UI 三条用 `chrome-headless-shell` + CDP over WebSocket（Node 22 内置 WebSocket），
+UI 五条用 `chrome-headless-shell` + CDP over WebSocket（Node 22 内置 WebSocket），
 加 `--shots /tmp/out` 可落截图。它们不是"跑通就行"，而是逐项断言可复现的症状——
-手机滚不动、弹层透明、标题零宽、算卦不换卦都是这样被抓出来的。
+手机滚不动、弹层透明、标题零宽、算卦不换卦、切市场白屏都是这样被抓出来的。
+
+### 样式分层：设计 / 兼容 两份文件
+
+```
+framework7-bundle.min.css   ← 只当组件外观底座（无 F7 JS 运行时）
+f7-compat.css               ← 唯一的"框架对抗层"，55 处 !important 全部集中在这里
+mobile.css                  ← 本站设计，0 处 !important
+```
+
+`npm run check:css` 会解析 vendored 的 F7 CSS，找出所有**可能命中我们 DOM** 的规则，
+按选择器特异性判断我们的声明是否真的能覆盖它。已确认为无害的冲突（例如 `.page-title{width:100%}`）
+在脚本里带理由白名单，其余一律失败——所以"下次不小心又踩一条 F7 规则"不会再靠用户截图发现。
+
+### 移动端体验细节
+
+- **下拉刷新**：html 上关掉了原生下拉（防误触整页重载），改成只在顶部、单指、纵向 >12px 时才接管的自绘刷新；松手阈值 64px，带"下拉刷新 / 松手刷新 / 刷新中"三态。
+- **触感反馈**：切 Tab、起卦、增删自选、toast 用 `navigator.vibrate` 轻震（不支持的设备静默跳过）。
+- **无障碍**：toast 为 `role=status aria-live=polite`；`#view` 为 `role=main`；`prefers-reduced-motion` 下关闭动画。
+- **返回键**：先关弹层，再回上一个 Tab，最后才是退出。
 
 Covers inclusion-merge invariants, stroke/segment/pivot structural invariants, determinism of the full analysis, signal type validity, divergence sanity, graceful degradation on short data, ganzhi anchors (1949-10-01 甲子日, 2000-01-01 戊午日, 2024-02-10 甲辰日), solar-term counts and 立春 windows, six-line chart invariants, and casting determinism ("different symbol ⇒ different hexagram").
 
