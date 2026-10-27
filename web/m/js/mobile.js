@@ -289,7 +289,8 @@
       </div>
       <div id="teachBox"></div>
       <div class="section"><div class="section-head"><h3>结构状态</h3><span class="hint" id="sLevel"></span></div><div class="card kv" id="sState"><div class="empty">加载中…</div></div></div>
-      <div class="section"><div class="section-head"><h3>信号</h3><span class="hint">近 160 根</span></div><div id="sSignals" class="list"><div class="empty">加载中…</div></div></div>`;
+      <div class="section"><div class="section-head"><h3>信号</h3><span class="hint">近 160 根</span></div><div id="sSignals" class="list"><div class="empty">加载中…</div></div></div>
+      <div class="section"><div class="section-head"><h3>信号历史表现</h3><span class="hint" id="mBtHint">回测中…</span></div><div id="mBt" class="card bt-body" style="font-size:12px">计算中…</div></div>`;
 
     U.$$('#sMarket .sq[data-m]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -323,8 +324,33 @@
       state.lastChan = res;
       state.chart.setData(res);
       paintStructure(res);
+      loadMobileBacktest(market, code, state.period);
     } catch (e) {
       $('#sState').innerHTML = `<div class="empty">加载失败：${U.esc(e.message)}</div>`;
+    }
+  }
+
+  async function loadMobileBacktest(market, code, period) {
+    const box = $('#mBt');
+    const hint = $('#mBtHint');
+    if (!box) return;
+    try {
+      const bt = await API.backtest({ market, code, period, horizon: 5 });
+      if (hint) hint.textContent = `后 ${bt.horizon} 根 · n=${bt.overall.n || 0}`;
+      if (!bt.overall.n) {
+        box.innerHTML = '<span class="hint">本级历史信号样本不足（需信号后已走完 5 根），暂不统计。</span>';
+        return;
+      }
+      const rows = Object.entries(bt.byType)
+        .sort((a, b) => b[1].n - a[1].n)
+        .map(([t, v]) => `<tr><td style="font-family:inherit">${U.SIG_SHORT[t] || t}</td><td>${v.n}</td><td style="color:${v.winRate >= 0.5 ? 'var(--down-text)' : 'var(--up-text)'}">${(v.winRate * 100).toFixed(0)}%</td><td style="color:${v.avgRet >= 0 ? 'var(--down-text)' : 'var(--up-text)'}">${(v.avgRet * 100).toFixed(2)}%</td></tr>`)
+        .join('');
+      box.innerHTML = `<div>命中 <b style="color:${bt.overall.winRate >= 0.5 ? 'var(--down-text)' : 'var(--up-text)'}">${(bt.overall.winRate * 100).toFixed(1)}%</b>（n=${bt.overall.n}），均值 ${(bt.overall.avgRet * 100).toFixed(2)}%，超额 ${(bt.edge * 100).toFixed(2)}pp</div>
+        <table class="bt-table" style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px"><thead><tr><th style="text-align:left;color:var(--faint)">信号</th><th style="text-align:left;color:var(--faint)">次数</th><th style="text-align:left;color:var(--faint)">命中</th><th style="text-align:left;color:var(--faint)">均值</th></tr></thead><tbody>${rows}</tbody></table>
+        ${bt.overall.n < 10 ? '<div class="hint" style="color:var(--up-text);margin-top:6px">样本 <10，只能参考，不能当胜率承诺。</div>' : ''}`;
+    } catch (e) {
+      box.innerHTML = '<span class="hint">回测失败</span>';
+      if (hint) hint.textContent = '失败';
     }
   }
 
@@ -383,7 +409,7 @@
   /* ---------------- 理论 ---------------- */
   function renderTheory() {
     const T = window.CHAN_THEORY || { concepts: [], questions: [], lessons: [], practices: [] };
-    const tabs = [['concepts', '概念'], ['questions', '问缠'], ['lessons', '108课'], ['practices', '实战']];
+    const tabs = [['concepts', '概念'], ['questions', '问缠'], ['lessons', '108课'], ['methods', '择时'], ['practices', '实战']];
     let body = '';
     if (state.theoryTab === 'concepts') {
       body = T.concepts
@@ -398,6 +424,15 @@
     } else if (state.theoryTab === 'questions') {
       body = T.questions
         .map((q, i) => `<div class="concept" data-type="q" data-i="${i}"><h4>${U.esc(q.q)}</h4><div class="ol">${U.esc(q.short)}</div></div>`)
+        .join('');
+    } else if (state.theoryTab === 'methods') {
+      body = (T.timingMethods || [])
+        .map(
+          (m, i) => `<div class="concept" data-type="m" data-i="${i}">
+        <h4>${U.esc(m.name)} <span class="lv">${U.esc(m.base)}</span></h4>
+        <div class="ol">${U.esc(m.scoreLaw)}</div>
+      </div>`
+        )
         .join('');
     } else if (state.theoryTab === 'lessons') {
       body = T.lessons
@@ -455,6 +490,14 @@
       <div class="md-sec"><h4>操作步骤</h4><ol class="md-steps">${(q.steps || []).map((s) => `<li>${U.esc(s)}</li>`).join('')}</ol></div>
       ${q.pitfalls ? `<div class="md-pit">易错：${U.esc(q.pitfalls)}</div>` : ''}`;
       openSheet(q.q, html);
+    } else if (type === 'm') {
+      const m = (T.timingMethods || [])[i];
+      if (!m) return;
+      html = `<div class="md-lead">${U.esc(m.scoreLaw)}</div>
+        <div class="md-sec"><h4>优势</h4><ol class="md-steps">${(m.strengths || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</ol></div>
+        ${(m.weaknesses || []).length ? `<div class="md-pit">局限：${m.weaknesses.map(U.esc).join('；')}</div>` : ''}
+        ${m.honest ? `<div class="md-pit" style="margin-top:10px">${U.esc(m.honest)}</div>` : ''}`;
+      openSheet(m.name, html);
     } else if (type === 'l') {
       const l = T.lessons[i];
       html = `<div class="md-sec"><h4>${U.esc(l.range)}</h4><ol class="md-steps">${(l.points || []).map((p) => `<li>${U.esc(p)}</li>`).join('')}</ol></div>`;
@@ -489,7 +532,8 @@
           <button class="btn ${d.live ? 'primary' : ''}" id="dLive" style="flex:0 0 auto">${d.live ? '跟随中' : '跟随'}</button>
         </div>
       </div>
-      <div id="dResult">${state.div.last ? '' : '<div class="card empty">点上面的「起卦」开始</div>'}</div>`;
+      <div id="dResult">${state.div.last ? '' : '<div class="card empty">点上面的「起卦」开始</div>'}</div>
+      <div class="card" id="dTiming"><div class="empty">择时方法计算中…</div></div>`;
 
     U.$$('#dMarket .sq').forEach((b) =>
       b.addEventListener('click', () => {
@@ -526,6 +570,28 @@
     });
     if (state.div.last) paintDiv(state.div.last);
     else castDiv(false);
+    loadMobileTiming();
+  }
+
+  async function loadMobileTiming() {
+    const box = $('#dTiming');
+    if (!box) return;
+    try {
+      const res = await API.timing({ market: state.div.market, code: state.div.code });
+      const c = res.composite;
+      const color = c >= 58 ? 'var(--down-text)' : c <= 42 ? 'var(--up-text)' : 'var(--gold)';
+      const rows = Object.values(res.methods)
+        .map((m) => `<div class="tm-row"><span class="nm">${U.esc(m.name)}</span><span class="sc" style="color:${m.score >= 58 ? 'var(--down-text)' : m.score <= 42 ? 'var(--up-text)' : 'var(--gold)'}">${m.score}</span><span class="chip">${U.esc(m.label)}</span></div>`)
+        .join('');
+      box.innerHTML = `
+        <div class="card-head"><h3>择时方法实验室</h3><span class="hint">一致性 ${(res.agreement * 100).toFixed(0)}%</span></div>
+        <div class="row between" style="margin-bottom:6px"><span class="hint">加权综合分</span><span style="font-size:22px;font-weight:800;color:${color}">${c.toFixed(1)}</span></div>
+        ${rows}
+        <div class="hint" style="margin-top:8px">${U.esc(res.verdict.text)}</div>
+        <div class="hint" style="margin-top:6px">${U.esc(res.disclaimer)}</div>`;
+    } catch (e) {
+      box.innerHTML = '<div class="hint">择时计算失败</div>';
+    }
   }
 
   async function castDiv(advance) {
