@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<script>(function(){try{var m=(location.search.match(/[?&]theme=(light|dark)/)||[])[1];var t=m||localStorage.getItem('chan-theme')||'dark';document.documentElement.dataset.theme=t;if(m)localStorage.setItem('chan-theme',m);}catch(e){document.documentElement.dataset.theme='dark'}})();</script>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<title>缠论炒股工作站 · Chan Station</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">缠</div>
+      <div>
+        <div class="brand-name">缠论工作站</div>
+        <div class="brand-sub">CHAN · STRUCTURE DESK</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <a class="nav-item active" data-page="overview"><span class="ico">◎</span><span>总览</span><em>Overview</em></a>
+      <a class="nav-item" data-page="structure"><span class="ico">⌁</span><span>结构分析</span><em>Chart</em></a>
+      <a class="nav-item" data-page="radar"><span class="ico">◎</span><span>买卖点雷达</span><em>Signals</em></a>
+      <a class="nav-item" data-page="theory"><span class="ico">▤</span><span>缠论理论</span><em>Theory</em></a>
+      <a class="nav-item" data-page="divination"><span class="ico">☯</span><span>算卦择时</span><em>I Ching</em></a>
+      <a class="nav-item" data-page="sources"><span class="ico">⇄</span><span>数据源</span><em>Sources</em></a>
+    </nav>
+    <div class="side-card" id="sideDaily">
+      <div class="side-card-t">今日干支</div>
+      <div class="side-date">—</div>
+      <div class="side-pillars">—</div>
+    </div>
+    <div class="side-foot">
+      <span class="dot" id="apiDot"></span><span id="apiText">连接中…</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="search-wrap">
+        <span class="search-ico">⌕</span>
+        <input id="globalSearch" placeholder="搜索代码 / 名称（茅台、NVDA、BTC…）" autocomplete="off">
+        <div class="search-pop" id="searchPop"></div>
+      </div>
+      <div class="market-tabs" id="marketTabs">
+        <button class="mtab active" data-market="A">A股</button>
+        <button class="mtab" data-market="HK">港股</button>
+        <button class="mtab" data-market="US">美股</button>
+        <button class="mtab" data-market="CR">加密</button>
+      </div>
+      <div class="top-right">
+        <span class="clock" id="clock">—</span>
+        <button class="theme-toggle" id="themeToggle" title="切换深色 / 浅色主题（Ctrl/⌘ + J）">☀</button>
+        <a class="btn ghost sm" href="/m/" target="_blank" rel="noopener" title="手机版（iOS / Android 两套皮肤）" style="text-decoration:none">手机版</a>
+        <button class="btn ghost sm live-btn" id="liveBtn" title="开启后每 10 秒自动刷新行情">● 实时 · 关</button>
+        <button class="btn ghost sm" id="refreshBtn" title="刷新当前页">↻ 刷新</button>
+        <span class="cal-badge" id="calBadge" title="点击进入算卦择时">—</span>
+      </div>
+    </header>
+
+    <!-- ================= 总览 ================= -->
+    <section class="page active" id="page-overview">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">总览 <span class="tag-live">多市场 · 缠论视角</span></h1>
+          <p class="page-desc">四市场脉动、指数、自选池与今日结构信号；右侧干支卡为「算卦择时」入口。</p>
+        </div>
+        <div class="head-actions">
+          <span class="live-stamp" id="liveStampOverview"></span>
+          <button class="btn sm" data-action="refresh-overview">刷新数据</button>
+        </div>
+      </div>
+
+      <div class="grid-4" id="pulseCards"></div>
+
+      <div class="card">
+        <div class="card-head"><h3>指数看板</h3><span class="hint" id="idxAsof"></span></div>
+        <div class="idx-grid" id="indexGrid"></div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h3>自选池</h3><div style="display:flex;gap:8px;align-items:center"><span class="hint">点击行进入结构分析</span><button class="btn ghost sm" id="ovWlOpen">＋ 管理</button></div></div>
+          <div class="tbl-wrap"><table class="tbl" id="watchTbl"></table></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>今日结构信号</h3><span class="hint">日线 · 近 90 根</span></div>
+          <div id="overviewSignals" class="sig-list"></div>
+        </div>
+      </div>
+
+      <div class="card cal-strip" id="overviewCal"></div>
+    </section>
+
+    <!-- ================= 结构分析 ================= -->
+    <section class="page" id="page-structure">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">结构分析 <span class="tag-live" id="structTitle">—</span> <span class="live-stamp" id="liveStampStruct"></span></h1>
+          <p class="page-desc">包含处理 → 分型 → 笔 → 线段 → 中枢 → 背驰 → 买卖点，全部由服务端实时计算。</p>
+        </div>
+        <div class="head-actions">
+          <select class="input sm" id="teachSelect" title="选择要标注在图上的理论概念" style="width:190px">
+            <option value="">教学标注：关闭</option>
+            <optgroup label="基础结构">
+              <option value="fenxing">分型</option>
+              <option value="bi">笔</option>
+              <option value="xianduan">线段</option>
+              <option value="zhongshu">中枢</option>
+              <option value="a_A_b">a+A+b 走势结构</option>
+              <option value="zoushi_wanmei">走势终完美</option>
+              <option value="zoushi_jibie">级别</option>
+            </optgroup>
+            <optgroup label="背驰与买卖点">
+              <option value="beichi">趋势背驰</option>
+              <option value="panzheng_beichi">盘整背驰</option>
+              <option value="buy1">第一类买点</option>
+              <option value="buy2">第二类买点</option>
+              <option value="buy3">第三类买点</option>
+            </optgroup>
+            <optgroup label="进阶">
+              <option value="qujian_tao">区间套</option>
+              <option value="zhongyin">中阴阶段</option>
+              <option value="zhongshu_kuozhan">中枢扩展与扩张</option>
+              <option value="tongjibie_fenjie">同级别分解</option>
+              <option value="jiehelv">结合律与多义性</option>
+              <option value="xiaozhuanda">小转大</option>
+              <option value="zoushi_digui">走势递归</option>
+            </optgroup>
+          </select>
+          <div class="seg" id="periodSeg"></div>
+        </div>
+      </div>
+
+      <div class="card teach-card" id="teachCard" style="display:none">
+        <div class="card-head">
+          <h3 id="teachTitle">教学标注</h3>
+          <span class="hint" id="teachSub"></span>
+          <button class="btn ghost sm" id="teachClose">关闭标注</button>
+        </div>
+        <ol class="teach-steps" id="teachSteps"></ol>
+        <div class="teach-foot" id="teachFoot"></div>
+      </div>
+
+      <div class="struct-layout">
+        <div class="struct-main">
+          <div class="card chart-card">
+            <div class="chart-toolbar">
+              <div class="legend" id="chartLegend"></div>
+              <div class="chart-tools">
+                <button class="btn ghost sm" id="zoomIn">＋</button>
+                <button class="btn ghost sm" id="zoomOut">－</button>
+                <button class="btn ghost sm" id="zoomReset">复位</button>
+              </div>
+            </div>
+            <div class="chart-wrap"><canvas id="mainChart"></canvas>
+              <div class="crosshair-tip" id="crosshairTip"></div>
+            </div>
+            <div class="chart-note" id="chartNote"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>区间套 · 多级别联立</h3><span class="hint" id="suiteHint">大级别定方向 → 小级别等买点</span></div>
+            <div id="suiteTbl" class="suite"></div>
+          </div>
+        </div>
+
+        <aside class="struct-side">
+          <div class="card side-block">
+            <div class="card-head"><h3>结构状态</h3><span class="hint" id="structLevel"></span></div>
+            <div id="structState" class="kv"></div>
+          </div>
+          <div class="card side-block">
+            <div class="card-head"><h3>信号</h3><span class="hint">近 120 根</span></div>
+            <div id="structSignals" class="sig-list compact"></div>
+          </div>
+          <div class="card side-block">
+            <div class="card-head"><h3>体系解读</h3></div>
+            <div id="structNarrative" class="narrative"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ================= 雷达 ================= -->
+    <section class="page" id="page-radar">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">买卖点雷达 <span class="tag-live">跨市场扫描</span></h1>
+          <p class="page-desc">对自选池逐标的跑一遍缠论引擎，按「信号新鲜度 × 类型权重」排序。</p>
+        </div>
+        <div class="head-actions">
+          <span class="live-stamp" id="liveStampRadar"></span>
+          <button class="btn sm" id="wlOpen">＋ 管理自选</button>
+          <div class="seg" id="radarScope">
+            <button class="sq active" data-scope="all">全部</button>
+            <button class="sq" data-scope="A">A股</button>
+            <button class="sq" data-scope="HK">港股</button>
+            <button class="sq" data-scope="US">美股</button>
+            <button class="sq" data-scope="CR">加密</button>
+          </div>
+          <button class="btn sm" data-action="radar">重新扫描</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap"><table class="tbl radar-tbl" id="radarTbl"></table></div>
+      </div>
+      <div class="card radar-note">
+        <b>怎么读这张表：</b>「一买」= 下跌趋势最后一段背驰（力度衰竭）；「二买」= 一买后回抽不破前低；「三买」= 离开中枢后回抽不进中枢。
+        卖点同理。「位置」指现价相对最近中枢（上方/内部/下方）。表格按信号越新、级别越高越靠前。
+      </div>
+    </section>
+
+    <!-- ================= 理论 ================= -->
+    <section class="page" id="page-theory">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">缠论理论库 <span class="tag-live">原文要义 · 图上定位</span></h1>
+          <p class="page-desc">20 个核心概念 + 14 个「在哪里」问答 + 108 课主题导读 + 实战流程；点击任意条目弹出完整详情（← → 翻页，Esc 关闭）。</p>
+        </div>
+        <div class="head-actions">
+          <input class="input sm" id="theorySearch" placeholder="搜索概念 / 关键词">
+        </div>
+      </div>
+      <div class="seg tab-seg" id="theoryTabs">
+        <button class="sq active" data-tab="concepts">核心概念</button>
+        <button class="sq" data-tab="questions">问缠 · 在哪里</button>
+        <button class="sq" data-tab="lessons">108 课导读</button>
+        <button class="sq" data-tab="practices">实战流程</button>
+      </div>
+      <div id="theoryBody"></div>
+    </section>
+
+    <!-- ================= 算卦 ================= -->
+    <section class="page" id="page-divination">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">算卦择时 <span class="tag-live">干支 · 梅花 · 六爻</span></h1>
+          <p class="page-desc">按当日日子与时辰起卦，配六爻纳甲排盘，与缠论结构并列参考。娱乐向，不构成投资建议。</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn sm" id="castNow">另起一卦</button>
+        </div>
+      </div>
+      <div class="div-layout">
+        <div class="card div-form">
+          <div class="card-head"><h3>起卦条件</h3><span class="hint" id="divLiveTag"></span></div>
+          <div class="form-row"><label>市场</label><div class="seg tiny" id="divMarket">
+            <button class="sq active" data-market="A">A股</button><button class="sq" data-market="HK">港股</button>
+            <button class="sq" data-market="US">美股</button><button class="sq" data-market="CR">加密</button>
+          </div></div>
+          <div class="form-row"><label>标的代码 <span class="hint">（输入即生效，自动识别市场）</span></label>
+            <input class="input" id="divSymbol" value="600519" placeholder="600519 / 00700 / NVDA / BTCUSDT" autocomplete="off">
+          </div>
+          <div class="form-row"><label>起卦方式</label><div class="seg tiny" id="divMode">
+            <button class="sq active" data-mode="price">随市 · 代码+现价</button>
+            <button class="sq" data-mode="time">时辰 · 稳定</button>
+          </div></div>
+          <div class="form-row"><label>日期时间</label><input class="input" id="divTime" type="datetime-local"></div>
+          <div class="row-inline">
+            <button class="btn primary" id="divCast">起 卦</button>
+            <button class="btn" id="divLive">实时跟随 · 关</button>
+          </div>
+          <div class="form-note" id="divNote">每次点「起卦」占次 +1，必得新卦；开「实时跟随」后每 12 秒按最新行情重新取数。</div>
+          <div class="div-advice" id="divAdvice"></div>
+          <div class="div-basis" id="divBasis"></div>
+          <div class="div-history" id="divHistory"></div>
+        </div>
+        <div class="div-main">
+          <div class="card" id="divHexCard"></div>
+          <div class="two-col div-lower">
+            <div class="card" id="divLiuyao"></div>
+            <div class="card" id="divTimeCard"></div>
+          </div>
+          <div class="card" id="divNarrative"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 数据源 ================= -->
+    <section class="page" id="page-sources">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">数据源 <span class="tag-live">免费接口 · 实时探测</span></h1>
+          <p class="page-desc">本站不依赖任何付费行情，按市场组合免费接口并逐级降级；下面是刚才的探测结果。</p>
+        </div>
+        <div class="head-actions"><button class="btn sm" data-action="probe">重新探测</button></div>
+      </div>
+      <div class="card"><div id="sourceList" class="src-list"></div></div>
+      <div class="two-col">
+        <div class="card"><div class="card-head"><h3>市场 × 级别覆盖</h3></div><div id="covTbl" class="tbl-wrap"></div></div>
+        <div class="card"><div class="card-head"><h3>运行信息</h3></div><div id="sysInfo" class="kv"></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 自选池管理弹窗 -->
+<div class="modal-mask" id="wlMask" aria-hidden="true">
+  <div class="modal wl-modal" role="dialog" aria-modal="true" aria-labelledby="wlTitle">
+    <header class="modal-head">
+      <div class="modal-head-l">
+        <span class="modal-kind">自选池</span>
+        <h3 class="modal-title" id="wlTitle">管理自选</h3>
+      </div>
+      <div class="modal-tools">
+        <span class="modal-count" id="wlCount"></span>
+        <button class="modal-btn close" id="wlClose" title="关闭（Esc）">✕</button>
+      </div>
+    </header>
+    <div class="modal-body" id="wlBody"></div>
+    <footer class="modal-foot">
+      <span class="modal-kbd">添加后雷达、总览、结构分析都会同步这份自选池 · Esc 关闭</span>
+      <button class="btn sm" id="wlReset">恢复默认</button>
+    </footer>
+  </div>
+</div>
+
+<!-- 理论详情弹窗 -->
+<div class="modal-mask" id="modalMask" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <header class="modal-head">
+      <div class="modal-head-l">
+        <span class="modal-kind" id="modalKind">核心概念</span>
+        <h3 class="modal-title" id="modalTitle">—</h3>
+      </div>
+      <div class="modal-tools">
+        <span class="modal-count" id="modalCount"></span>
+        <button class="modal-btn" id="modalPrev" title="上一个（←）" aria-label="上一个">‹</button>
+        <button class="modal-btn" id="modalNext" title="下一个（→）" aria-label="下一个">›</button>
+        <button class="modal-btn close" id="modalClose" title="关闭（Esc）" aria-label="关闭">✕</button>
+      </div>
+    </header>
+    <div class="modal-body" id="modalBody"></div>
+    <footer class="modal-foot">
+      <span class="modal-kbd">← → 切换 · Esc 关闭</span>
+      <button class="btn sm" id="modalJump">在结构图上标注它 →</button>
+    </footer>
+  </div>
+</div>
+<script src="/js/theory-content.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/chart.js"></script>
+<script src="/js/highlight.js"></script>
+<script src="/js/pages/overview.js"></script>
+<script src="/js/pages/structure.js"></script>
+<script src="/js/pages/radar.js"></script>
+<script src="/js/pages/theory.js"></script>
+<script src="/js/pages/divination.js"></script>
+<script src="/js/pages/sources.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

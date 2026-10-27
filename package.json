@@ -1,0 +1,51 @@
+{
+  "name": "chan-structure-workstation",
+  "version": "1.0.0",
+  "description": "Deterministic, dependency-free Chan-theory (缠论) structure engine + multi-market trading workstation (A-shares / HK / US / crypto) with teaching chart annotations and a mobile PWA.",
+  "keywords": [
+    "chan-theory",
+    "chang-lun",
+    "缠论",
+    "technical-analysis",
+    "price-action",
+    "divergence",
+    "quantitative-finance",
+    "stock-analysis",
+    "crypto",
+    "canvas",
+    "pwa",
+    "zero-dependency"
+  ],
+  "license": "MIT",
+  "private": false,
+  "type": "commonjs",
+  "main": "server/index.js",
+  "files": [
+    "server",
+    "web",
+    "docs",
+    "space",
+    "data",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "PORT=8931 node server/index.js",
+    "test": "node --test test/*.test.js",
+    "lint": "find server web -name '*.js' -exec node --check {} +",
+    "docker": "docker build -t chan-station . && docker run --rm -p 8931:8931 chan-station"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/<you>/chan-structure-workstation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/<you>/chan-structure-workstation/issues"
+  },
+  "homepage": "https://github.com/<you>/chan-structure-workstation#readme"
+}

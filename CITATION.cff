@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: "Chan Structure Workstation (缠论工作站)"
+message: "If you use this software in research, please cite it as below."
+type: software
+authors:
+  - name: "Chan Structure Workstation contributors"
+repository-code: "https://github.com/<you>/chan-structure-workstation"
+url: "https://github.com/<you>/chan-structure-workstation"
+license: MIT
+version: 1.0.0
+date-released: "2026-10-27"
+keywords:
+  - chan theory
+  - 缠论
+  - technical analysis
+  - market microstructure
+  - quantitative finance
+  - candlestick
+  - divergence
+abstract: >-
+  A deterministic, dependency-free implementation of Chan-theory price structure
+  (inclusion merging, fractals, strokes, segments, pivots, divergence,
+  first/second/third class buy-sell points) with a multi-market data layer and a
+  teaching-oriented visualization workstation.

@@ -1,0 +1,9 @@
+node_modules
+.git
+.github
+docs/assets
+test
+*.log
+.DS_Store
+.chrome-deps
+scripts/shot.sh

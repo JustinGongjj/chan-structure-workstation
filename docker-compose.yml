@@ -1,0 +1,18 @@
+services:
+  chan-station:
+    build: .
+    image: chan-station:latest
+    container_name: chan-station
+    ports:
+      - "8931:8931"
+    environment:
+      PORT: "8931"
+      HOST: "0.0.0.0"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8931/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

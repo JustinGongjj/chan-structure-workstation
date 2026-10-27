@@ -1,0 +1,346 @@
+/* 算卦择时 · 按标的代码 + 实时行情 + 时辰起卦 */
+(function () {
+  const state = {
+    market: 'A',
+    symbol: '600519',
+    mode: 'price',
+    time: '',
+    timeFixed: false,
+    nonce: 0,
+    live: false,
+    timer: null,
+    last: null,
+    history: [],
+    busy: false,
+  };
+
+  /* ---------------- 工具 ---------------- */
+  function nowLocal() {
+    const d = new Date(Date.now() + 8 * 3600000);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  }
+
+  /** 根据输入自动识别市场：USDT→加密、纯字母→美股、5 位→港股、6 位→A股 */
+  function guessMarket(raw) {
+    const s = String(raw || '').trim().toUpperCase();
+    if (!s) return state.market;
+    const bare = s.replace(/^(SH|SZ|BJ)/, '');
+    if (/USDT$/.test(s)) return 'CR';
+    if (/^\d{6}$/.test(bare)) return 'A';
+    if (/^\d{5}$/.test(bare)) return 'HK';
+    if (/^[A-Z][A-Z.\-]{0,9}$/.test(s)) return 'US';
+    if (/^\d+$/.test(bare)) return bare.length <= 5 ? 'HK' : 'A';
+    return state.market;
+  }
+
+  function setMarket(m) {
+    state.market = m;
+    U.$$('#divMarket .sq').forEach((b) => b.classList.toggle('active', b.dataset.market === m));
+  }
+
+  /* ---------------- 起卦 ---------------- */
+  async function cast({ advance = true, quiet = false } = {}) {
+    if (state.busy) return;
+    state.busy = true;
+    const btn = U.$('#divCast');
+    if (btn) btn.textContent = '起卦中…';
+
+    const symInput = U.$('#divSymbol');
+    const typed = (symInput.value || '').trim() || state.symbol;
+    const guessed = guessMarket(typed);
+    if (guessed !== state.market) {
+      setMarket(guessed);
+      if (!quiet) U.toast(`已识别为${U.MK[guessed]}标的：${typed}`);
+    }
+    state.symbol = typed;
+    if (advance) state.nonce += 1;
+
+    const params = {
+      market: state.market,
+      code: state.symbol,
+      mode: state.mode,
+      nonce: state.nonce,
+    };
+    const timeInput = U.$('#divTime');
+    if (!state.timeFixed) {
+      state.time = nowLocal();
+      if (timeInput) timeInput.value = state.time;
+    }
+    if (state.timeFixed && state.time) {
+      const ts = Date.parse(state.time + ':00+08:00');
+      if (Number.isFinite(ts)) params.ts = ts;
+    }
+
+    try {
+      const res = await API.divination(params);
+      const sig = `${res.hexagram.ben.name}#${res.hexagram.dong}#${res.hexagram.bian.name}`;
+      const prev = state.last;
+      state.last = { sig, res };
+      renderHex(res);
+      renderLiuYao(res);
+      renderTime(res);
+      renderNarrative(res);
+      renderAdvice(res);
+      renderBasis(res);
+      pushHistory(res, sig);
+      if (prev && prev.sig !== sig) {
+        U.toast(`卦变：${prev.res.hexagram.ben.name} → ${res.hexagram.ben.name}（动第 ${res.hexagram.dong} 爻）`);
+      }
+      U.$('#divLiveTag').innerHTML = state.live
+        ? '<span class="live-dot"><i></i>实时跟随 · 12s</span>'
+        : `<span class="hint">最后起卦 ${new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 19)}</span>`;
+    } catch (e) {
+      U.toast('起卦失败：' + e.message);
+      U.$('#divHexCard').innerHTML = '<div class="loading">起卦失败：' + U.esc(e.message) + '</div>';
+    } finally {
+      state.busy = false;
+      if (btn) btn.textContent = '起 卦';
+    }
+  }
+
+  /* ---------------- 渲染：卦象 ---------------- */
+  function hexSymbol(lines, dong) {
+    return lines
+      .map((v, i) => {
+        const pos = i + 1;
+        const cls = v === 1 ? 'line' : 'line yin';
+        return `<div class="${cls} ${pos === dong ? 'dong' : ''}" title="第${pos}爻"></div>`;
+      })
+      .reverse()
+      .join('');
+  }
+
+  function renderHex(res) {
+    const h = res.hexagram;
+    const p = res.pillars;
+    const score = Math.max(0, Math.min(100, h.score || 0));
+    const q = res.quote || {};
+    const tgt = res.target || {};
+    const quoteTxt =
+      q.price != null
+        ? `<div class="hex-quote">现价 <b class="${U.cls(q.pct)}">${U.fmt(q.price)}</b> <span class="${U.cls(q.pct)}">${U.pct(q.pct)}</span><span class="hint" style="margin-left:8px">${U.esc(U.MK[tgt.market] || tgt.market || '')} · ${U.esc(tgt.symbol || '')}${q.name ? ' · ' + U.esc(q.name) : ''}</span></div>`
+        : `<div class="hex-quote hint">${U.esc(U.MK[tgt.market] || tgt.market || '')} · ${U.esc(tgt.symbol || '')}（时辰起卦，不取实时价）</div>`;
+
+    U.$('#divHexCard').innerHTML = `
+    <div class="hex-head">
+      <div class="hex-sym">${hexSymbol(h.lines, h.dong)}</div>
+      <div style="min-width:0">
+        <div class="hex-title">${U.esc(h.ben.name)}</div>
+        <div class="hint" style="margin-top:4px">第 ${h.ben.id} 卦 · ${U.esc(h.ben.dun)} · 第 ${res.seed ? res.seed.nonce + 1 : 1} 占 · 动爻第 ${h.dong} 爻</div>
+        ${quoteTxt}
+        <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.8">卦辞：${U.esc(h.ben.guaCi)}<br>象曰：${U.esc(h.ben.baiHua)}</div>
+      </div>
+      <div style="margin-left:auto;text-align:right;min-width:170px">
+        <div class="hint">体用生克（交易倾向）</div>
+        <div style="font-size:26px;font-weight:700" class="${score >= 60 ? 'up' : score <= 40 ? 'down' : ''}">${score}</div>
+        <div class="meter"><i style="width:${score}%"></i></div>
+        <div class="hint" style="margin-top:6px">${U.esc(h.relation.text)} · ${U.esc(h.relation.level)}</div>
+        <div class="hex-live" style="margin-top:6px;justify-content:flex-end">${U.esc(res.methodLabel || '')}</div>
+      </div>
+    </div>
+    <div class="hex-grid">
+      <div class="hex-box"><div class="lb">本卦</div><div class="nm">${U.esc(h.ben.name)}</div><div class="ds">${U.esc(h.ben.trade)}</div></div>
+      <div class="hex-box"><div class="lb">互卦（内里）</div><div class="nm">${U.esc(h.hu.name)}</div><div class="ds">${U.esc(h.hu.trade)}</div></div>
+      <div class="hex-box"><div class="lb">变卦（去向）</div><div class="nm">${U.esc(h.bian.name)}</div><div class="ds">${U.esc(h.bian.trade)}</div></div>
+    </div>
+    <div class="cal-strip" style="margin-top:14px">
+      <div class="ci"><span class="lab">上卦</span><span class="val">${U.esc(h.upper.name)}·${U.esc(h.upper.nature)}·${U.esc(h.upper.element)}</span></div>
+      <div class="ci"><span class="lab">下卦</span><span class="val">${U.esc(h.lower.name)}·${U.esc(h.lower.nature)}·${U.esc(h.lower.element)}</span></div>
+      <div class="ci"><span class="lab">体</span><span class="val">${U.esc(h.ti.name)}·${U.esc(h.ti.element)}</span></div>
+      <div class="ci"><span class="lab">用</span><span class="val">${U.esc(h.yong.name)}·${U.esc(h.yong.element)}</span></div>
+      <div class="ci"><span class="lab">四柱</span><span class="val" style="font-size:13px">${p.year.text} ${p.month.text} ${p.day.text} ${p.hour.text}</span></div>
+      <div class="ci"><span class="lab">建除</span><span class="val">${res.jianchu}</span></div>
+      <div class="ci"><span class="lab">冲</span><span class="val">${res.chong.animal}</span></div>
+      <div class="ci"><span class="lab">旬空</span><span class="val">${res.kong.join(' ')}</span></div>
+    </div>`;
+  }
+
+  /* ---------------- 渲染：六爻 / 时辰 / 解读 ---------------- */
+  function renderLiuYao(res) {
+    const ly = res.liuyao;
+    const rows = ly.yaos
+      .map(
+        (y) => `<tr class="${y.dong ? 'dong' : ''} ${y.kong ? 'kong' : ''}">
+      <td>${y.pos}</td><td>${y.liushen}</td><td>${y.liuqin}</td>
+      <td>${U.esc(y.zhi + y.element)}</td>
+      <td>${y.yin}${y.dong ? ' ●' : ''}</td>
+      <td style="color:var(--gold)">${y.shi ? '世' : y.ying ? '应' : ''}</td>
+      <td>${y.kong ? '空' : ''}</td>
+    </tr>`
+      )
+      .join('');
+    U.$('#divLiuyao').innerHTML = `
+      <div class="card-head"><h3>六爻排盘</h3><span class="hint">${U.esc(ly.palace)}宫 · ${U.esc(ly.gongEl)} · 世${ly.shi}应${ly.ying}</span></div>
+      <table class="yao-tbl">
+        <thead><tr><th>爻</th><th>六神</th><th>六亲</th><th>纳甲</th><th>阴阳</th><th>世应</th><th>空</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="hint" style="margin-top:10px">变卦「${U.esc(res.hexagram.bian.name)}」对应动爻：${res.dongYao ? U.esc(res.dongYao.liuqin + '·' + res.dongYao.zhi + res.dongYao.element) : '—'}</div>`;
+  }
+
+  function renderTime(res) {
+    const cells = res.shichen
+      .map(
+        (s) => `<div class="sc ${s.active ? 'now' : ''}">
+      <div class="t">${s.name} <span class="hint">${s.range}</span></div>
+      <div class="${s.label === '吉' ? 'j 吉' : s.label === '凶' ? 'j 凶' : s.label === '泄' ? 'j 泄' : 'j 平'}">${s.label} · ${s.text}</div>
+    </div>`
+      )
+      .join('');
+    U.$('#divTimeCard').innerHTML = `
+      <div class="card-head"><h3>十二时辰 · 体卦生克</h3><span class="hint">当前时辰高亮</span></div>
+      <div class="sc-grid">${cells}</div>
+      <div class="hint" style="margin-top:10px">${U.esc((res.shichen.find((s) => s.active) || {}).hint || '')}</div>`;
+  }
+
+  function renderNarrative(res) {
+    U.$('#divNarrative').innerHTML = `
+      <div class="card-head"><h3>卦象解读</h3><span class="hint">与缠论结构并列参考</span></div>
+      ${res.narrative.map((p) => `<p style="font-size:12px;line-height:2;color:var(--muted);margin-bottom:8px">${U.esc(p)}</p>`).join('')}
+      <div class="hint" style="margin-top:8px">${U.esc(res.disclaimer)}</div>`;
+  }
+
+  function renderAdvice(res) {
+    U.$('#divAdvice').innerHTML = `
+      <div style="margin-bottom:6px;color:var(--ink-gold);font-size:12px">今日宜忌（建除法）</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${res.advice.good.map((g) => `<span class="chip green">宜 ${U.esc(g)}</span>`).join('')}
+        ${res.advice.bad.map((g) => `<span class="chip red">忌 ${U.esc(g)}</span>`).join('')}
+      </div>
+      <div class="hint" style="margin-top:8px">${U.esc(res.advice.tip)}</div>`;
+  }
+
+  /* ---------------- 渲染：取数依据 + 历史 ---------------- */
+  function renderBasis(res) {
+    const seed = res.seed;
+    if (!seed) {
+      U.$('#divBasis').innerHTML = '';
+      return;
+    }
+    const rows = seed.parts
+      .map(
+        (p) =>
+          `<div class="basis-row"><span class="k">${U.esc(p.label)}</span><span class="v">${U.esc(String(p.value))}<small>${U.esc(p.detail || '')}</small></span></div>`
+      )
+      .join('');
+    const q = res.quote || {};
+    const qRow =
+      q.price != null
+        ? `<div class="basis-row"><span class="k">实时报价</span><span class="v" style="color:var(--muted)">${U.fmt(q.price)} / ${U.pct(q.pct)}</span></div>`
+        : '';
+    U.$('#divBasis').innerHTML = `<h5>本次取数依据</h5>${rows}${qRow}<div class="hint" style="margin-top:6px">${U.esc(res.methodLabel || '')}：${
+      seed.mode === 'time' ? '同一时辰内同一标的固定一卦' : '代码 / 现价档 / 占次任一变化都会换卦'
+    }</div>`;
+  }
+
+  function pushHistory(res, sig) {
+    state.history.unshift({
+      sig,
+      name: res.hexagram.ben.name,
+      dong: res.hexagram.dong,
+      bian: res.hexagram.bian.name,
+      price: (res.quote || {}).price,
+      code: (res.target || {}).symbol,
+      at: new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 19),
+    });
+    state.history = state.history.slice(0, 6);
+    renderHistory();
+  }
+
+  function renderHistory() {
+    if (!state.history.length) {
+      U.$('#divHistory').innerHTML = '';
+      return;
+    }
+    U.$('#divHistory').innerHTML =
+      `<h5>最近起卦</h5>` +
+      state.history
+        .map(
+          (h) => `<div class="hist-item">
+        <span class="h1">${U.esc(h.name)}</span>
+        <span class="h2">动${h.dong} → ${U.esc(h.bian)}${h.price != null ? ' · ' + U.fmt(h.price) : ''}</span>
+        <span class="h2">${h.at}</span>
+      </div>`
+        )
+        .join('');
+  }
+
+  /* ---------------- 事件 ---------------- */
+  function setLive(on) {
+    state.live = on;
+    const btn = U.$('#divLive');
+    if (btn) {
+      btn.classList.toggle('live-on', on);
+      btn.textContent = on ? '实时跟随 · 开' : '实时跟随 · 关';
+    }
+    clearInterval(state.timer);
+    state.timer = null;
+    if (on) state.timer = setInterval(() => cast({ advance: false, quiet: true }), 12000);
+    const tag = U.$('#divLiveTag');
+    if (tag && !on) tag.innerHTML = '<span class="hint">实时跟随已关闭</span>';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // 深链：?code=NVDA&mode=price&market=US 可直接带标的进来
+    const qp = new URLSearchParams(location.search);
+    const qCode = qp.get('code');
+    if (qCode) {
+      state.symbol = qCode.trim();
+      U.$('#divSymbol').value = state.symbol;
+      setMarket(guessMarket(state.symbol));
+    }
+    const qMode = qp.get('mode');
+    if (qMode === 'time' || qMode === 'price') {
+      state.mode = qMode;
+      U.$$('#divMode .sq').forEach((x) => x.classList.toggle('active', x.dataset.mode === qMode));
+    }
+    U.$$('#divMarket .sq').forEach((b) =>
+      b.addEventListener('click', () => {
+        setMarket(b.dataset.market);
+        const def = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' };
+        state.symbol = def[b.dataset.market];
+        U.$('#divSymbol').value = state.symbol;
+        cast({ advance: true });
+      })
+    );
+    U.$$('#divMode .sq').forEach((b) =>
+      b.addEventListener('click', () => {
+        U.$$('#divMode .sq').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        state.mode = b.dataset.mode;
+        cast({ advance: true });
+      })
+    );
+    const sym = U.$('#divSymbol');
+    sym.addEventListener('input', () => {
+      state.symbol = sym.value.trim();
+    });
+    sym.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        cast({ advance: true });
+      }
+    });
+    const t = U.$('#divTime');
+    t.value = nowLocal();
+    state.time = t.value;
+    t.addEventListener('input', () => {
+      state.time = t.value;
+      state.timeFixed = true;
+      cast({ advance: true, quiet: true });
+    });
+    U.$('#divCast').addEventListener('click', () => cast({ advance: true }));
+    U.$('#divLive').addEventListener('click', () => setLive(!state.live));
+    U.$('#castNow').addEventListener('click', () => {
+      state.timeFixed = false;
+      t.value = nowLocal();
+      state.time = t.value;
+      cast({ advance: true });
+    });
+  });
+
+  window.PageDivination = {
+    render: () => cast({ advance: false }),
+  };
+})();

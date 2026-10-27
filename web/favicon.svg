@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e0b15a"/>
+      <stop offset="1" stop-color="#8a5a1c"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0b0f16"/>
+  <rect x="3" y="3" width="58" height="58" rx="12" fill="none" stroke="url(#g)" stroke-opacity=".5"/>
+  <path d="M32 12 L32 52" stroke="url(#g)" stroke-width="2.2" stroke-opacity=".55"/>
+  <text x="32" y="45" font-family="Songti SC, STSong, serif" font-size="30" font-weight="700" fill="url(#g)" text-anchor="middle">缠</text>
+</svg>

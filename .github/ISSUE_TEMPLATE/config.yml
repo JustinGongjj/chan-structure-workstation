@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Data source unavailable?
+    url: https://github.com/<you>/chan-structure-workstation/blob/main/docs/DATA_SOURCES.md
+    about: Free endpoints change often — check the adapter matrix and ToS notes first.
+  - name: Security issue
+    url: https://github.com/<you>/chan-structure-workstation/security/advisories/new
+    about: Please report vulnerabilities privately.

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax check (server + web)
+        run: |
+          for f in $(find server web -name '*.js'); do node --check "$f"; done
+      - name: Unit tests
+        run: node --test test/*.test.js
+
+  smoke:
+    name: Server smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Boot server and probe endpoints
+        run: |
+          PORT=8931 node server/index.js &
+          sleep 2
+          curl -fsS http://127.0.0.1:8931/api/health | tee /tmp/health.json
+          curl -fsS http://127.0.0.1:8931/api/watchlist | tee /tmp/watchlist.json
+          curl -fsS http://127.0.0.1:8931/api/daily | head -c 200
+          curl -fsS -o /dev/null http://127.0.0.1:8931/
+          curl -fsS -o /dev/null http://127.0.0.1:8931/m/
+          node -e "const h=require('/tmp/health.json'); if(!h.ok) process.exit(1)"
+      - name: Docker build
+        run: docker build -t chan-station:ci .

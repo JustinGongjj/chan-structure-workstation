@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.DS_Store
+.env
+.env.*
+data/watchlist.local.json
+coverage/
+tmp/
+dist/
+.chrome-deps/
+scripts/shot.sh
+scripts/restart.sh

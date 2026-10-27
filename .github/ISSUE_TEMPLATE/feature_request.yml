@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the trading/analysis workflow you are trying to support.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Engine rule (needs tests + docs update)
+        - New data source
+        - UI / visualization
+        - Mobile
+        - Docs / translation
+        - Other
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Project constraints
+      options:
+        - label: I understand the runtime must stay dependency-free
+        - label: I can help implement or test this

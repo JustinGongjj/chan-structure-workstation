@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-skin="ios">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=5">
+<meta name="theme-color" content="#0a0d13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="缠论">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<title>缠论炒股工作站 · 手机版</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="stylesheet" href="/m/css/mobile.css">
+<script>
+  (function () {
+    try {
+      var q = location.search;
+      var skin = (q.match(/[?&]skin=(ios|android)/) || [])[1] || localStorage.getItem('chan-skin');
+      if (!skin) {
+        var ua = navigator.userAgent || '';
+        skin = /android/i.test(ua) ? 'android' : 'ios';
+      }
+      var theme = (q.match(/[?&]theme=(light|dark)/) || [])[1] || localStorage.getItem('chan-theme');
+      if (!theme) theme = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.skin = skin;
+      document.documentElement.dataset.theme = theme;
+      if (/[?&]skin=/.test(q)) localStorage.setItem('chan-skin', skin);
+      if (/[?&]theme=/.test(q)) localStorage.setItem('chan-theme', theme);
+      var tc = theme === 'light' ? '#f2f5f9' : '#0a0d13';
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', tc);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="appbar">
+  <div class="ab-title" id="appTitle">缠论工作站</div>
+  <button class="icon-btn" id="searchBtn" aria-label="搜索标的">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6 20 20"/></svg>
+  </button>
+  <button class="icon-btn" id="moreBtn" aria-label="更多">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+  </button>
+</header>
+
+<main class="view" id="view"></main>
+
+<nav class="tabbar" id="tabbar">
+  <button class="tab active" data-tab="overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>
+    <span>总览</span>
+  </button>
+  <button class="tab" data-tab="radar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="2.4"/><path d="M12 3.8v2.6M12 17.6v2.6M3.8 12h2.6M17.6 12h2.6"/></svg>
+    <span>雷达</span>
+  </button>
+  <button class="tab" data-tab="structure">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 3.5 3L16 7l5 5"/><path d="M3 20.5h18"/></svg>
+    <span>结构</span>
+  </button>
+  <button class="tab" data-tab="theory">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M8.5 7.5h7"/><path d="M8.5 11h5"/></svg>
+    <span>理论</span>
+  </button>
+  <button class="tab" data-tab="divination">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.6"/><path d="M12 3.4a4.3 4.3 0 0 1 0 8.6 4.3 4.3 0 0 0 0 8.6"/><circle cx="12" cy="7.7" r="1.25" fill="currentColor" stroke="none"/><circle cx="12" cy="16.3" r="1.25" fill="currentColor" stroke="none"/></svg>
+    <span>算卦</span>
+  </button>
+</nav>
+
+<div class="sheet-mask" id="sheetMask"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="/js/theory-content.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/chart.js"></script>
+<script src="/js/highlight.js"></script>
+<script src="/m/js/mobile.js"></script>
+</body>
+</html>

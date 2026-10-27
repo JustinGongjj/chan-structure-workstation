@@ -1,0 +1,47 @@
+name: Bug report
+description: Something is broken (engine output, data adapter, UI)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! For engine/structure issues, please include the symbol, timeframe and date range so we can reproduce it.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Chan engine (fractals/strokes/pivots/divergence/signals)
+        - Data adapter (A-shares / HK / US / crypto)
+        - Desktop UI
+        - Mobile UI / PWA
+        - I Ching module
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: symbol
+    attributes:
+      label: Symbol & timeframe
+      placeholder: "A:600519 day, CR:BTCUSDT 15m"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the API response if possible (`GET /api/chan?...`).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: "v1.0.0 or commit sha"
+  - type: dropdown
+    id: node
+    attributes:
+      label: Node version
+      options: ["18", "20", "22", "other"]
