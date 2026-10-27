@@ -42,10 +42,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/<you>/chan-structure-workstation.git"
+    "url": "git+https://github.com/JustinGongjj/chan-structure-workstation.git"
   },
   "bugs": {
-    "url": "https://github.com/<you>/chan-structure-workstation/issues"
+    "url": "https://github.com/JustinGongjj/chan-structure-workstation/issues"
   },
-  "homepage": "https://github.com/<you>/chan-structure-workstation#readme"
+  "homepage": "https://github.com/JustinGongjj/chan-structure-workstation#readme"
 }

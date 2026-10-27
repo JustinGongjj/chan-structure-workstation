@@ -147,7 +147,7 @@ Ganzhi (干支) calendar computed astronomically (24 solar terms from apparent s
 ## Quickstart
 
 ```bash
-git clone https://github.com/<you>/chan-structure-workstation.git
+git clone https://github.com/JustinGongjj/chan-structure-workstation.git
 cd chan-structure-workstation
 npm start                 # → http://localhost:8931
 # or: PORT=8931 node server/index.js

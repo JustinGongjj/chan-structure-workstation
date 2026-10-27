@@ -4,8 +4,8 @@ message: "If you use this software in research, please cite it as below."
 type: software
 authors:
   - name: "Chan Structure Workstation contributors"
-repository-code: "https://github.com/<you>/chan-structure-workstation"
-url: "https://github.com/<you>/chan-structure-workstation"
+repository-code: "https://github.com/JustinGongjj/chan-structure-workstation"
+url: "https://github.com/JustinGongjj/chan-structure-workstation"
 license: MIT
 version: 1.0.0
 date-released: "2026-10-27"
