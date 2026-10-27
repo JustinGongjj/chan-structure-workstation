@@ -6,6 +6,7 @@
     questions: '问缠 · 在哪里',
     lessons: '108 课导读',
     methods: '择时方法',
+    meta: '命理知识库',
     practices: '实战流程',
   };
   // 问答 → 图上标注 key
@@ -51,6 +52,10 @@
     else if (tab === 'questions') body.innerHTML = renderQuestions(theory);
     else if (tab === 'lessons') body.innerHTML = renderLessons(theory) + renderBibliography(theory);
     else if (tab === 'methods') body.innerHTML = renderMethods(theory);
+    else if (tab === 'meta') {
+      body.innerHTML = '<div class="loading">加载知识库…</div>';
+      renderMeta(body);
+    }
     else body.innerHTML = renderPractices(theory);
 
     U.$$('#theoryBody [data-item]').forEach((el) =>
@@ -149,6 +154,53 @@
         )
         .join('')
     );
+  }
+
+  async function renderMeta(box) {
+    try {
+      const api = await (window.API ? API.get('/api/metaphysics') : Promise.reject(new Error('API 不可用')));
+      const systems = api.systems || [];
+      const books = api.books || [];
+      const cards = systems
+        .map(
+          (m) => `<div class="q-item">
+        <div class="q">${U.esc(m.name)} <span class="chip gold">${U.esc(m.school)}</span></div>
+        <div class="a">${U.esc(m.oneLine)}</div>
+        <div class="steps"><li><b>原理</b>：${U.esc(m.principle)}</li>${m.rules.map((r) => `<li>${U.esc(r)}</li>`).join('')}</div>
+        <div class="hint" style="margin-top:6px">怎么看：${m.howTo.map(U.esc).join('；')}</div>
+        <div class="hint" style="margin-top:4px">代码：${U.esc(m.code.module)} · 接口：${U.esc(m.code.api)} · 测试：${U.esc(m.code.tests)}</div>
+        <div class="pit" style="margin-top:6px">${m.pitfalls.map(U.esc).join('；')}</div>
+      </div>`
+        )
+        .join('');
+      const byDomain = {};
+      for (const b of books) (byDomain[b.domain] = byDomain[b.domain] || []).push(b);
+      const bookBlocks = Object.entries(byDomain)
+        .map(
+          ([domain, list]) => `<div class="bib-item" style="margin-bottom:10px">
+        <div class="bib-t">${U.esc(domain)} · ${list.length} 本</div>
+        ${list
+          .map(
+            (b) => `<div style="margin-top:8px">
+            <div class="bib-t" style="font-size:12px">${U.esc(b.title)}</div>
+            <div class="bib-m">${U.esc(b.era)} · ${U.esc(b.attributed)}</div>
+            <div class="bib-n">${U.esc(b.note)}</div>
+          </div>`
+          )
+          .join('')}
+      </div>`
+        )
+        .join('');
+      box.innerHTML = `
+        <div class="card" style="margin-bottom:12px"><div class="hint">${U.esc(api.corpus.note)}<br>${U.esc(api.corpus.disclaimer)}</div></div>
+        ${cards}
+        <div class="card" style="margin-top:14px">
+          <div class="card-head"><h3>书目索引（${books.length} 本）</h3><span class="hint">外部著作仅作索引，不含原文</span></div>
+          ${bookBlocks}
+        </div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="loading">知识库加载失败：${U.esc(e.message)}</div>`;
+    }
   }
 
   function renderConcepts(t) {

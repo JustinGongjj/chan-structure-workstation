@@ -149,6 +149,42 @@
     U.$('#structNarrative').innerHTML = html + extra.join('');
   }
 
+  let teachState = { spec: null, step: 1, keepView: false };
+
+  /** 把标注裁剪成「第 k 步」：先逐条显带，再显参考线，最后显关键点 */
+  function partialSpec(spec, step) {
+    const bands = spec.bands || [];
+    const hlines = spec.hlines || [];
+    const marks = spec.marks || [];
+    const nb = Math.min(bands.length, Math.max(1, step));
+    const showH = step > bands.length;
+    const showM = step > bands.length + 1;
+    return {
+      ...spec,
+      bands: bands.slice(0, nb),
+      hlines: showH ? hlines : [],
+      marks: showM ? marks : marks.slice(0, Math.max(0, step - 1)),
+      range: spec.range,
+    };
+  }
+
+  function paintTeachStep() {
+    const { spec, step } = teachState;
+    const ch = PageStructure.getChart();
+    if (!ch || !spec) return;
+    const st = Math.min(Math.max(1, step), spec.steps.length);
+    teachState.step = st;
+    ch.setHighlight(partialSpec(spec, st), { keepView: true });
+    const stepsEl = U.$('#teachSteps');
+    if (stepsEl)
+      Array.from(stepsEl.children).forEach((li, i) => {
+        li.style.opacity = i + 1 === st ? '1' : i + 1 < st ? '.55' : '.4';
+        li.style.fontWeight = i + 1 === st ? '650' : '400';
+      });
+    const lab = U.$('#teachStepLabel');
+    if (lab) lab.textContent = `第 ${st} / ${spec.steps.length} 步`;
+  }
+
   function applyHighlight(res, keepView) {
     const key = App.state.hl;
     const card = U.$('#teachCard');
@@ -168,6 +204,7 @@
     U.$('#teachTitle').innerHTML = `${U.esc(spec.title)} <span class="teach-tag">教学标注</span>`;
     U.$('#teachSub').textContent = `${res.level.levelName} · ${res.code || ''} · ${spec.period}`;
     U.$('#teachSteps').innerHTML = spec.steps.map((x) => `<li>${x}</li>`).join('');
+    teachState = { spec, step: 1, keepView: !!keepView };
     const legend = [
       ['accent', '进入段 / 前段', '#5b8cff'],
       ['gold', '中枢', '#e0b15a'],
@@ -199,6 +236,27 @@
     );
     const cardEl = U.$('#teachCard');
     cardEl.style.display = '';
+    const foot = U.$('#teachFoot');
+    if (foot && spec.steps.length > 1) {
+      foot.insertAdjacentHTML(
+        'afterend',
+        `<div class="teach-stepbar" id="teachStepBar">
+          <button class="btn ghost sm" id="teachPrev" title="上一步">‹ 上一步</button>
+          <span class="teach-stepLabel" id="teachStepLabel">第 1 / ${spec.steps.length} 步</span>
+          <button class="btn ghost sm" id="teachNext" title="下一步">下一步 ›</button>
+          <span class="hint">按步骤看：图上会一步步把对应结构点亮</span>
+        </div>`
+      );
+      U.$('#teachPrev').addEventListener('click', () => {
+        teachState.step = Math.max(1, teachState.step - 1);
+        paintTeachStep();
+      });
+      U.$('#teachNext').addEventListener('click', () => {
+        teachState.step = Math.min(spec.steps.length, teachState.step + 1);
+        paintTeachStep();
+      });
+    }
+    paintTeachStep();
     if (key === 'qujian_tao') {
       const suite = U.$('#suiteTbl');
       if (suite) suite.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -312,6 +370,8 @@
           ch.setHighlight(null);
           ch.resetView();
         }
+        const bar = U.$('#teachStepBar');
+        if (bar) bar.remove();
       });
     window.addEventListener('resize', U.debounce(() => chart && chart.draw(), 120));
   });

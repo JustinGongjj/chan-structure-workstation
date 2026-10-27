@@ -14,6 +14,7 @@ const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
 const BT = require('./lib/backtest');
+const META = require('./lib/metaphysics');
 const { cached, mapPool, cacheStats } = require('./lib/http');
 
 const PORT = Number(process.env.PORT || 8931);
@@ -407,6 +408,10 @@ const routes = {
       nocache: u.searchParams.get('nocache') === '1',
     }),
   '/api/daily': async () => V.daily(),
+  '/api/metaphysics': async (u) => {
+    const id = u.searchParams.get('id');
+    return id ? META.get(id) || { error: '未知体系' } : META.list();
+  },
   '/api/timing': async (u) => {
     const methods = (u.searchParams.get('methods') || '')
       .split(',')

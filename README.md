@@ -105,6 +105,14 @@ The verdict is deliberately blunt: on the shipped sample it usually says *"no si
 - Global live mode: quotes every 10s, structure every 20s, radar every 30s
 - Add/remove symbols per market (search autocomplete); persisted to `data/watchlist.json`
 
+### 4.5 Metaphysics knowledge base (命理知识库)
+
+A first-class module (not a footnote): **天干地支/四柱 · 紫微斗数 · 奇门遁甲 · 梅花易数 · 六爻纳甲**, each with principle, the exact rules this codebase implements, where to look in the UI, the module/API/test file, and its documented pitfalls — plus a 14-book bibliography (缠论 / 干支 / 紫微 / 奇门 / 卦象 / 六爻) used purely as an index.
+
+### 4.6 1-on-1 guided walkthrough
+
+Every teaching annotation is now a **stepper**: step 1 lights up `a`, step 2 adds the pivot, step 3 adds `b`, then reference lines, then key points — with the matching sentence highlighted below the chart. This is the "teach me how to read *my* chart" mode rather than a wall of text.
+
 ### 5. Reading room (theory library) — quantified
 
 **40 concepts** (operational definition, original meaning, recognition steps, common mistakes, where to look on this chart) · **14 "where is it?" Q&A** · 108-lesson guide grouped into **14 themes** · **5 practical workflows** · **≈45,600 characters of original digest** in this repo, plus a bibliography (the 780-page annotated edition, the 6-volume collection, the complete-works edition) and honest provenance notes. The theory page shows these counts as a live stats strip.
