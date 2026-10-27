@@ -37,6 +37,8 @@
     ['buy3', '三买'],
   ];
 
+  const BUILD = 'v1.1 · 2026-10-27';
+
   /* ---------------- 基础 ---------------- */
   function toast(msg) {
     const el = $('#toast');
@@ -91,7 +93,7 @@
     ]
       .map(([m, name]) => {
         const x = p[m] || { avgPct: 0, up: 0, down: 0, heat: 50 };
-        return `<div class="pulse">
+        return `<div class="pulse" data-pulse="${m}">
         <div class="n"><span>${name} · 自选均涨</span><span class="chip">${U.MK[m]}</span></div>
         <div class="v ${U.cls(x.avgPct)}">${U.pct(x.avgPct)}</div>
         <div class="s">涨 ${x.up} · 跌 ${x.down}</div>
@@ -131,7 +133,7 @@
       : '';
 
     view.innerHTML = `
-      <h1 class="page-title">总览 ${stampHtml()}</h1>
+      <h1 class="page-title">总览 <span id="ovStamp">${stampHtml()}</span></h1>
       <div class="page-sub">四市场自选池 · 点击任意标的进入结构分析</div>
       <div class="pulse-grid section">${pulseCards}</div>
       <div class="section">
@@ -181,6 +183,41 @@
         const box = $('#ovSignals');
         if (box) box.innerHTML = '<div class="empty">雷达暂不可用</div>';
       });
+  }
+
+  /* 实时增量刷新总览：只更新文本节点，绝不重建 DOM —— 重建会把用户的滚动位置弹回顶部 */
+  function patchOverview(ov) {
+    if (!ov) return;
+    const p = ov.pulse || {};
+    ['A', 'HK', 'US', 'CR'].forEach((m) => {
+      const card = document.querySelector(`.pulse[data-pulse="${m}"]`);
+      if (!card) return;
+      const x = p[m] || { avgPct: 0, up: 0, down: 0, heat: 50 };
+      const v = card.querySelector('.v');
+      if (v) { v.className = 'v ' + U.cls(x.avgPct); v.textContent = U.pct(x.avgPct); }
+      const sm = card.querySelector('.s');
+      if (sm) sm.textContent = `涨 ${x.up} · 跌 ${x.down}`;
+      const heat = card.querySelector('.heat i');
+      if (heat) heat.style.width = x.heat + '%';
+    });
+    (ov.indices || []).forEach((r) => {
+      const el = document.querySelector(`.idx-chip[data-m="${r.market}"][data-c="${r.code}"]`);
+      if (!el) return;
+      const pEl = el.querySelector('.p');
+      if (pEl) { pEl.className = 'p ' + U.cls(r.pct); pEl.textContent = U.fmt(r.price, 2); }
+      const cEl = el.querySelector('.c');
+      if (cEl) { cEl.className = 'c ' + U.cls(r.pct); cEl.textContent = U.pct(r.pct); }
+    });
+    (ov.watch || []).forEach((r) => {
+      const el = document.querySelector(`#view .list-item[data-m="${r.market}"][data-c="${r.code}"]`);
+      if (!el) return;
+      const px = el.querySelector('.px');
+      if (px) { px.className = 'px ' + U.cls(r.pct); px.textContent = U.fmt(r.price); }
+      const dt = el.querySelector('.dt');
+      if (dt) { dt.className = 'dt ' + U.cls(r.pct); dt.textContent = U.pct(r.pct); }
+    });
+    const st = document.querySelector('#ovStamp');
+    if (st) st.innerHTML = stampHtml();
   }
 
   /* ---------------- 雷达 ---------------- */
@@ -818,8 +855,22 @@
        <div class="seg segmented" id="mLive"><button class="sq button ${state.live ? 'active' : ''}" data-k="on">开启（10s）</button><button class="sq button ${!state.live ? 'active' : ''}" data-k="off">关闭</button></div>
        <div class="section-head" style="margin-top:14px"><h3>数据源</h3></div>
        <div id="mSources" class="hint">检测中…</div>
-       <div class="hint" style="margin-top:16px;line-height:1.8">缠论工作站 · 手机版 v1.0<br>PC 版：<a href="/" style="color:var(--accent)">/</a> · iOS 皮肤 <a href="?skin=ios" style="color:var(--accent)">?skin=ios</a> · Android 皮肤 <a href="?skin=android" style="color:var(--accent)">?skin=android</a></div>`,
+       <div class="section-head" style="margin-top:14px"><h3>版本</h3></div>
+       <div class="row between" style="gap:8px">
+         <span class="hint" id="mVer">手机版 ${BUILD}</span>
+         <button class="btn button sm" id="mReload">强制刷新</button>
+       </div>
+       <div class="hint" style="margin-top:16px;line-height:1.8">缠论工作站 · 手机版 ${BUILD}<br>PC 版：<a href="/?desktop=1" style="color:var(--accent)">/?desktop=1</a> · iOS 皮肤 <a href="?skin=ios" style="color:var(--accent)">?skin=ios</a> · Android 皮肤 <a href="?skin=android" style="color:var(--accent)">?skin=android</a></div>`,
       () => {
+        const rb = $('#mReload');
+        if (rb) rb.addEventListener('click', async () => {
+          try {
+            const regs = await navigator.serviceWorker?.getRegistrations?.();
+            if (regs) await Promise.all(regs.map((r) => r.unregister()));
+            if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); }
+          } catch (e) {}
+          location.reload();
+        });
         U.$$('#mSkin .sq').forEach((b) =>
           b.addEventListener('click', () => {
             document.documentElement.dataset.skin = b.dataset.k;
@@ -868,7 +919,11 @@
       state.timer = setInterval(async () => {
         state.tickN++;
         try {
-          if (state.tab === 'overview') await renderOverview();
+          if (document.querySelector('.sheet-mask.show')) return; // 弹层打开时不刷，免得打断输入
+          if (state.tab === 'overview') {
+            const ov = await API.overview();
+            patchOverview(ov);
+          }
           else if (state.tab === 'structure' && state.tickN % 2 === 0 && state.lastChan) {
             const res = await API.chan({ market: state.market, code: state.symbol[state.market], period: state.period, limit: 600 });
             if (res.ok) {

@@ -373,7 +373,7 @@ function serveStatic(req, res, pathname) {
     const ext = path.extname(file).toLowerCase();
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
+      'Cache-Control': ['.html', '.css', '.js', '.json', '.webmanifest'].includes(ext) ? 'no-cache' : 'public, max-age=300',
       'Content-Length': st.size,
     });
     fs.createReadStream(file).pipe(res);
@@ -555,8 +555,9 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (req.method === 'DELETE') {
-        const market = String(u.searchParams.get('market') || '').toUpperCase();
-        const code = String(u.searchParams.get('code') || '');
+        const dbody = await readBody(req).catch(() => ({}));
+        const market = String(u.searchParams.get('market') || dbody.market || '').toUpperCase();
+        const code = String(u.searchParams.get('code') || dbody.code || '');
         if (!market || !code) throw new Error('缺少 market / code');
         const norm = S.normCode(market, code);
         if (wl[market]) wl[market] = wl[market].filter((x) => x.code !== norm);

@@ -627,12 +627,17 @@
           const rect = c.getBoundingClientRect();
           if (e.touches.length >= 2) {
             const [a, b] = e.touches;
-            touchState = { type: 'pinch', dist: Math.max(10, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)), count: this.view.count, start: this.view.start };
+            touchState = {
+              type: 'pinch', locked: 'pinch',
+              dist: Math.max(10, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+              count: this.view.count, start: this.view.start
+            };
+            e.preventDefault();
           } else if (e.touches.length === 1) {
             const t = e.touches[0];
-            touchState = { type: 'pan', x: t.clientX - rect.left, start: this.view.start };
+            // 先不拦截：手势方向未定，交给 touchmove 判定（纵向滑动要让页面滚）
+            touchState = { type: 'pan', locked: null, x: t.clientX - rect.left, y0: t.clientY, x0: t.clientX, start: this.view.start };
           }
-          e.preventDefault();
         },
         { passive: false }
       );
@@ -640,6 +645,15 @@
         'touchmove',
         (e) => {
           if (!touchState || !this.data) return;
+          if (touchState.type === 'pan' && touchState.locked !== 'pan') {
+            const t0 = e.touches[0];
+            if (!t0) return;
+            const dx = Math.abs(t0.clientX - touchState.x0);
+            const dy = Math.abs(t0.clientY - touchState.y0);
+            if (dy > 8 && dy > dx) { touchState = null; return; }   // 纵向：放行页面滚动
+            if (dx > 6 && dx >= dy) touchState.locked = 'pan';       // 横向：接管为平移
+            else return;
+          }
           e.preventDefault();
           const g = this.geom();
           const rect = c.getBoundingClientRect();

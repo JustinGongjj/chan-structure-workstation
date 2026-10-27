@@ -56,7 +56,15 @@
 }
 
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overscroll-behavior-y:none}
+/* Framework7 会把 html/body 锁成 height:100% + overflow:hidden，页面就再也滑不动了。
+   这里显式恢复"文档自身滚动"（iOS/Android 都是最稳的做法）。 */
+html,body{height:auto!important;min-height:100%!important;position:static!important}
+/* 关键：根元素必须是 auto。若 html 的 overflow-y 是 visible，视口会去继承 body 的值，
+   视口就不再是滚动容器 —— 手指/滚轮都滑不动（滚 scrollTo 却能动，极难排查）。 */
+html{overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior-y:none}
+/* 注意：overscroll-behavior 只能加在 html 上。加在 body 上（contain/none）会让
+   Chrome 把整个视口的用户滚动一并吞掉——滚轮和手指都滑不动，只有 scrollTo 能动。 */
+body{overflow-x:hidden!important;overflow-y:visible!important;overscroll-behavior-y:auto}
 body{
   background:var(--bg); color:var(--text); font-family:var(--font);
   font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
@@ -102,7 +110,7 @@ a{color:inherit;text-decoration:none}
 /* ---------- 卡片 ---------- */
 .card{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);
-  padding:13px 14px;margin-bottom:12px;
+  padding:13px 14px;margin:0 0 12px;
 }
 [data-skin="ios"] .card{box-shadow:var(--shadow)}
 [data-skin="android"] .card{box-shadow:0 1px 2px rgba(0,0,0,.16)}
@@ -139,7 +147,7 @@ a{color:inherit;text-decoration:none}
 .idx-chip .c{font-size:10.5px;margin-top:1px}
 
 /* 列表行 */
-.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;margin:0 0 12px;z-index:auto}
 .list-item{display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--line)}
 .list-item:last-child{border-bottom:0}
 .list-item:active{background:var(--panel2)}
@@ -151,7 +159,7 @@ a{color:inherit;text-decoration:none}
 .badge{font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap}
 .badge.buy{background:var(--down-tint);color:var(--down-text);border:1px solid var(--down-tint)}
 .badge.sell{background:var(--up-tint);color:var(--up-text);border:1px solid var(--up-tint)}
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);background:transparent}
 .chip.gold{color:var(--ink-gold);border-color:var(--gold-tint);background:var(--gold-tint)}
 .chip.red{color:var(--up-text);border-color:var(--up-tint);background:var(--up-tint)}
 .chip.green{color:var(--down-text);border-color:var(--down-tint);background:var(--down-tint)}
@@ -202,7 +210,7 @@ a{color:inherit;text-decoration:none}
 /* 图表 */
 .chart-card{padding:8px 8px 4px}
 .chart-wrap{position:relative;height:46vh;min-height:250px;max-height:380px}
-.chart-wrap canvas{width:100%;height:100%;display:block;touch-action:none}
+.chart-wrap canvas{width:100%;height:100%;display:block;touch-action:pan-y}
 .crosshair-tip{
   position:absolute;pointer-events:none;display:none;background:var(--elev);border:1px solid var(--line2);
   border-radius:9px;padding:5px 8px;font-size:11px;line-height:1.5;z-index:3;box-shadow:var(--shadow);white-space:nowrap;

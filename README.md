@@ -149,7 +149,7 @@ Ganzhi (干支) calendar computed astronomically (24 solar terms from apparent s
 ```bash
 git clone https://github.com/<you>/chan-structure-workstation.git
 cd chan-structure-workstation
-npm start                 # → http://localhost:8931
+npm start                 # → http://localhost:8931（桌面版）/ http://localhost:8931/m/（手机版）
 # or: PORT=8931 node server/index.js
 # or: ./start.sh
 ```
@@ -162,6 +162,11 @@ Requirements: **Node.js ≥ 18**. No `npm install` needed — the runtime has ze
 docker build -t chan-station .
 docker run -p 8931:8931 -v "$PWD/data:/app/data" chan-station
 # open http://localhost:8931  (mobile UI at /m/)
+
+# 在线版：
+#   电脑版  https://dsh-qzmkvbrntwlsdhfa.apps.gai.cn/
+#   手机版  https://dsh-qzmkvbrntwlsdhfa.apps.gai.cn/m/   （iOS / Android 双皮肤，可"添加到主屏幕"）
+#   下载    https://dsh-qzmkvbrntwlsdhfa.apps.gai.cn/downloads/
 ```
 
 ### One-click deploy

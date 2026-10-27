@@ -35,7 +35,11 @@
     "dev": "PORT=8931 node server/index.js",
     "test": "node --test test/*.test.js",
     "lint": "find server web -name '*.js' -exec node --check {} +",
-    "docker": "docker build -t chan-station . && docker run --rm -p 8931:8931 chan-station"
+    "docker": "docker build -t chan-station . && docker run --rm -p 8931:8931 chan-station",
+    "check:api": "node scripts/apicheck.js",
+    "check:ui": "node scripts/uicheck.js",
+    "check:flow": "node scripts/flowcheck.js",
+    "check:all": "node --test test/*.test.js && node scripts/apicheck.js && node scripts/uicheck.js && node scripts/flowcheck.js"
   },
   "engines": {
     "node": ">=18"
