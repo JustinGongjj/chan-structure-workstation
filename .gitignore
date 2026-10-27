@@ -10,3 +10,8 @@ dist/
 .chrome-deps/
 scripts/shot.sh
 scripts/restart.sh
+
+# 打包产物不入库（避免 .git 体积暴涨）
+web/downloads/*.zip
+web/downloads/*.bundle
+web/downloads/*.part
