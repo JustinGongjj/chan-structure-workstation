@@ -52,7 +52,14 @@
       this.hover = -1;
       this.drag = null;
       this.bind();
-      window.addEventListener('resize', () => this.draw());
+      this._onResize = () => this.draw();
+      window.addEventListener('resize', this._onResize);
+    }
+
+    destroy() {
+      if (this._onResize) window.removeEventListener('resize', this._onResize);
+      this._onResize = null;
+      this.data = null;
     }
 
     setData(a, opts) {
@@ -678,7 +685,16 @@
         },
         { passive: false }
       );
-      c.addEventListener('touchend', () => {
+      c.addEventListener('touchend', (e) => {
+        if (e.touches && e.touches.length > 0) {
+          // 双指捏合抬起一指：降级为单指平移，别把状态直接清空
+          if (touchState && touchState.type === 'pinch') {
+            const t = e.touches[0];
+            const rect = c.getBoundingClientRect();
+            touchState = { type: 'pan', locked: 'pan', x: t.clientX - rect.left, y0: t.clientY, x0: t.clientX, start: this.view.start };
+          }
+          return;
+        }
         touchState = null;
         clearTimeout(this._touchTimer);
         this._touchTimer = setTimeout(() => {
@@ -688,6 +704,7 @@
       });
       c.addEventListener('touchcancel', () => {
         touchState = null;
+        clearTimeout(this._touchTimer);
         this.hover = -1;
         this.draw();
       });
@@ -696,6 +713,7 @@
         'wheel',
         (e) => {
           if (!this.data) return;
+          if (!(e.ctrlKey || e.metaKey)) return; // 交给页面滚动；Ctrl/⌘ + 滚轮才缩放
           e.preventDefault();
           const g = this.geom();
           const rect = c.getBoundingClientRect();

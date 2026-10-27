@@ -226,8 +226,9 @@ async function desktopFlows() {
     const cards = await cdp.eval(`document.querySelectorAll('[data-concept], .concept, .tx-card').length`);
     const opened = await cdp.eval(`(() => { const el=document.querySelector('[data-concept], .concept, .tx-card'); if(!el) return false; el.click(); return true; })()`);
     await sleep(1800);
-    const modal = await cdp.eval(`document.querySelectorAll('.modal.show, .modal[style*="flex"], #modal.show').length`);
-    check('桌面版·理论概念弹窗', cards > 0 && opened, `卡片 ${cards}，弹窗 ${modal}`);
+    const modal = await cdp.eval(`document.getElementById('modalMask')?.classList.contains('show')`);
+    const mtext = await cdp.eval(`document.getElementById('modalBody')?.innerText?.length || 0`);
+    check('桌面版·理论概念弹窗', cards > 0 && opened && modal === true && mtext > 50, `卡片 ${cards}，弹窗 ${modal}，正文 ${mtext} 字`);
     if (SHOTS) await cdp.shot(path.join(SHOTS, 'd-theory.png'));
 
     // 数据源页

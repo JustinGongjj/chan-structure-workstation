@@ -56,6 +56,8 @@
 }
 
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* F7 有 p{margin:1em 0} / .chip{height:28px} / .badge{height:20px}：元素选择器优先级高于 *，要显式压回 */
+p{margin:0}
 /* Framework7 会把 html/body 锁成 height:100% + overflow:hidden，页面就再也滑不动了。
    这里显式恢复"文档自身滚动"（iOS/Android 都是最稳的做法）。 */
 html,body{height:auto!important;min-height:100%!important;position:static!important}
@@ -136,7 +138,8 @@ a{color:inherit;text-decoration:none}
 .heat i{display:block;height:100%;background:linear-gradient(90deg,var(--down),#e0b15a,var(--up))}
 
 /* 横向滚动（指数 / 周期 / 概念） */
-.hscroll{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
+.hscroll{touch-action:pan-x;
+display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
 .hscroll::-webkit-scrollbar{display:none}
 .hscroll .chip{flex:0 0 auto;white-space:nowrap}
 .idx-chip{
@@ -160,13 +163,13 @@ a{color:inherit;text-decoration:none}
 .badge{font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap}
 .badge.buy{background:var(--down-tint);color:var(--down-text);border:1px solid var(--down-tint)}
 .badge.sell{background:var(--up-tint);color:var(--up-text);border:1px solid var(--up-tint)}
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);background:transparent}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);background:transparent;height:auto!important;min-height:0!important;line-height:1.5!important}
 .chip.gold{color:var(--ink-gold);border-color:var(--gold-tint);background:var(--gold-tint)}
 .chip.red{color:var(--up-text);border-color:var(--up-tint);background:var(--up-tint)}
 .chip.green{color:var(--down-text);border-color:var(--down-tint);background:var(--down-tint)}
 
 /* 分段控件 */
-.seg{display:flex;gap:2px;background:var(--elev);border:1px solid var(--line);border-radius:12px;padding:3px;overflow-x:auto;scrollbar-width:none}
+.seg{display:flex;touch-action:pan-x;gap:2px;background:var(--elev);border:1px solid var(--line);border-radius:12px;padding:3px;overflow-x:auto;scrollbar-width:none}
 .seg::-webkit-scrollbar{display:none}
 .seg .sq{flex:1;white-space:nowrap;padding:7px 10px;border-radius:9px;font-size:12px;color:var(--muted);transition:.15s}
 [data-skin="android"] .seg .sq{border-radius:999px;font-size:12.5px}
@@ -177,13 +180,20 @@ a{color:inherit;text-decoration:none}
 /* Framework7 的 .view,.views{position:relative;height:100%;z-index:5000;overflow:hidden}
    同时造成两个毛病：① 内容被裁、页面滚不动；② 视图层级 5000 压住弹层（z-index 60），
    弹层内容会透在页面文字下面。把 main.view 打回普通块。 */
+/* 弹层打开时锁住 html（真正的滚动容器） */
+html.sheet-open{overflow:hidden!important}
+
 main.view,#view{position:static!important;z-index:auto!important;height:auto!important;overflow:visible!important;box-sizing:border-box}
 
 /* Framework7 组件覆盖（保持本站视觉） */
 .segmented{display:flex!important;background:var(--elev)!important;border:1px solid var(--line)!important;border-radius:12px!important;padding:3px!important}
 .segmented .button{flex:1;margin:0!important;background:transparent!important;color:var(--muted)!important;
-  font-size:12px!important;text-transform:none!important;min-height:0!important;height:auto!important;padding:7px 10px!important;border-radius:9px!important}
-.segmented .button.active{background:var(--panel)!important;color:var(--text)!important;font-weight:650!important;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  font-size:12px!important;text-transform:none!important;min-height:0!important;height:auto!important;padding:7px 10px!important;border-radius:9px!important;
+  min-width:0!important;overflow:visible!important;white-space:nowrap}
+/* 激活态交回皮肤规则（.seg .sq.active / .md 金色胶囊），这里只在没有皮肤规则时兜底 */
+.segmented .button:not(.active){box-shadow:none!important}
+.segmented .button.active{background:transparent!important;color:inherit!important;font-weight:650!important}
+html.md .segmented .button.active{color:var(--accent-ink)!important}
 .button.btn,.button.btn.primary,.chip.button,.seg .button{text-transform:none!important}
 /* Framework7 的 .button 默认 width:100%，会挤掉同行的标题 */
 .button{width:auto!important}
@@ -197,6 +207,8 @@ main.view,#view{position:static!important;z-index:auto!important;height:auto!imp
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
   padding:10px 16px;border-radius:var(--r-btn);font-size:14px;font-weight:600;
   background:var(--panel2);border:1px solid var(--line2);color:var(--text);transition:.15s;
+  height:auto!important;min-height:0!important;line-height:1.35!important;overflow:visible!important;
+  text-transform:none!important;letter-spacing:0;
 }
 .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
@@ -315,12 +327,13 @@ main.view,#view{position:static!important;z-index:auto!important;height:auto!imp
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
 /* toast */
-.toast{
-  position:fixed;left:50%;bottom:calc(var(--tab-h) + var(--safe-b) + 16px);transform:translate(-50%,10px);
+html .toast,.ios .toast,.md .toast{
+  position:fixed!important;left:50%!important;right:auto!important;width:auto!important;max-width:88vw!important;
+  bottom:calc(var(--tab-h) + var(--safe-b) + 16px)!important;transform:translate(-50%,10px);
   background:var(--panel2);border:1px solid var(--line2);color:var(--text);
   padding:9px 15px;border-radius:12px;font-size:12.5px;opacity:0;pointer-events:none;transition:.2s;z-index:80;max-width:88vw;text-align:center;
 }
-.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.show,.ios .toast.show,.md .toast.show{opacity:1!important;transform:translate(-50%,0)!important}
 
 /* 平板/大屏 */
 @media (min-width:680px){

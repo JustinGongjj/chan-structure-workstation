@@ -63,10 +63,19 @@
   /* ---------------- 路由 ---------------- */
   async function go(tab, opts) {
     if (!['overview', 'radar', 'structure', 'theory', 'divination'].includes(tab)) tab = 'overview';
+    if (state.tab === 'divination' && tab !== 'divination') {
+      clearInterval(state.div && state.div.timer);
+      if (state.div) { state.div.timer = null; state.div.live = false; }
+    }
+    closeSheet();
+    const token = (state.renderToken = (state.renderToken || 0) + 1);
     state.tab = tab;
     U.$$('#tabbar .tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     $('#appTitle').textContent = { overview: '总览', radar: '买卖点雷达', structure: '结构分析', theory: '缠论理论', divination: '算卦择时' }[tab];
-    if (!(opts && opts.silent)) history.replaceState(null, '', `?tab=${tab}${location.search.includes('skin=') ? '&skin=' + document.documentElement.dataset.skin : ''}#${tab}`);
+    if (!(opts && opts.silent)) {
+      const q = `?tab=${tab}${location.search.includes('skin=') ? '&skin=' + document.documentElement.dataset.skin : ''}#${tab}`;
+      try { history.pushState({ tab }, '', q); } catch (e) { history.replaceState(null, '', q); }
+    }
     view.innerHTML = skeleton();
     view.scrollTop = 0;
     window.scrollTo(0, 0);
@@ -82,6 +91,9 @@
       if (b) b.addEventListener('click', () => go(state.tab));
     }
   }
+
+  /* 防串页：异步渲染落地前再确认一次当前 Tab（用户可能已经切走了） */
+  const stale = (t) => state.tab !== t;
 
   /* ---------------- 总览 ---------------- */
   async function renderOverview() {
@@ -132,6 +144,7 @@
     </div>`
       : '';
 
+    if (stale('overview')) return;
     view.innerHTML = `
       <h1 class="page-title">总览 <span id="ovStamp">${stampHtml()}</span></h1>
       <div class="page-sub">四市场自选池 · 点击任意标的进入结构分析</div>
@@ -222,6 +235,7 @@
 
   /* ---------------- 雷达 ---------------- */
   async function renderRadar() {
+    if (stale('radar')) return;
     view.innerHTML = `
       <h1 class="page-title">买卖点雷达 ${stampHtml()}</h1>
       <div class="page-sub">按「信号新鲜度 × 类型权重」排序，点击进入结构分析</div>
@@ -257,6 +271,19 @@
   function paintRadar(rows) {
     const box = $('#rList');
     if (!box) return;
+    // 已有的行顺序一致时，只更新数字，不重建 DOM（否则排序抖动会让用户点错标的）
+    const existing = [...box.querySelectorAll('.list-item[data-c]')].map((el) => el.dataset.m + ':' + el.dataset.c);
+    const incoming = rows.filter((r) => !r.error).map((r) => r.market + ':' + r.code);
+    if (existing.length && existing.join() === incoming.join()) {
+      rows.filter((r) => !r.error).forEach((r, i) => {
+        const el = box.querySelectorAll('.list-item[data-c]')[i];
+        const px = el.querySelector('.px');
+        if (px && r.price != null) { px.className = 'px ' + U.cls(r.pct); px.textContent = U.fmt(r.price); }
+        const dt = el.querySelector('.dt');
+        if (dt) { dt.className = 'dt ' + U.cls(r.pct); dt.textContent = U.pct(r.pct); }
+      });
+      return;
+    }
     if (!rows.length) {
       box.innerHTML = '<div class="empty">自选池为空，点右上「＋ 自选」添加</div>';
       return;
@@ -351,6 +378,7 @@
     );
 
     const cv = $('#mChart');
+    if (state.chart) state.chart.destroy();
     state.chart = new ChanChart(cv, $('#mTip'));
     try {
       const res = await API.chan({ market, code, period: state.period, limit: 600 });
@@ -436,7 +464,7 @@
       if (state.chart) state.chart.setHighlight(null);
       return;
     }
-    if (state.chart) state.chart.setHighlight(spec.bands.length ? spec : null);
+    if (state.chart) state.chart.setHighlight(spec.bands.length ? spec : null, { keepView: true });
     box.innerHTML = `<div class="card">
       <div class="row between" style="margin-bottom:6px"><h3 style="font-size:14px">${U.esc(spec.title)}</h3><span class="chip gold">教学标注</span></div>
       <ol class="teach-steps">${spec.steps.map((x) => `<li>${x}</li>`).join('')}</ol>
@@ -549,6 +577,7 @@
 
   /* ---------------- 算卦 ---------------- */
   function renderDivination() {
+    if (stale('divination')) return;
     const d = state.div;
     view.innerHTML = `
       <h1 class="page-title">算卦择时</h1>
@@ -719,7 +748,7 @@
     const sheet = $('#sheet');
     sheet.innerHTML = `<div class="sheet-head"><h3>${U.esc(title)}</h3><button class="sheet-close" id="sheetClose" aria-label="关闭"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>${html}`;
     mask.classList.add('show');
-    document.body.style.overflow = 'hidden';
+    document.documentElement.classList.add('sheet-open');
     const close = () => closeSheet();
     $('#sheetClose').addEventListener('click', close);
     mask.onclick = (e) => {
@@ -729,7 +758,7 @@
   }
   function closeSheet() {
     $('#sheetMask').classList.remove('show');
-    document.body.style.overflow = '';
+    document.documentElement.classList.remove('sheet-open');
   }
 
   async function openSearch() {
@@ -857,7 +886,7 @@
        <div id="mSources" class="hint">检测中…</div>
        <div class="section-head" style="margin-top:14px"><h3>版本</h3></div>
        <div class="row between" style="gap:8px">
-         <span class="hint" id="mVer">手机版 ${BUILD}</span>
+         <span class="hint" id="mVer">手机版 ${BUILD} · 资源 ${(window.__ASSET_V__ || 'dev')}</span>
          <button class="btn button sm" id="mReload">强制刷新</button>
        </div>
        <div class="hint" style="margin-top:16px;line-height:1.8">缠论工作站 · 手机版 ${BUILD}<br>PC 版：<a href="/?desktop=1" style="color:var(--accent)">/?desktop=1</a> · iOS 皮肤 <a href="?skin=ios" style="color:var(--accent)">?skin=ios</a> · Android 皮肤 <a href="?skin=android" style="color:var(--accent)">?skin=android</a></div>`,
@@ -943,6 +972,18 @@
     }
   }
 
+  /* 有新版本部署时提示（不打断当前操作） */
+  function watchUpdate() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      const t = document.getElementById('toast');
+      if (t && !t._updateShown) {
+        t._updateShown = true;
+        toast('已更新到新版本，可下拉刷新');
+      }
+    });
+  }
+
   /* ---------------- 启动 ---------------- */
   function boot() {
     U.$$('#tabbar .tab').forEach((b) => b.addEventListener('click', () => go(b.dataset.tab)));
@@ -963,10 +1004,30 @@
       else if (sh === 'watch') openWatchlist();
       else if (sh === 'theory') openTheory('c', 0);
     }, 700);
+    watchUpdate();
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/m/sw.js', { scope: '/m/' }).catch(() => {});
+      navigator.serviceWorker.register('/m/sw.js?v=' + (window.__ASSET_V__ || 'dev'), { scope: '/m/' }).catch(() => {});
     }
   }
+  /* 安卓返回键 / iOS 手势返回：先关弹层，再回上一个 Tab，最后才退出 */
+  window.addEventListener('popstate', (e) => {
+    if (document.documentElement.classList.contains('sheet-open')) {
+      closeSheet();
+      history.pushState(e.state || {}, '', location.href);
+      return;
+    }
+    const t = (e.state && e.state.tab) || new URLSearchParams(location.search).get('tab') || 'overview';
+    if (t !== state.tab) go(t, { silent: true });
+  });
+
+  /* 全局兜底：任何未捕获异常都给出可见提示，而不是白屏 */
+  window.addEventListener('error', (e) => {
+    if (e && e.message && /Script error/.test(e.message)) return;
+    const v = document.getElementById('view');
+    if (v && !v.children.length) v.innerHTML = '<div class="card empty">页面出错了：' + (e.message || '未知错误') + '<br><button class="btn sm" onclick="location.reload()" style="margin-top:10px">重新加载</button></div>';
+  });
+  window.addEventListener('unhandledrejection', () => {});
+
   document.addEventListener('DOMContentLoaded', boot);
   if (document.readyState !== 'loading') boot();
 })();

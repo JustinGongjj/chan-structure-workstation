@@ -7,6 +7,8 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const zlib = require('zlib');
 const { URL } = require('url');
 
 const S = require('./lib/sources');
@@ -78,27 +80,30 @@ function normalizeWatchlist(raw) {
       if (out[m].length >= 60) break;
     }
   }
-  const total = out.A.length + out.HK.length + out.US.length + out.CR.length;
-  return total ? out : defaultWatchlist();
+  return out; // 空列表也是合法状态（用户可能全删了），不要回退成默认
 }
 
 function loadWatchlist() {
   if (WL) return WL;
+  let raw = null;
   try {
-    WL = normalizeWatchlist(JSON.parse(fs.readFileSync(WL_FILE, 'utf8')));
+    raw = JSON.parse(fs.readFileSync(WL_FILE, 'utf8'));
   } catch (e) {
-    WL = defaultWatchlist();
+    // 文件不存在 → 用默认；文件损坏 → 不要静默当成默认（先备份再说）
+    if (e.code !== 'ENOENT') {
+      try { fs.copyFileSync(WL_FILE, WL_FILE + '.corrupt-' + Date.now()); } catch (e2) {}
+      console.error('[watchlist] 文件损坏，已备份：', e.message);
+    }
   }
+  WL = raw ? normalizeWatchlist(raw) : defaultWatchlist();
   return WL;
 }
 
 function saveWatchlist() {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(WL_FILE, JSON.stringify(WL, null, 2));
-  } catch (e) {
-    console.error('[watchlist] save failed:', e.message);
-  }
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = WL_FILE + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(WL, null, 2));
+  fs.renameSync(tmp, WL_FILE); // 原子替换：进程被杀也不会留下半个文件
 }
 
 function readBody(req, limit = 65536) {
@@ -339,16 +344,68 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+const GZIP_EXT = new Set(['.html', '.css', '.js', '.json', '.webmanifest', '.svg', '.md', '.txt']);
+
+function sendBuffer(req, res, buf, ext, extra = {}) {
+  const etag = 'W/"' + buf.length.toString(16) + '-' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 12) + '"';
+  const headers = {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': GZIP_EXT.has(ext) ? 'no-cache' : 'public, max-age=300',
+    ETag: etag,
+    'X-Asset-Version': ASSET_V,
+    Vary: 'Accept-Encoding',
+    ...extra,
+  };
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, headers).end();
+    return;
+  }
+  const gz = GZIP_EXT.has(ext) && /gzip/.test(req.headers['accept-encoding'] || '') && buf.length > 1024;
+  if (gz) {
+    const z = zlib.gzipSync(buf, { level: 6 });
+    res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip', 'Content-Length': z.length });
+    res.end(z);
+    return;
+  }
+  res.writeHead(200, { ...headers, 'Content-Length': buf.length });
+  res.end(buf);
+}
+
 function sendJSON(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
     'Content-Length': Buffer.byteLength(body),
   });
   res.end(body);
 }
+
+/* ---------------- 构建指纹 ----------------
+   手机端"改了却还是旧的"绝大多数是缓存：Service Worker + HTTP 缓存叠加。
+   这里在启动时给 web/ 下的代码资源算一个内容哈希，HTML 里的 __ASSET_V__ 会被替换成它，
+   于是每次部署 CSS/JS 的 URL 都会变，任何缓存层都不可能再拿旧文件糊弄用户。 */
+function computeAssetVersion() {
+  const h = crypto.createHash('sha1');
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (['downloads', 'vendor'].includes(e.name)) continue;
+        walk(p);
+      } else if (/\.(js|css|html|webmanifest)$/.test(e.name)) files.push(p);
+    }
+  };
+  try { walk(WEB_ROOT); } catch (e) { return 'dev'; }
+  files.sort();
+  for (const f of files) {
+    h.update(path.relative(WEB_ROOT, f));
+    h.update(fs.readFileSync(f));
+  }
+  return h.digest('hex').slice(0, 10);
+}
+const ASSET_V = computeAssetVersion();
 
 const MOBILE_UA = /Android|iPhone|iPod|iPad|Mobile|HarmonyOS|MicroMessenger/i;
 
@@ -371,9 +428,29 @@ function serveStatic(req, res, pathname) {
       return;
     }
     const ext = path.extname(file).toLowerCase();
+    const noCache = ['.html', '.css', '.js', '.json', '.webmanifest'].includes(ext);
+    if (ext === '.html') {
+      // 注入构建指纹：?v=__ASSET_V__ → 每次部署都变，绕开一切缓存
+      fs.readFile(file, 'utf8', (e2, html) => {
+        if (e2) { res.writeHead(500).end('read error'); return; }
+        const out = html
+          .replace(/__ASSET_V__/g, ASSET_V)
+          .replace('</head>', `<script>window.__ASSET_V__=${JSON.stringify(ASSET_V)};</script></head>`);
+        sendBuffer(req, res, Buffer.from(out), '.html', { 'Cache-Control': 'no-cache, no-store, must-revalidate' });
+      });
+      return;
+    }
+    if (GZIP_EXT.has(ext) || st.size < 512 * 1024) {
+      fs.readFile(file, (e2, buf) => {
+        if (e2) { res.writeHead(500).end('read error'); return; }
+        sendBuffer(req, res, buf, ext);
+      });
+      return;
+    }
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': ['.html', '.css', '.js', '.json', '.webmanifest'].includes(ext) ? 'no-cache' : 'public, max-age=300',
+      'Cache-Control': noCache ? 'no-cache' : 'public, max-age=300',
+      'X-Asset-Version': ASSET_V,
       'Content-Length': st.size,
     });
     fs.createReadStream(file).pipe(res);
@@ -381,7 +458,7 @@ function serveStatic(req, res, pathname) {
 }
 
 const routes = {
-  '/api/health': async () => ({ ok: true, uptimeSec: Math.round((Date.now() - START) / 1000), cache: cacheStats(), node: process.version }),
+  '/api/health': async () => ({ ok: true, uptimeSec: Math.round((Date.now() - START) / 1000), cache: cacheStats(), node: process.version, assetVersion: ASSET_V }),
   '/api/markets': async () => ({
     markets: S.MARKETS,
     watchlist: WATCHLIST,
@@ -538,17 +615,23 @@ const server = http.createServer(async (req, res) => {
         if (!['A', 'HK', 'US', 'CR'].includes(market)) throw new Error('不支持的市场');
         if (!code.trim()) throw new Error('请填写代码');
         const norm = S.normCode(market, code);
+        if (!norm) throw new Error('代码格式不正确');
         if (!wl[market]) wl[market] = [];
+        if (wl[market].length >= 60) throw new Error('该市场自选已达 60 个上限');
         if (wl[market].some((x) => x.code === norm)) throw new Error('该标的已在自选池中');
         let name = String(body.name || '').trim();
-        if (!name) {
-          try {
-            const qs = await S.quotes([{ market, code: norm }]);
-            if (qs[0] && qs[0].name) name = qs[0].name;
-          } catch (e) {
-            /* 名字取不到就用代码 */
-          }
+        let quote = null;
+        try {
+          const qs = await S.quotes([{ market, code: norm }]);
+          quote = qs && qs[0];
+        } catch (e) { /* 网络异常时仍然允许添加，只是没名字 */ }
+        if (quote && quote.price > 0) {
+          if (!name) name = quote.name || norm;
+        } else if (!name) {
+          throw new Error('查不到该标的的行情，请检查代码');
         }
+        // await 期间可能已有并发请求加过同一个，落库前再查一次
+        if (wl[market].some((x) => x.code === norm)) throw new Error('该标的已在自选池中');
         wl[market].push({ code: norm, name: name || norm });
         saveWatchlist();
         sendJSON(res, 200, { ok: true, list: wl, added: { market, code: norm, name: name || norm } });

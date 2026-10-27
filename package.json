@@ -39,7 +39,8 @@
     "check:api": "node scripts/apicheck.js",
     "check:ui": "node scripts/uicheck.js",
     "check:flow": "node scripts/flowcheck.js",
-    "check:all": "node --test test/*.test.js && node scripts/apicheck.js && node scripts/uicheck.js && node scripts/flowcheck.js"
+    "check:all": "node --test test/*.test.js && node scripts/apicheck.js && node scripts/uicheck.js && node scripts/sheetcheck.js && node scripts/flowcheck.js",
+    "check:sheet": "node scripts/sheetcheck.js"
   },
   "engines": {
     "node": ">=18"

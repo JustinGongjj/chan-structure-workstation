@@ -196,9 +196,24 @@ All responses are `{ ok: true, … }`; failures are `{ ok: false, error }` with 
 
 ## Testing
 
+五层门禁，一条命令全跑：`npm run check:all`
+
+| 命令 | 覆盖 | 现状 |
+| --- | --- | --- |
+| `npm test` | 缠论引擎不变量、干支锚点、农历/紫微/奇门、择时、算卦确定性 | **42 项** |
+| `npm run check:api` | 逐条打 39 个接口：四市场报价/K线/缠论、多级别、雷达、择时七法、择时验证、回测、算卦可变性、自选池增删+去重+垃圾代码拒绝、静态资源 | **39/39** |
+| `npm run check:ui` | 真实 Chromium(CDP)：桌面 1440/1024、iOS 390×844、Android 412×915 × 深浅色。查 JS 报错、横向溢出、**内容超出却滚不动**、轮询是否打回滚动位置、5 个 Tab 是否都有内容 | **6/6** |
+| `npm run check:sheet` | 弹层矩阵：5 Tab × 3 弹层 × 2 皮肤 × 2 主题，断言弹层背景不透明、不被页面压住、无零宽标题、无超宽元素 | **48/48** |
+| `npm run check:flow` | 交互链路：搜索→进结构、自选池增删、**算卦两次必换卦**、理论弹层、深链、桌面 6 页与弹窗 | **17/17** |
+
 ```bash
-npm test          # node:test — no network required
+npm test              # 只需单元测试（无网络）
+npm run check:all     # 全量：单测 + 接口 + UI + 弹层 + 交互（需本机 8931 已在跑）
 ```
+
+UI 三条用 `chrome-headless-shell` + CDP over WebSocket（Node 22 内置 WebSocket），
+加 `--shots /tmp/out` 可落截图。它们不是"跑通就行"，而是逐项断言可复现的症状——
+手机滚不动、弹层透明、标题零宽、算卦不换卦都是这样被抓出来的。
 
 Covers inclusion-merge invariants, stroke/segment/pivot structural invariants, determinism of the full analysis, signal type validity, divergence sanity, graceful degradation on short data, ganzhi anchors (1949-10-01 甲子日, 2000-01-01 戊午日, 2024-02-10 甲辰日), solar-term counts and 立春 windows, six-line chart invariants, and casting determinism ("different symbol ⇒ different hexagram").
 
@@ -223,6 +238,35 @@ test/                 node:test suites
 docs/                 architecture, data sources, deploy, roadmap, launch playbook
 space/                Hugging Face Space (Docker SDK)
 ```
+
+---
+
+## 更新日志 / History
+
+按时间倒序。每条都标注了"怎么验证"，避免同一类问题重复踩。
+
+| 日期 | 版本 | 内容 | 验证方式 |
+| --- | --- | --- | --- |
+| 2026-10-27 | v1.1 | **缓存链路重做**：服务端按 `web/` 内容算构建哈希，HTML 里的 `__ASSET_V__` 注入成 `?v=<sha10>`，CSS/JS 每次部署 URL 都变；静态资源加 ETag/304 + gzip（F7 CSS 526KB→77KB）；Service Worker 升到 v3（导航网络优先、带 `?v=` 资源不可变缓存、离线回退只对 HTML 生效、安装用 `allSettled` 不再被一次 404 卡死） | `curl -D- /m/ \| grep X-Asset-Version` 每次改样式都会变；`curl -H 'Accept-Encoding: gzip'` 看 Content-Encoding；断网刷新仍能打开外壳 |
+| 2026-10-27 | v1.1 | **手机端三处"死机"根因修复**：F7 的 `html,body{height:100%}`+`overflow:hidden` 把视口锁成不可滚动；`html` 的 `overflow-y:visible` 让视口继承 body 的 overflow；`overscroll-behavior` 加在 body 上会吞掉用户滚动。另加图表手势仲裁（纵向放行页面滚动，横向才接管平移） | `npm run check:ui`（断言"内容超出屏幕却滚不动"）；滚动容器=document、手势位移 506px |
+| 2026-10-27 | v1.1 | **弹层两层框架冲突**：`.view{z-index:5000}` 把页面压到弹层之上（文字叠在一起）；元素级 `button{width:100%}` 把弹层标题挤成 0 宽。同时修 toast 被 `.ios/.md .toast` 顶出屏幕、`.btn` 被 F7 的 `--f7-button-height` 裁字 | `npm run check:sheet`（48 组断言：背景/层级/零宽/超宽） |
+| 2026-10-27 | v1.1 | **服务端加固**：自选池原子写（tmp+rename）、空表不再回退默认、垃圾代码被拒（先取行情校验）、60 个上限、并发重复二次校验、写接口去掉 `Access-Control-Allow-Origin:*` | `npm run check:api`（含"去重被正确拒绝"与"垃圾代码被拒"） |
+| 2026-10-27 | v1.1 | **交互健壮性**：切 Tab 清掉算卦 12s 跟随定时器、异步渲染加防串页守卫、雷达轮询改原地更新（不再把手指下的行换掉）、返回键先关弹层再回上页、未捕获异常给可见提示、chart 支持 `destroy()` 修监听泄漏、滚轮默认交还页面滚动（Ctrl/⌘+滚轮才缩放） | `npm run check:flow`（17 步） |
+| 2026-10-27 | v1.0 | 打包下载（源码 zip + git bundle + 校验和）；下载产物改为不入库，`git filter-branch` 清掉历史里的 150MB 大包 | `/downloads/` 三个文件 + `SHA256SUMS.txt` |
+| 2026-10-27 | v1.0 | 手机版接入 Framework7 8.3.3 组件层（同仓内置、零 CDN），iOS/Android 双皮肤 + 深浅双主题 | `/m/?skin=ios|android&theme=dark|light` |
+| 2026-10-27 | v1.0 | 108 课索引（14 主题、仅收录可核实的课名）+ 天涯/博客言论集 | `npm test` 里的课数与主题唯一性断言 |
+| 2026-10-27 | v1.0 | 形而上知识库（干支/紫微/奇门/梅花/六爻 + 14 本书目索引）、概念 1v1 教学走查 | `GET /api/metaphysics`、理论页 `?tx=` 深链 |
+| 2026-10-27 | v1.0 | 天文算法农历（Meeus 新月 + 无中气置闰）、紫微斗数排盘、奇门遁甲时家简盘，全部接入择时评分与验证管线 | `npm test`（春节/中秋/闰月锚点、紫微五行局、奇门 8 门 9 星 8 神不变量） |
+| 2026-10-27 | v1.0 | 择时实验室（7 法合成）、信号历史回测（命中率/盈亏比/超额）、理论语料量化 | `/api/timing`、`/api/backtest`、`/api/timing/validate` |
+| 2026-10-27 | v1.0 | 竞品分析（czsc 6459★ / chan.py 2260★ / chanlun-pro 1072★ / chanvis 625★）与差异化定位 | `docs/COMPETITIVE.md` |
+| 2026-10-27 | v1.0 | 发布工具链（GitHub API 发布器 + HF 脚本 + 发布指南） | `scripts/publish-github.js`、`docs/PUBLISH.md` |
+| 2026-10-26 | v1.0.0 | 首版：确定性缠论引擎（包含处理→分型→笔→线段→中枢→走势→背驰→1/2/3 类买卖点）、四市场行情、桌面工作台、手机 PWA | `npm test` 42 项 |
+
+### 已知限制（明确写在前面，不粉饰）
+
+- 线段用"三笔成段"近似，属于简化实现；背驰用 MACD 面积比的数值阈值（段 0.92 / 笔 0.85），不是原文的递归级别证明。
+- 择时验证的结论是直给的：上证 r≈-0.08、BTC r≈+0.125（61.5% 但有多重比较警告）、NVDA r≈+0.07。**没有稳定显著优势，当娱乐与观察用。**
+- 108 课只标注了 50 个可核实的课名，其余按主题聚合；言论集为转述，不含原文版权内容；书目索引不含正文。
 
 ---
 
