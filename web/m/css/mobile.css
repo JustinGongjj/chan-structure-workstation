@@ -71,7 +71,8 @@ body{
   padding-top:calc(var(--appbar-h) + var(--safe-t));
   padding-bottom:calc(var(--tab-h) + var(--safe-b) + 6px);
 }
-button{font-family:inherit;color:inherit;background:none;border:0}
+/* F7 有 button{width:100%}，会让图标按钮撑满整行（弹层标题被挤成 0 宽） */
+button{font-family:inherit;color:inherit;background:none;border:0;width:auto}
 a{color:inherit;text-decoration:none}
 
 /* ---------- 顶栏 ---------- */

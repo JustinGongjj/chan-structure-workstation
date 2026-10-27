@@ -71,6 +71,15 @@ npx cap open ios       # Xcode（需 macOS + 开发者账号）
    在 `body` 上写 `overscroll-behavior-y: contain/none`，Chrome 会把整个视口的用户滚动一起吞掉
    （滚轮/手指都不动，`scrollTo` 依然能动）。→ 只给 `html` 设 `none`，`body` 保持 `auto`。
 
+4. **`button` 默认 `width:100%`**
+   F7 有元素级规则 `button{width:100%}`（不是 `.button` 类）。弹层右上角的关闭图标会撑满整行，
+   把标题挤成 0 宽（表现为"标题消失/竖排单字"）。→ 我们的 `button` 重置里补 `width:auto`。
+
+5. **`.view` 的 `z-index:5000`**
+   F7 有 `.view,.views{position:relative;height:100%;z-index:5000;overflow:hidden}`。
+   我们的 `<main class="view">` 正好撞名：页面内容层级 5000，弹层只有 60，
+   于是弹层文字和页面文字叠在一起（看起来"花了"）。→ `main.view{position:static;z-index:auto;height:auto;overflow:visible}`。
+
 另外：图表 `canvas` 用 `touch-action: pan-y`，并在 `touchmove` 里做方向仲裁——
 纵向手势放行页面滚动，只有确认横向（`dx > 6 且 dx ≥ dy`）才 `preventDefault` 接管为平移。
 否则手指落在 K 线图上时整页都滑不动。
@@ -82,7 +91,7 @@ npx cap open ios       # Xcode（需 macOS + 开发者账号）
 | `npm test` | 42 个单测 | 缠论引擎 / 干支 / 农历 / 紫微 / 奇门 / 择时 / 算卦 |
 | `npm run check:api` | 39 项 | 逐条打所有 `/api/*`（四市场报价/K线/缠论、择时、回测、算卦、自选池增删去重、静态资源） |
 | `npm run check:ui` | 6 个环境 | 真实 Chromium + CDP：桌面 1440/1024、iOS 390、Android 412 × 深浅色；查 JS 报错、横向溢出、**内容超出屏幕但滚不动**、轮询是否把滚动位置弹回顶部、5 个 Tab 是否都有内容 |
-| `npm run check:flow` | 16 步 | 交互链路：搜索→进结构、自选池增删、算卦两次起卦必须换卦、理论弹层、深链、桌面 6 页与弹窗 |
+| `npm run check:flow` | 17 步 | 交互链路：搜索→进结构、自选池增删（含弹层层级/背景断言）、算卦两次起卦必须换卦、理论弹层、深链、桌面 6 页与弹窗 |
 
 `check:ui` / `check:flow` 直接驱动 `chrome-headless-shell`（CDP over WebSocket，Node 22 内置），
 截图参数 `--shots /tmp/out`。手机滚动这条回归项就是这么抓出来的：
