@@ -177,6 +177,10 @@
             <div id="structSignals" class="sig-list compact"></div>
           </div>
           <div class="card side-block">
+            <div class="card-head"><h3>信号历史表现</h3><span class="hint" id="btHint">回测中…</span></div>
+            <div id="btBody" class="bt-body"><div class="loading" style="height:60px">计算中…</div></div>
+          </div>
+          <div class="card side-block">
             <div class="card-head"><h3>体系解读</h3></div>
             <div id="structNarrative" class="narrative"></div>
           </div>
@@ -224,10 +228,12 @@
           <input class="input sm" id="theorySearch" placeholder="搜索概念 / 关键词">
         </div>
       </div>
+      <div class="stat-strip" id="theoryStats"></div>
       <div class="seg tab-seg" id="theoryTabs">
         <button class="sq active" data-tab="concepts">核心概念</button>
         <button class="sq" data-tab="questions">问缠 · 在哪里</button>
-        <button class="sq" data-tab="lessons">108 课导读</button>
+        <button class="sq" data-tab="lessons">108 课 · 书目</button>
+        <button class="sq" data-tab="methods">择时方法</button>
         <button class="sq" data-tab="practices">实战流程</button>
       </div>
       <div id="theoryBody"></div>
@@ -275,6 +281,16 @@
             <div class="card" id="divTimeCard"></div>
           </div>
           <div class="card" id="divNarrative"></div>
+          <div class="card" id="timingCard">
+            <div class="card-head"><h3>择时方法实验室</h3><span class="hint">多方法并行 · 可回测检验</span></div>
+            <div class="hscroll" id="timingMethods" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+            <div id="timingBody"></div>
+            <div class="row-inline" style="margin-top:10px;display:flex;gap:8px">
+              <button class="btn sm" id="timingValidate">历史检验（近 120 日）</button>
+              <span class="hint" id="timingValidateHint">检验"高分日次日是否更容易涨"</span>
+            </div>
+            <div id="timingValidateBody" class="bt-body"></div>
+          </div>
         </div>
       </div>
     </section>

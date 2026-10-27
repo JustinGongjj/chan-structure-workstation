@@ -12,6 +12,7 @@
     last: null,
     history: [],
     busy: false,
+    timing: { methods: ['ganzhi', 'meihua', 'liuyao', 'jianchu', 'cycle'], data: null, valid: null },
   };
 
   /* ---------------- 工具 ---------------- */
@@ -87,6 +88,7 @@
       if (prev && prev.sig !== sig) {
         U.toast(`卦变：${prev.res.hexagram.ben.name} → ${res.hexagram.ben.name}（动第 ${res.hexagram.dong} 爻）`);
       }
+      loadTiming();
       U.$('#divLiveTag').innerHTML = state.live
         ? '<span class="live-dot"><i></i>实时跟随 · 12s</span>'
         : `<span class="hint">最后起卦 ${new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 19)}</span>`;
@@ -266,6 +268,108 @@
         .join('');
   }
 
+  /* ---------------- 择时方法实验室 ---------------- */
+  const TM_META = [
+    ['ganzhi', '四柱·节气五行'],
+    ['meihua', '梅花易数'],
+    ['liuyao', '六爻纳甲'],
+    ['jianchu', '建除十二神'],
+    ['cycle', '日历周期因子'],
+  ];
+
+  function renderTimingChips() {
+    const box = U.$('#timingMethods');
+    if (!box) return;
+    box.innerHTML = TM_META.map(
+      ([id, name]) =>
+        `<button class="chip tm-chip ${state.timing.methods.includes(id) ? 'on' : ''}" data-tm="${id}">${name}</button>`
+    ).join('');
+    U.$$('#timingMethods .tm-chip').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.tm;
+        const has = state.timing.methods.includes(id);
+        if (has && state.timing.methods.length === 1) return U.toast('至少保留一个方法');
+        state.timing.methods = has ? state.timing.methods.filter((x) => x !== id) : [...state.timing.methods, id];
+        renderTimingChips();
+        loadTiming();
+      })
+    );
+  }
+
+  async function loadTiming() {
+    const box = U.$('#timingBody');
+    if (!box) return;
+    try {
+      const res = await API.timing({ market: state.market, code: state.symbol, methods: state.timing.methods.join(',') });
+      state.timing.data = res;
+      renderTiming(res);
+    } catch (e) {
+      box.innerHTML = `<div class="hint">择时计算失败：${U.esc(e.message)}</div>`;
+    }
+  }
+
+  function renderTiming(res) {
+    const box = U.$('#timingBody');
+    const comp = res.composite;
+    const color = comp >= 58 ? 'var(--down)' : comp <= 42 ? 'var(--up)' : 'var(--gold)';
+    const rows = Object.values(res.methods)
+      .map((m) => {
+        const c = m.score >= 58 ? 'var(--down)' : m.score <= 42 ? 'var(--up)' : 'var(--gold)';
+        return `<div class="tm-row" title="${U.esc(m.reasons.slice(1).join('；'))}">
+          <span class="nm">${U.esc(m.name)}</span>
+          <span class="bar"><i style="width:${m.score}%;background:${c}"></i></span>
+          <span class="sc" style="color:${c}">${m.score}</span>
+          <span class="chip">${U.esc(m.label)}</span>
+        </div>`;
+      })
+      .join('');
+    box.innerHTML = `
+      <div class="row between" style="margin-bottom:8px">
+        <div>
+          <div class="hint">加权综合分（${Object.keys(res.methods).length} 个方法 · 一致性 ${(res.agreement * 100).toFixed(0)}%）</div>
+          <div style="font-size:26px;font-weight:800;color:${color}">${comp.toFixed(1)} <span style="font-size:13px;font-weight:500">${U.esc(res.label)}</span></div>
+        </div>
+        <div class="hint" style="text-align:right;max-width:220px">${U.esc(res.verdict.text)}</div>
+      </div>
+      ${rows}
+      <div class="hint" style="margin-top:8px">${U.esc(res.disclaimer)}</div>`;
+  }
+
+  async function runTimingValidate() {
+    const box = U.$('#timingValidateBody');
+    const hint = U.$('#timingValidateHint');
+    if (!box) return;
+    box.innerHTML = '<div class="hint">检验中（逐日回算 120 天）…</div>';
+    if (hint) hint.textContent = '检验中…';
+    try {
+      const res = await API.timingValidate({ market: state.market, code: state.symbol, days: 120, horizon: 1 });
+      state.timing.valid = res;
+      const rows = res.methods
+        .map((m) => {
+          const c = m.corr == null ? 'var(--faint)' : m.corr > 0.05 ? 'var(--down)' : m.corr < -0.05 ? 'var(--up)' : 'var(--faint)';
+          return `<tr>
+            <td class="name">${U.esc((TM_META.find(([id]) => id === m.id) || [, m.id])[1])}</td>
+            <td style="color:${c}">${m.corr == null ? '—' : m.corr.toFixed(3)}</td>
+            <td>${m.high.n ? (m.high.winRate * 100).toFixed(0) + '%' : '—'}</td>
+            <td>${m.high.n || 0}</td>
+            <td>${m.spread == null ? '—' : (m.spread * 100).toFixed(1) + 'pp'}</td>
+          </tr>`;
+        })
+        .join('');
+      const v = res.verdict;
+      const cls = v.level === 'positive' ? 'bt-ok' : v.level === 'insufficient' ? '' : 'bt-warn';
+      box.innerHTML = `
+        <div class="hint">样本 ${res.days} 日 · 持有 ${res.horizon} 根 · 基线 ${(res.baseline.avgRet * 100).toFixed(3)}%/次 · 综合分与次日收益 r=${res.corr == null ? '—' : res.corr}</div>
+        <table class="bt-table"><thead><tr><th>方法</th><th>相关系数 r</th><th>高分组命中</th><th>样本</th><th>高低差</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="${cls || 'hint'}" style="margin-top:8px">${U.esc(v.text)}</div>
+        <div class="hint" style="margin-top:6px">口径：每天用当日数据算分，看次日收盘相对当日收盘的涨跌；相关系数接近 0 说明该方法对涨跌没有预测力。</div>`;
+      if (hint) hint.textContent = `已检验 · n=${res.days}`;
+    } catch (e) {
+      box.innerHTML = `<div class="hint">检验失败：${U.esc(e.message)}</div>`;
+      if (hint) hint.textContent = '失败';
+    }
+  }
+
   /* ---------------- 事件 ---------------- */
   function setLive(on) {
     state.live = on;
@@ -330,6 +434,9 @@
       state.timeFixed = true;
       cast({ advance: true, quiet: true });
     });
+    renderTimingChips();
+    const tv = U.$('#timingValidate');
+    if (tv) tv.addEventListener('click', runTimingValidate);
     U.$('#divCast').addEventListener('click', () => cast({ advance: true }));
     U.$('#divLive').addEventListener('click', () => setLive(!state.live));
     U.$('#castNow').addEventListener('click', () => {
@@ -341,6 +448,9 @@
   });
 
   window.PageDivination = {
-    render: () => cast({ advance: false }),
+    render: () => {
+      renderTimingChips();
+      return cast({ advance: false });
+    },
   };
 })();

@@ -430,6 +430,37 @@ button{font-family:inherit}
 .cal-strip .val{color:var(--ink-gold);font-family:"Songti SC","STSong",serif;font-size:14px;letter-spacing:1px}
 .cal-strip .tip{color:var(--muted);font-size:11.5px}
 
+
+/* 回测 / 择时实验室 */
+.bt-body{font-size:11.5px;color:var(--muted);line-height:1.8}
+.bt-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+.bt-table th{font-size:10px;color:var(--faint);font-weight:500;padding:4px;border-bottom:1px solid var(--line);text-align:left}
+.bt-table td{padding:4px;border-bottom:1px solid var(--dash);font-family:ui-monospace,Menlo,monospace}
+.bt-table td.name{font-family:inherit}
+.bt-warn{font-size:10.5px;color:var(--up-text);background:var(--up-tint);border-left:2px solid var(--up);padding:5px 8px;border-radius:0 6px 6px 0;margin-top:8px}
+.bt-ok{font-size:10.5px;color:var(--down-text);background:var(--down-tint);border-left:2px solid var(--down);padding:5px 8px;border-radius:0 6px 6px 0;margin-top:8px}
+.tm-chip{cursor:pointer;user-select:none}
+.tm-chip.on{background:var(--gold-tint);border-color:var(--gold-tint2);color:var(--ink-gold)}
+.tm-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--dash)}
+.tm-row:last-child{border-bottom:0}
+.tm-row .nm{width:104px;flex:none;font-size:11.5px}
+.tm-row .bar{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.tm-row .bar i{display:block;height:100%}
+.tm-row .sc{width:30px;text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+.tm-verdict{font-size:11px;color:var(--muted);line-height:1.75;margin-top:8px}
+
+
+/* 统计条 / 书目 */
+.stat-strip{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.stat-strip .stat{display:flex;flex-direction:column;gap:1px;border:1px solid var(--line);border-radius:10px;padding:6px 11px;background:var(--elev);min-width:96px}
+.stat-strip .stat b{font-size:13px;color:var(--ink-gold);font-family:ui-monospace,Menlo,monospace}
+.stat-strip .stat em{font-style:normal;font-size:9.5px;color:var(--faint);letter-spacing:.4px}
+.bib-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:10px}
+.bib-item{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--elev)}
+.bib-t{font-size:12.5px;font-weight:600}
+.bib-m{font-size:10.5px;color:var(--faint);margin-top:4px}
+.bib-n{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.6}
+
 /* toast */
 .toast{
   position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);

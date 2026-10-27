@@ -5,6 +5,7 @@
     concepts: '核心概念',
     questions: '问缠 · 在哪里',
     lessons: '108 课导读',
+    methods: '择时方法',
     practices: '实战流程',
   };
   // 问答 → 图上标注 key
@@ -43,11 +44,13 @@
 
   function render() {
     U.$$('#theoryTabs .sq').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    renderStats();
     const theory = T();
     const body = U.$('#theoryBody');
     if (tab === 'concepts') body.innerHTML = renderConcepts(theory);
     else if (tab === 'questions') body.innerHTML = renderQuestions(theory);
-    else if (tab === 'lessons') body.innerHTML = renderLessons(theory);
+    else if (tab === 'lessons') body.innerHTML = renderLessons(theory) + renderBibliography(theory);
+    else if (tab === 'methods') body.innerHTML = renderMethods(theory);
     else body.innerHTML = renderPractices(theory);
 
     U.$$('#theoryBody [data-item]').forEach((el) =>
@@ -84,6 +87,68 @@
     q.delete('tx');
     const url = location.pathname + (q.toString() ? '?' + q.toString() : '') + location.hash;
     history.replaceState(null, '', url);
+  }
+
+  function renderStats() {
+    const el = U.$('#theoryStats');
+    if (!el) return;
+    const t = T();
+    const lib = (t.corpus && t.corpus.library) || {};
+    const origin = (t.corpus && t.corpus.origin) || {};
+    const chars = lib.chars ? (lib.chars / 10000).toFixed(2) + ' 万字' : '—';
+    el.innerHTML = [
+      ['核心概念', (lib.concepts || (t.concepts || []).length) + ' 条'],
+      ['问缠问答', (lib.questions || (t.questions || []).length) + ' 条'],
+      ['108 课导读', (lib.lessons || (t.lessons || []).length) + ' 组 · ' + (origin.topics || 14) + ' 专题'],
+      ['实战流程', (lib.practices || (t.practices || []).length) + ' 套'],
+      ['本库正文', chars],
+      ['引擎规则', ((t.corpus && t.corpus.method && t.corpus.method.engineRules) || 9) + ' 步 · ' + ((t.corpus && t.corpus.method && t.corpus.method.tests) || 22) + ' 项测试'],
+    ]
+      .map(([k, v]) => `<span class="stat"><b>${U.esc(v)}</b><em>${U.esc(k)}</em></span>`)
+      .join('');
+  }
+
+  function renderBibliography(t) {
+    const c = t.corpus;
+    if (!c || !c.origin) return '';
+    const o = c.origin;
+    const books = [
+      o.originalBook ? { ...o.originalBook, tag: '原文解读本' } : null,
+      ...(o.collections || []).map((b) => ({ ...b, tag: '文集/合集' })),
+    ].filter(Boolean);
+    return `<div class="card" style="margin-top:14px">
+      <div class="card-head"><h3>语料与书目</h3><span class="hint">外部书目仅作索引，本站为自建摘要</span></div>
+      <div class="kv" style="font-size:12px">
+        <div class="row"><span class="k">原文规模</span><span class="v">${o.lessons || 108} 课 · 归为 ${o.topics || 14} 个专题 · 连载 ${U.esc(o.blogYears || '2005-2008')}</span></div>
+        <div class="row"><span class="k">本库规模</span><span class="v">${(c.library.chars / 10000).toFixed(2)} 万字（概念 ${c.library.concepts} · 问答 ${c.library.questions} · 课段 ${c.library.lessons} · 流程 ${c.library.practices}）</span></div>
+      </div>
+      <div class="bib-list">${books
+        .map(
+          (b) => `<div class="bib-item"><div class="bib-t">${U.esc(b.title)}</div><div class="bib-m">${U.esc([b.publisher, b.year, b.pages ? b.pages + ' 页' : '', b.isbn ? 'ISBN ' + b.isbn : ''].filter(Boolean).join(' · '))}${b.tag ? ' · ' + U.esc(b.tag) : ''}</div>${b.note ? `<div class="bib-n">${U.esc(b.note)}</div>` : ''}</div>`
+        )
+        .join('')}</div>
+      <div class="hint" style="margin-top:8px">${U.esc(o.note || '')}</div>
+    </div>`;
+  }
+
+  function renderMethods(t) {
+    const list = t.timingMethods || [];
+    if (!list.length) return '<div class="loading">暂无方法数据</div>';
+    return (
+      `<div class="card" style="margin-bottom:12px"><div class="hint">择时方法不是信号源：每种方法都只是把传统历法/卦象结构化，本站提供「历史检验」让你自己看它在这个标的上到底有没有用。</div></div>` +
+      list
+        .map(
+          (m) => `<div class="q-item">
+        <div class="q">${U.esc(m.name)} <span class="chip gold">${U.esc(m.base)}</span> <span class="hint">${U.esc(m.school)}</span></div>
+        <div class="a"><b style="color:var(--ink-gold)">取数</b>　${U.esc(m.scoreLaw)}</div>
+        <div class="steps">${(m.strengths || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</div>
+        ${(m.weaknesses || []).length ? `<div class="pit">局限：${m.weaknesses.map(U.esc).join('；')}</div>` : ''}
+        ${m.bestFor ? `<div class="hint" style="margin-top:6px">适用：${U.esc(m.bestFor)}</div>` : ''}
+        ${m.honest ? `<div class="hint" style="margin-top:6px;color:var(--up-text)">${U.esc(m.honest)}</div>` : ''}
+      </div>`
+        )
+        .join('')
+    );
   }
 
   function renderConcepts(t) {

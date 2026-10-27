@@ -86,6 +86,7 @@
         .map((t) => `<span>${t}</span>`)
         .join('');
       loadSuite(market, code);
+      loadBacktest(market, code, period);
       applyHighlight(res);
     } catch (e) {
       U.$('#chartNote').innerHTML = '<span style="color:var(--up)">加载失败：' + U.esc(e.message) + '</span>';
@@ -227,6 +228,38 @@
       /* 静默 */
     } finally {
       ticking = false;
+    }
+  }
+
+  /* ---------- 信号历史表现（同标的同级别回测） ---------- */
+  async function loadBacktest(market, code, period) {
+    const box = U.$('#btBody');
+    const hint = U.$('#btHint');
+    if (!box) return;
+    box.innerHTML = '<div class="loading" style="height:60px">回测中…</div>';
+    try {
+      const bt = await API.backtest({ market, code, period, horizon: 5 });
+      if (hint) hint.textContent = `后 ${bt.horizon} 根 · 样本 ${bt.overall.n || 0}`;
+      if (!bt.signals || !bt.overall.n) {
+        box.innerHTML = '<div class="hint">本级历史买卖点样本不足（需信号出现在最近 ${bt.bars} 根内且已走完 ' + bt.horizon + ' 根），暂不给统计。</div>';
+        return;
+      }
+      const small = bt.overall.n < 10;
+      const rows = Object.entries(bt.byType)
+        .sort((a, b) => b[1].n - a[1].n)
+        .map(
+          ([t, v]) =>
+            `<tr><td class="name">${U.SIG_SHORT[t] || t}</td><td>${v.n}</td><td class="${v.winRate >= 0.5 ? 'up' : 'down'}">${(v.winRate * 100).toFixed(0)}%</td><td class="${v.avgRet >= 0 ? 'up' : 'down'}">${(v.avgRet * 100).toFixed(2)}%</td><td>${v.profitFactor == null ? '—' : v.profitFactor}</td></tr>`
+        )
+        .join('');
+      box.innerHTML = `
+        <div>总体：命中 <b class="${bt.overall.winRate >= 0.5 ? 'up' : 'down'}">${(bt.overall.winRate * 100).toFixed(1)}%</b>（n=${bt.overall.n}），均值 ${(bt.overall.avgRet * 100).toFixed(2)}%，基线 ${(bt.baseline.avgRet * 100).toFixed(3)}%，超额 ${(bt.edge * 100).toFixed(2)}pp</div>
+        <table class="bt-table"><thead><tr><th>信号</th><th>次数</th><th>命中</th><th>均值</th><th>盈亏比</th></tr></thead><tbody>${rows}</tbody></table>
+        ${small ? '<div class="bt-warn">样本太小（<10），只能当参考，不能当胜率承诺。</div>' : bt.edge > 0 ? '<div class="bt-ok">样本内优于基线，仍需样本外验证。</div>' : '<div class="bt-warn">样本内未跑赢基线，说明该级别信号在此标的上没有稳定优势。</div>'}
+        <div class="hint" style="margin-top:6px">口径：信号当根收盘入场，持有 ${bt.horizon} 根，含 ${bt.feeBps}bp 成本；做空类信号按反向计。</div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="hint">回测失败：${U.esc(e.message)}</div>`;
+      if (hint) hint.textContent = '失败';
     }
   }
 

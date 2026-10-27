@@ -12,6 +12,8 @@ const { URL } = require('url');
 const S = require('./lib/sources');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
+const TIMING = require('./lib/timing');
+const BT = require('./lib/backtest');
 const { cached, mapPool, cacheStats } = require('./lib/http');
 
 const PORT = Number(process.env.PORT || 8931);
@@ -405,6 +407,64 @@ const routes = {
       nocache: u.searchParams.get('nocache') === '1',
     }),
   '/api/daily': async () => V.daily(),
+  '/api/timing': async (u) => {
+    const methods = (u.searchParams.get('methods') || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return TIMING.evaluate({
+      market: (u.searchParams.get('market') || 'A').toUpperCase(),
+      code: u.searchParams.get('code') || u.searchParams.get('symbol') || '',
+      ts: u.searchParams.get('ts') ? Number(u.searchParams.get('ts')) : Date.now(),
+      methods: methods.length ? methods : undefined,
+      weights: u.searchParams.get('weights') ? JSON.parse(u.searchParams.get('weights')) : undefined,
+    });
+  },
+  '/api/timing/validate': async (u) => {
+    const market = (u.searchParams.get('market') || 'A').toUpperCase();
+    const code = u.searchParams.get('code') || u.searchParams.get('symbol') || '';
+    const period = u.searchParams.get('period') || 'day';
+    const kl = await S.klines({ market, code, period, limit: 800 });
+    const methods = (u.searchParams.get('methods') || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const stats = BT.timingStats(kl.bars, (ts) => TIMING.evaluate({ market, code, ts, methods: methods.length ? methods : undefined }), {
+      days: Number(u.searchParams.get('days') || 160),
+      horizon: Number(u.searchParams.get('horizon') || 1),
+    });
+    return {
+      market,
+      code: S.normCode(market, code),
+      period,
+      periodName: kl.periodName,
+      source: kl.source,
+      bars: kl.bars.length,
+      methodMeta: TIMING.METHODS,
+      ...stats,
+    };
+  },
+  '/api/backtest': async (u) => {
+    const market = (u.searchParams.get('market') || 'A').toUpperCase();
+    const code = u.searchParams.get('code') || u.searchParams.get('symbol') || '';
+    const period = u.searchParams.get('period') || 'day';
+    const kl = await S.klines({ market, code, period, limit: 800 });
+    const ana = C.analyze(kl.bars, { period, market, code });
+    const stats = BT.signalStats(ana.bars, ana.signals, {
+      horizon: Number(u.searchParams.get('horizon') || 5),
+      feeBps: Number(u.searchParams.get('feeBps') || 8),
+    });
+    return {
+      market,
+      code: S.normCode(market, code),
+      period,
+      level: ana.level,
+      source: kl.source,
+      bars: ana.bars.length,
+      signals: ana.signals.length,
+      ...stats,
+    };
+  },
   '/api/divination': async (u) => {
     const market = (u.searchParams.get('market') || 'A').toUpperCase();
     const code = u.searchParams.get('code') || u.searchParams.get('symbol') || '';

@@ -8,7 +8,10 @@
 - [x] Desktop workstation (6 pages, dark/light, deep links)
 - [x] Mobile PWA (iOS + Android skins, touch chart, installable)
 - [x] I Ching timing module with reproducible seeds
-- [x] Unit tests (node:test) + CI
+- [x] Unit tests (node:test) + CI (27 tests)
+- [x] Theory corpus quantified (40 concepts / ≈4.56万字 / bibliography)
+- [x] Timing-method lab with historical validation (5 methods + composite)
+- [x] Signal backtest with hit rate, profit factor and edge vs baseline
 
 ## v1.1 — "international"
 
@@ -18,7 +21,13 @@
 - [ ] OpenAPI spec + `/api/docs` playground
 - [ ] `GET /api/chan?format=csv|ndjson` for research pipelines
 
-## v1.2 — "embeddable"
+## v1.2 — "measurable" (in progress)
+
+- [ ] 紫微斗数 流日盘（需农历排盘）与 奇门遁甲 时家盘，接入统一评分与回测接口
+- [ ] 择时权重自动校准（按标的滚动优化，避免过拟合的 walk-forward 版本）
+- [ ] 信号统计样本外滚动（train/test split）与置信区间
+
+## v1.3 — "embeddable"
 
 - [ ] Python package `chanx` (pure Python port or a thin client) with parity tests against the JS fixtures
 - [ ] Adapters for **vectorbt**, **backtrader**, **qlib** (`ChanFeature` transformer)

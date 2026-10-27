@@ -10,7 +10,7 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-e0b15a"></a>
   <a href="https://nodejs.org"><img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A518-3c873a"></a>
   <img alt="dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen">
-  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-22%20passing-22b884"></a>
+  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-27%20passing-22b884"></a>
   <a href="https://huggingface.co/spaces"><img alt="HF Space" src="https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face%20Space-ffd21e"></a>
 </p>
 
@@ -49,6 +49,7 @@ This project is the opposite: **a small, readable, deterministic engine** (≈90
 - **Divergence (背驰)** by comparing MACD histogram area + DIF extremes of same-direction moves (segment-level and stroke-level)
 - **Signals**: 1B/2B/3B and 1S/2S/3S with the exact geometric conditions (new extreme + weaker momentum; pullback that does not break the prior low; pullback that does not re-enter the pivot)
 - **Multi-level suite** (区间套): run every level from 1m to 1d and detect cross-level resonance
+- **Signal backtest**: every buy/sell point type gets a hit rate, average forward return, profit factor and **excess over a random-hold baseline** — with an explicit small-sample warning
 - Deterministic: same bars in → same structures out (covered by tests)
 
 ```js
@@ -92,15 +93,23 @@ Every concept in the theory library has an **"annotate it on the chart →"** ac
 | Divergence | previous leg vs diverging leg, extreme bubbles, area ratio, 1B/1S meaning |
 | 1B / 2B / 3B | divergence leg or pivot + pullback leg + signal bubble + stop reference line |
 
+### 3.5 Timing lab (算卦页新增)
+
+Five independent timing methods run side by side — **四柱·节气五行 / 梅花易数 / 六爻纳甲 / 建除十二神 / 日历周期因子** — each returning a 0–100 "顺逆分" with readable reasons, plus a weighted composite, an agreement/spread read-out, and a **per-method historical validation**: for the selected symbol we recompute the score for the last N sessions and correlate it with next-session returns.
+
+The verdict is deliberately blunt: on the shipped sample it usually says *"no significant edge — use it as a discipline tool, not a signal source."* Method cards (theory page → 择时方法) state the same thing, and 紫微/奇门 are listed as "next, but only if measurable".
+
 ### 4. Trading radar, live refresh, editable watchlist
 
 - Cross-market scan sorted by "signal freshness × type weight"
 - Global live mode: quotes every 10s, structure every 20s, radar every 30s
 - Add/remove symbols per market (search autocomplete); persisted to `data/watchlist.json`
 
-### 5. Reading room (theory library)
+### 5. Reading room (theory library) — quantified
 
-20 concepts (operational definition, original meaning, recognition steps, common mistakes, where to look in this app) · 14 "where is it?" Q&A (including "a 2nd buy point *is* a 1st buy point one level down") · themed 108-lesson guide · 5 practical workflows.
+**40 concepts** (operational definition, original meaning, recognition steps, common mistakes, where to look on this chart) · **14 "where is it?" Q&A** · 108-lesson guide grouped into **14 themes** · **5 practical workflows** · **≈45,600 characters of original digest** in this repo, plus a bibliography (the 780-page annotated edition, the 6-volume collection, the complete-works edition) and honest provenance notes. The theory page shows these counts as a live stats strip.
+
+See [docs/COMPETITIVE.md](docs/COMPETITIVE.md) for the GitHub landscape (czsc 6.5k★, chan.py 2.3k★, chanlun-pro 1.1k★, and the 8k★ Zi Wei Dou Shu engine we benchmarked against) and exactly which gaps this project fills.
 
 ### 6. I Ching timing module (算卦择时)
 
@@ -205,6 +214,8 @@ space/                Hugging Face Space (Docker SDK)
 - [x] Multi-market adapters with fallback
 - [x] Teaching annotations (concept → chart)
 - [x] Mobile PWA with iOS / Android skins
+- [x] Signal backtest (hit rate / profit factor / edge vs baseline) and the timing-method lab
+- [ ] 紫微斗数 / 奇门遁甲 methods (only with the same measurable standard)
 - [ ] English UI (i18n layer) — [help wanted](CONTRIBUTING.md)
 - [ ] Python package (`pip install chanx`) wrapping the same rules with parity tests
 - [ ] Publish computed structures as a Hugging Face **Dataset** (`chan-structures`) for reproducible research

@@ -55,5 +55,8 @@
     watchAdd: (p) => post('/api/watchlist', p),
     watchDel: (p) => request('DELETE', '/api/watchlist', p),
     watchReset: () => request('POST', '/api/watchlist/reset', {}),
+    backtest: (p) => get('/api/backtest', p),
+    timing: (p) => get('/api/timing', p),
+    timingValidate: (p) => get('/api/timing/validate', p),
   };
 })();
