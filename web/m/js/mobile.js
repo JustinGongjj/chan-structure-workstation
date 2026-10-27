@@ -75,7 +75,7 @@
       else if (tab === 'theory') renderTheory();
       else await renderDivination();
     } catch (e) {
-      view.innerHTML = `<div class="empty">加载失败：${U.esc(e.message)}<br><button class="btn sm" id="retryBtn" style="margin-top:12px">重试</button></div>`;
+      view.innerHTML = `<div class="empty">加载失败：${U.esc(e.message)}<br><button class="btn button sm" id="retryBtn" style="margin-top:12px">重试</button></div>`;
       const b = $('#retryBtn');
       if (b) b.addEventListener('click', () => go(state.tab));
     }
@@ -189,9 +189,9 @@
       <h1 class="page-title">买卖点雷达 ${stampHtml()}</h1>
       <div class="page-sub">按「信号新鲜度 × 类型权重」排序，点击进入结构分析</div>
       <div class="section">
-        <div class="seg" id="rScope">
+        <div class="seg segmented" id="rScope">
           ${[['all', '全部'], ['A', 'A股'], ['HK', '港股'], ['US', '美股'], ['CR', '加密']]
-            .map(([k, n]) => `<button class="sq ${state.radarScope === k ? 'active' : ''}" data-k="${k}">${n}</button>`)
+            .map(([k, n]) => `<button class="sq button ${state.radarScope === k ? 'active' : ''}" data-k="${k}">${n}</button>`)
             .join('')}
         </div>
       </div>
@@ -258,14 +258,14 @@
       <h1 class="page-title">结构分析 ${stampHtml()}</h1>
       <div class="page-sub">${U.MK[market]} · ${U.esc(code)} · ${PNAME[state.period]}</div>
       <div class="section">
-        <div class="seg" id="sMarket">
-          ${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
-          <button class="sq" id="sSearch">搜索</button>
+        <div class="seg segmented" id="sMarket">
+          ${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq button ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
+          <button class="sq button" id="sSearch">搜索</button>
         </div>
       </div>
       <div class="section">
-        <div class="seg" id="sPeriod">
-          ${periods.map((p) => `<button class="sq ${p === state.period ? 'active' : ''}" data-p="${p}">${PNAME[p]}</button>`).join('')}
+        <div class="seg segmented" id="sPeriod">
+          ${periods.map((p) => `<button class="sq button ${p === state.period ? 'active' : ''}" data-p="${p}">${PNAME[p]}</button>`).join('')}
         </div>
       </div>
       <div class="card chart-card">
@@ -448,7 +448,7 @@
     view.innerHTML = `
       <h1 class="page-title">缠论理论</h1>
       <div class="page-sub">点开任意条目看完整内容，可一键在图上标注</div>
-      <div class="theory-tabs">${tabs.map(([k, n]) => `<button class="sq ${state.theoryTab === k ? 'active' : ''}" data-t="${k}">${n}</button>`).join('')}</div>
+      <div class="theory-tabs">${tabs.map(([k, n]) => `<button class="sq button ${state.theoryTab === k ? 'active' : ''}" data-t="${k}">${n}</button>`).join('')}</div>
       <div style="margin-top:6px">${body}</div>`;
     U.$$('.theory-tabs .sq').forEach((b) =>
       b.addEventListener('click', () => {
@@ -474,7 +474,7 @@
       <div class="md-sec"><h4>识别步骤</h4><ol class="md-steps">${(c.howTo || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</ol></div>
       <div class="md-sec"><h4>常见误区</h4><ol class="md-steps">${(c.mistakes || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</ol></div>
       <div class="md-sec"><h4>在图上对应</h4><p>${U.esc(c.station)}</p></div>
-      <button class="btn primary block" id="goChart" data-hl="${U.esc(key)}">在结构图上标注它 →</button>`;
+      <button class="btn button primary block" id="goChart" data-hl="${U.esc(key)}">在结构图上标注它 →</button>`;
       openSheet(c.name, html, () => {
         const b = $('#goChart');
         if (b) b.addEventListener('click', () => {
@@ -518,18 +518,18 @@
       <div class="page-sub">代码 + 实时价 + 时辰起卦；娱乐向，不构成投资建议</div>
       <div class="card">
         <div class="form-row"><div class="hint" style="margin-bottom:6px">市场</div>
-          <div class="seg" id="dMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
+          <div class="seg segmented" id="dMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq button ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
         </div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">标的代码</div><input class="input" id="dCode" value="${U.esc(d.code)}" placeholder="600519 / NVDA / BTCUSDT" autocomplete="off"></div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">起卦方式</div>
-          <div class="seg" id="dMode">
-            <button class="sq ${d.mode === 'price' ? 'active' : ''}" data-k="price">随市（+现价）</button>
-            <button class="sq ${d.mode === 'time' ? 'active' : ''}" data-k="time">时辰（稳定）</button>
+          <div class="seg segmented" id="dMode">
+            <button class="sq button ${d.mode === 'price' ? 'active' : ''}" data-k="price">随市（+现价）</button>
+            <button class="sq button ${d.mode === 'time' ? 'active' : ''}" data-k="time">时辰（稳定）</button>
           </div>
         </div>
         <div class="row" style="gap:8px;margin-top:12px">
-          <button class="btn primary" id="dCast" style="flex:1">起 卦</button>
-          <button class="btn ${d.live ? 'primary' : ''}" id="dLive" style="flex:0 0 auto">${d.live ? '跟随中' : '跟随'}</button>
+          <button class="btn button primary" id="dCast" style="flex:1">起 卦</button>
+          <button class="btn button ${d.live ? 'primary' : ''}" id="dLive" style="flex:0 0 auto">${d.live ? '跟随中' : '跟随'}</button>
         </div>
       </div>
       <div id="dResult">${state.div.last ? '' : '<div class="card empty">点上面的「起卦」开始</div>'}</div>
@@ -747,9 +747,9 @@
       const list = data[SK.market] || [];
       openSheet(
         '管理自选',
-        `<div class="seg" id="wMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${data[m].length}</button>`).join('')}</div>
+        `<div class="seg segmented" id="wMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq button ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${data[m].length}</button>`).join('')}</div>
          <div class="form-row" style="margin-top:12px"><input class="input" id="wCode" placeholder="输入代码，如 600519 / NVDA / BTCUSDT"></div>
-         <button class="btn primary block" id="wAdd">添加</button>
+         <button class="btn button primary block" id="wAdd">添加</button>
          <div class="list" style="margin-top:12px">
            ${list.length
              ? list
@@ -759,7 +759,7 @@
                  .join('')
              : '<div class="empty">该市场暂无自选</div>'}
          </div>
-         <button class="btn block" id="wReset" style="margin-top:10px">恢复默认自选池</button>`,
+         <button class="btn button block" id="wReset" style="margin-top:10px">恢复默认自选池</button>`,
         () => {
           U.$$('#wMarket .sq').forEach((b) =>
             b.addEventListener('click', () => {
@@ -811,11 +811,11 @@
     openSheet(
       '更多设置',
       `<div class="section-head"><h3>界面皮肤</h3></div>
-       <div class="seg" id="mSkin"><button class="sq ${skin === 'ios' ? 'active' : ''}" data-k="ios">iOS 风格</button><button class="sq ${skin === 'android' ? 'active' : ''}" data-k="android">Android 风格</button></div>
+       <div class="seg segmented" id="mSkin"><button class="sq button ${skin === 'ios' ? 'active' : ''}" data-k="ios">iOS 风格</button><button class="sq button ${skin === 'android' ? 'active' : ''}" data-k="android">Android 风格</button></div>
        <div class="section-head" style="margin-top:14px"><h3>主题</h3></div>
-       <div class="seg" id="mTheme"><button class="sq ${theme === 'dark' ? 'active' : ''}" data-k="dark">深色</button><button class="sq ${theme === 'light' ? 'active' : ''}" data-k="light">浅色</button></div>
+       <div class="seg segmented" id="mTheme"><button class="sq button ${theme === 'dark' ? 'active' : ''}" data-k="dark">深色</button><button class="sq button ${theme === 'light' ? 'active' : ''}" data-k="light">浅色</button></div>
        <div class="section-head" style="margin-top:14px"><h3>实时刷新</h3></div>
-       <div class="seg" id="mLive"><button class="sq ${state.live ? 'active' : ''}" data-k="on">开启（10s）</button><button class="sq ${!state.live ? 'active' : ''}" data-k="off">关闭</button></div>
+       <div class="seg segmented" id="mLive"><button class="sq button ${state.live ? 'active' : ''}" data-k="on">开启（10s）</button><button class="sq button ${!state.live ? 'active' : ''}" data-k="off">关闭</button></div>
        <div class="section-head" style="margin-top:14px"><h3>数据源</h3></div>
        <div id="mSources" class="hint">检测中…</div>
        <div class="hint" style="margin-top:16px;line-height:1.8">缠论工作站 · 手机版 v1.0<br>PC 版：<a href="/" style="color:var(--accent)">/</a> · iOS 皮肤 <a href="?skin=ios" style="color:var(--accent)">?skin=ios</a> · Android 皮肤 <a href="?skin=android" style="color:var(--accent)">?skin=android</a></div>`,

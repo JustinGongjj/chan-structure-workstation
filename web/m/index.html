@@ -13,6 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="stylesheet" href="/vendor/f7/framework7-bundle.min.css">
 <link rel="stylesheet" href="/m/css/mobile.css">
 <script>
   (function () {
@@ -26,6 +27,7 @@
       var theme = (q.match(/[?&]theme=(light|dark)/) || [])[1] || localStorage.getItem('chan-theme');
       if (!theme) theme = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       document.documentElement.dataset.skin = skin;
+      document.documentElement.classList.add(skin === 'android' ? 'md' : 'ios');
       document.documentElement.dataset.theme = theme;
       if (/[?&]skin=/.test(q)) localStorage.setItem('chan-skin', skin);
       if (/[?&]theme=/.test(q)) localStorage.setItem('chan-theme', theme);

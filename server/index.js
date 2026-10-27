@@ -350,7 +350,14 @@ function sendJSON(res, code, obj) {
   res.end(body);
 }
 
+const MOBILE_UA = /Android|iPhone|iPod|iPad|Mobile|HarmonyOS|MicroMessenger/i;
+
 function serveStatic(req, res, pathname) {
+  // 手机浏览器访问桌面首页 → 直接给手机版（可用 ?desktop=1 留在桌面版）
+  if (pathname === '/' && MOBILE_UA.test(req.headers['user-agent'] || '') && !/[?&]desktop=1/.test(req.url)) {
+    res.writeHead(302, { Location: '/m/' }).end();
+    return;
+  }
   let rel = pathname === '/' ? '/index.html' : pathname;
   if (rel.endsWith('/')) rel += 'index.html';
   const file = path.join(WEB_ROOT, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));

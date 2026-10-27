@@ -94,8 +94,9 @@ a{color:inherit;text-decoration:none}
 [data-skin="ios"] .page-title{letter-spacing:-.8px}
 .page-sub{font-size:12px;color:var(--faint);margin:0 2px 12px;line-height:1.6}
 .section{margin-bottom:14px}
-.section-head{display:flex;align-items:center;justify-content:space-between;margin:0 2px 8px}
-.section-head h3{font-size:14px;font-weight:650}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px;min-width:0}
+.section-head h3{font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.section-head > .chip,.section-head > .btn,.section-head > button{flex:0 0 auto;white-space:nowrap}
 .section-head .more{font-size:12px;color:var(--accent)}
 
 /* ---------- 卡片 ---------- */
@@ -163,6 +164,19 @@ a{color:inherit;text-decoration:none}
 .seg .sq.active{background:var(--panel);color:var(--text);font-weight:650;box-shadow:0 1px 3px rgba(0,0,0,.18)}
 [data-skin="ios"] .seg .sq.active{background:var(--panel2);color:var(--accent)}
 [data-skin="android"] .seg .sq.active{background:var(--accent);color:var(--accent-ink)}
+
+/* Framework7 组件覆盖（保持本站视觉） */
+.segmented{display:flex!important;background:var(--elev)!important;border:1px solid var(--line)!important;border-radius:12px!important;padding:3px!important}
+.segmented .button{flex:1;margin:0!important;background:transparent!important;color:var(--muted)!important;
+  font-size:12px!important;text-transform:none!important;min-height:0!important;height:auto!important;padding:7px 10px!important;border-radius:9px!important}
+.segmented .button.active{background:var(--panel)!important;color:var(--text)!important;font-weight:650!important;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.button.btn,.button.btn.primary,.chip.button,.seg .button{text-transform:none!important}
+/* Framework7 的 .button 默认 width:100%，会挤掉同行的标题 */
+.button{width:auto!important}
+.button.btn,.btn.button{width:auto!important;display:inline-flex!important}
+.section-head .button,.section-head .chip{width:auto!important;flex:0 0 auto!important}
+.chips .chip.button{width:auto!important}
+.card.button,.btn.button{display:inline-flex;align-items:center;justify-content:center}
 
 /* 按钮 */
 .btn{

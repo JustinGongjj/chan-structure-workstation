@@ -102,8 +102,8 @@
 }
 
 *{margin:0;padding:0;box-sizing:border-box}
-html{height:100%;background:var(--bg)}
-body{height:100%}
+html{height:100%;background:var(--bg);overflow-x:hidden}
+body{height:100%;overflow-x:hidden}
 body{
   background:var(--bg-grad);
   color:var(--text);
@@ -667,7 +667,63 @@ button{font-family:inherit}
 .wl-row .del:hover{color:var(--up);border-color:var(--up)}
 .wl-empty{font-size:11.5px;color:var(--faint);padding:16px;text-align:center}
 
+/* 窄屏（手机/平板竖屏）：顶栏换成两行，避免挤压换行 */
+@media (max-width:900px){
+  .topbar{height:auto;flex-wrap:wrap;gap:8px;padding:8px 12px}
+  .search-wrap{flex:1 1 160px;max-width:none;order:2}
+  .market-tabs{order:3;flex:1 1 100%;overflow-x:auto;scrollbar-width:none}
+  .market-tabs::-webkit-scrollbar{display:none}
+  .mtab{white-space:nowrap}
+  .top-right{order:1;margin-left:auto;gap:6px}
+  .clock{display:none}
+  .cal-badge{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .top-right .btn{white-space:nowrap}
+  body{padding-top:0}
+  .page{padding:14px 12px 30px}
+  .page-title{font-size:19px;flex-wrap:wrap;gap:6px}
+  .grid-4{grid-template-columns:1fr 1fr}
+  .idx-grid{grid-template-columns:1fr 1fr}
+  .struct-layout,.div-layout,.two-col{grid-template-columns:1fr}
+  .tbl-wrap{overflow-x:auto}
+}
+
+/* 手机访问提示条（桌面版） */
+.mobile-tip{display:none}
+@media (max-width:900px){
+  .mobile-tip{display:flex;align-items:center;gap:8px;margin:0 12px 8px;padding:8px 10px;border-radius:10px;
+    background:var(--gold-tint);border:1px solid var(--gold-tint2);color:var(--ink-gold);font-size:12px}
+  .mobile-tip a{color:var(--gold);text-decoration:underline;white-space:nowrap}
+}
+
 @media (max-width:1180px){.div-form{position:static}}
+
+/* 窄屏（手机/平板竖屏）：顶栏换成两行，避免挤压换行 */
+@media (max-width:900px){
+  .topbar{height:auto;flex-wrap:wrap;gap:8px;padding:8px 12px}
+  .search-wrap{flex:1 1 160px;max-width:none;order:2}
+  .market-tabs{order:3;flex:1 1 100%;overflow-x:auto;scrollbar-width:none}
+  .market-tabs::-webkit-scrollbar{display:none}
+  .mtab{white-space:nowrap}
+  .top-right{order:1;margin-left:auto;gap:6px}
+  .clock{display:none}
+  .cal-badge{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .top-right .btn{white-space:nowrap}
+  body{padding-top:0}
+  .page{padding:14px 12px 30px}
+  .page-title{font-size:19px;flex-wrap:wrap;gap:6px}
+  .grid-4{grid-template-columns:1fr 1fr}
+  .idx-grid{grid-template-columns:1fr 1fr}
+  .struct-layout,.div-layout,.two-col{grid-template-columns:1fr}
+  .tbl-wrap{overflow-x:auto}
+}
+
+/* 手机访问提示条（桌面版） */
+.mobile-tip{display:none}
+@media (max-width:900px){
+  .mobile-tip{display:flex;align-items:center;gap:8px;margin:0 12px 8px;padding:8px 10px;border-radius:10px;
+    background:var(--gold-tint);border:1px solid var(--gold-tint2);color:var(--ink-gold);font-size:12px}
+  .mobile-tip a{color:var(--gold);text-decoration:underline;white-space:nowrap}
+}
 
 @media (max-width:1180px){
   .grid-4{grid-template-columns:repeat(2,1fr)}
