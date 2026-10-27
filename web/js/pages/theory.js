@@ -7,6 +7,8 @@
     lessons: '108 课导读',
     methods: '择时方法',
     meta: '命理知识库',
+    lessons108: '108 课全表',
+    lore: '言论集',
     practices: '实战流程',
   };
   // 问答 → 图上标注 key
@@ -55,6 +57,12 @@
     else if (tab === 'meta') {
       body.innerHTML = '<div class="loading">加载知识库…</div>';
       renderMeta(body);
+    } else if (tab === 'lessons108') {
+      body.innerHTML = '<div class="loading">加载 108 课索引…</div>';
+      renderLessons108(body);
+    } else if (tab === 'lore') {
+      body.innerHTML = '<div class="loading">加载言论集…</div>';
+      renderLore(body);
     }
     else body.innerHTML = renderPractices(theory);
 
@@ -154,6 +162,83 @@
         )
         .join('')
     );
+  }
+
+  let lessonCache = null;
+  let loreCache = null;
+
+  async function renderLessons108(box) {
+    try {
+      const data = lessonCache || (lessonCache = await API.get('/api/chan-lessons'));
+      const themes = data.themes || [];
+      const lessons = data.lessons || [];
+      const cov = data.coverage || {};
+      const themeOf = Object.fromEntries(themes.map((t) => [t.id, t]));
+      let filter = 'all';
+      const draw = () => {
+        const rows = lessons.filter((l) => filter === 'all' || l.theme === filter);
+        box.innerHTML = `
+          <div class="card" style="margin-bottom:12px"><div class="hint">${U.esc(cov.note)}<br>已收录可核对标题 <b>${cov.titles}</b> 课、要点 <b>${cov.gists}</b> 课；其余仅归入专题。</div></div>
+          <div class="hscroll" id="l108Tabs" style="margin-bottom:10px">
+            <button class="chip ${filter === 'all' ? 'gold' : ''}" data-t="all" style="padding:6px 12px">全部 108</button>
+            ${themes.map((t) => `<button class="chip ${filter === t.id ? 'gold' : ''}" data-t="${t.id}" style="padding:6px 12px">${U.esc(t.name)} · ${t.lessons.length}</button>`).join('')}
+          </div>
+          <div class="card" style="padding:0;overflow:auto;max-height:60vh">
+            <table class="tbl" style="width:100%">
+              <thead><tr><th style="width:56px">课</th><th style="width:26%">标题</th><th>要点 / 专题</th></tr></thead>
+              <tbody>
+                ${rows
+                  .map(
+                    (l) => `<tr>
+                  <td class="mono">${l.no}</td>
+                  <td>${l.title ? U.esc(l.title) : '<span class="hint">（标题未收录）</span>'}</td>
+                  <td>${l.gist ? U.esc(l.gist) : `<span class="hint">${U.esc((themeOf[l.theme] || {}).name || '')}：${U.esc((themeOf[l.theme] || {}).desc || '')}</span>`}</td>
+                </tr>`
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>`;
+        U.$$('#l108Tabs .chip').forEach((b) =>
+          b.addEventListener('click', () => {
+            filter = b.dataset.t;
+            draw();
+          })
+        );
+      };
+      draw();
+    } catch (e) {
+      box.innerHTML = `<div class="loading">加载失败：${U.esc(e.message)}</div>`;
+    }
+  }
+
+  async function renderLore(box) {
+    try {
+      const data = loreCache || (loreCache = await API.get('/api/chan-lore'));
+      const meta = data.meta || {};
+      const groups = {};
+      for (const x of data.lore) (groups[x.kind] = groups[x.kind] || []).push(x);
+      box.innerHTML = `
+        <div class="card" style="margin-bottom:12px"><div class="hint">${U.esc(meta.note)}<br>${U.esc(meta.disclaimer || '')}</div></div>
+        ${Object.entries(groups)
+          .map(
+            ([kind, list]) => `<div class="card" style="margin-bottom:12px">
+          <div class="card-head"><h3>${U.esc(kind)} · ${list.length} 条</h3><span class="hint">天涯 / 博客</span></div>
+          ${list
+            .map(
+              (x) => `<div style="padding:9px 0;border-bottom:1px dashed var(--dash)">
+              <div style="font-size:12.5px;line-height:1.8">${U.esc(x.text)}</div>
+              <div class="hint" style="margin-top:4px">${U.esc(x.insight)}</div>
+              <div class="hint" style="margin-top:3px">${U.esc(x.source)} · ${U.esc(x.era)} · 对应概念：${U.esc(x.link)}</div>
+            </div>`
+            )
+            .join('')}
+        </div>`
+          )
+          .join('')}`;
+    } catch (e) {
+      box.innerHTML = `<div class="loading">加载失败：${U.esc(e.message)}</div>`;
+    }
   }
 
   async function renderMeta(box) {

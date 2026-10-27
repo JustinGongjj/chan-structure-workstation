@@ -15,6 +15,7 @@ const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
 const BT = require('./lib/backtest');
 const META = require('./lib/metaphysics');
+const K = require('./lib/chan-lessons');
 const { cached, mapPool, cacheStats } = require('./lib/http');
 
 const PORT = Number(process.env.PORT || 8931);
@@ -408,6 +409,12 @@ const routes = {
       nocache: u.searchParams.get('nocache') === '1',
     }),
   '/api/daily': async () => V.daily(),
+  '/api/chan-lessons': async () => ({
+    themes: K.THEMES,
+    lessons: K.LESSONS,
+    coverage: K.COVERAGE,
+  }),
+  '/api/chan-lore': async () => ({ lore: K.LORE, meta: K.LORE_META }),
   '/api/metaphysics': async (u) => {
     const id = u.searchParams.get('id');
     return id ? META.get(id) || { error: '未知体系' } : META.list();

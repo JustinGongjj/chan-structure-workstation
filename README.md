@@ -105,6 +105,11 @@ The verdict is deliberately blunt: on the shipped sample it usually says *"no si
 - Global live mode: quotes every 10s, structure every 20s, radar every 30s
 - Add/remove symbols per market (search autocomplete); persisted to `data/watchlist.json`
 
+### 4.4 108-lesson index + lore collection（108课全表 · 言论集）
+
+- **108 课全表**: all 108 lessons with number, theme (14 study-route groups), title **only where verifiable from public indexes** (50), and a one-line gist (24); unverified titles are left blank on purpose — no invented titles. Served by `/api/chan-lessons`.
+- **言论集**: 22 curated entries from 天涯论坛 / 新浪博客, each with source, era, kind, takeaway and the concept it maps to (e.g. "同一级别买点买入就在同一级别卖点卖出" → 级别). Clearly labelled as **community paraphrase, not verbatim quotes**: `/api/chan-lore`.
+
 ### 4.5 Metaphysics knowledge base (命理知识库)
 
 A first-class module (not a footnote): **天干地支/四柱 · 紫微斗数 · 奇门遁甲 · 梅花易数 · 六爻纳甲**, each with principle, the exact rules this codebase implements, where to look in the UI, the module/API/test file, and its documented pitfalls — plus a 14-book bibliography (缠论 / 干支 / 紫微 / 奇门 / 卦象 / 六爻) used purely as an index.
