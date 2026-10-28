@@ -103,6 +103,7 @@
           .join('');
         return `<section class="chapter">
           <header><h3>${c.name}</h3><span class="mech">${MECH_NAME[c.mechanic] || '看走势'}</span><span class="cnt">${c.levels.length} 关</span></header>
+          <div class="chart-note" style="padding:8px 13px 0">关号按 108 课的主题分组，所以同一个章节里会跳号（章节内也是连续进阶）</div>
           <div class="levels">${lv}</div>
         </section>`;
       })
