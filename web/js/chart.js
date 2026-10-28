@@ -55,6 +55,8 @@
       this.drawMode = 'none';  // none | trend | hline | rect
       this.selectedId = null;
       this.draft = null;
+      this._pendingStart = null;
+      this._dragRect = null;
       this.onDraws = null;
       this._drawWanted = -1;   // 只画到最近一根"已走完"的 K 线，避免手绘线被未来数据带偏
       this.bind();
@@ -72,6 +74,9 @@
     setDrawings(list) {
       this.drawings = Array.isArray(list) ? list.slice() : [];
       this.selectedId = null;
+      this._pendingStart = null;
+      this._dragRect = null;
+      this.draft = null;
       this.draw({ redrawOnly: true });
     }
     getDrawings() {
@@ -79,7 +84,10 @@
     }
     setDrawMode(mode) {
       this.drawMode = ['trend', 'hline', 'rect'].includes(mode) ? mode : 'none';
+      // 退出/切换画线模式时丢掉半成品：否则"上一步的点"会在新标的上生效
       this.draft = null;
+      this._pendingStart = null;
+      this._dragRect = null;
       if (this.canvas) this.canvas.style.cursor = this.drawMode === 'none' ? 'default' : 'crosshair';
       this.draw({ redrawOnly: true });
     }
@@ -98,7 +106,39 @@
       return true;
     }
     emitDraws() {
+      // 同时写入时间戳：K 线下标会随 limit 变化/新数据漂移，t 才是稳定锚点
+      const bars = (this.data && this.data.bars) || [];
+      const withT = this.drawings.map((d) => {
+        const out = { ...d };
+        if (bars[d.x1]) out.t1 = bars[d.x1].t;
+        if (d.x2 != null && bars[d.x2]) out.t2 = bars[d.x2].t;
+        return out;
+      });
+      this.drawings = withT;
       if (typeof this.onDraws === 'function') this.onDraws(this.getDrawings());
+    }
+
+    /* 用 t 把线重新对到当前数据上（下标只作为 t 缺失时的兜底） */
+    reanchor() {
+      const bars = (this.data && this.data.bars) || [];
+      if (!bars.length) return;
+      const idxOfT = (t) => {
+        if (!t) return null;
+        let best = null;
+        for (let i = 0; i < bars.length; i++) {
+          const d = Math.abs(bars[i].t - t);
+          if (!best || d < best.d) best = { d, i };
+        }
+        return best && best.d <= 86400000 * 3 ? best.i : null;
+      };
+      this.drawings = this.drawings.map((d) => {
+        const out = { ...d };
+        const i1 = d.t1 ? idxOfT(d.t1) : null;
+        if (i1 != null) out.x1 = i1;
+        const i2 = d.t2 ? idxOfT(d.t2) : null;
+        if (i2 != null) out.x2 = i2;
+        return out;
+      });
     }
     /* 屏幕坐标 → 数据坐标（吸附到笔端点优先，其次最近收盘价） */
     dataAt(clientX, clientY) {
@@ -128,18 +168,22 @@
         cands.sort((a, b) => a.dist - b.dist);
         return { idx: cands[0].idx, price: cands[0].price, snapped: 'bi' };
       }
-      const bar = this.data && this.data.bars[idx];
-      return { idx, price: bar ? bar.c : price, snapped: 'bar' };
+      // 没有吸附目标时保留指针的原始价格（不要退化成收盘价，否则永远对不上 ZG/ZD）
+      return { idx, price, snapped: 'free' };
     }
 
     setData(a, opts) {
       this.data = a;
+      this.draft = null;
+      this._pendingStart = null;
+      this._dragRect = null;
       const n = a && a.bars ? a.bars.length : 0;
       if (opts && opts.keepView) {
         this.view = { start: Math.min(this.view.start, Math.max(0, n - 30)), count: Math.min(this.view.count, n) };
       } else {
         this.view = { start: Math.max(0, n - 150), count: Math.min(150, n) };
       }
+      this.reanchor();
       this.draw();
     }
 
@@ -599,7 +643,17 @@
         }
       };
 
-      for (const dl of list) drawOne(dl, false);
+      // 只画落在可视/有效范围内的线：越界线既看不见也选不中，不该参与后续结论
+      const nBars = (this.data && this.data.bars.length) || 0;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(g.padL, g.priceTop, g.plotW, g.priceH);
+      ctx.clip();
+      for (const dl of list) {
+        if (dl.x1 < 0 || dl.x1 >= nBars || (dl.x2 != null && (dl.x2 < 0 || dl.x2 >= nBars))) continue;
+        drawOne(dl, false);
+      }
+      ctx.restore();
       if (draft && draft.x2 != null) drawOne(draft, true);
       ctx.restore();
     }
@@ -771,8 +825,6 @@
       c.addEventListener('dblclick', () => this.resetView());
 
       /* ---------- 手绘线交互 ---------- */
-      let dragRect = null;      // 拖拽画矩形
-      let pendingStart = null;  // 趋势线的第一个点（点两下成交）
       const newId = () => 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
       const hitTest = (x, y, g) => {
@@ -826,58 +878,85 @@
           return;
         }
         if (this.drawMode === 'rect') {
-          dragRect = { start: p };
+          this._dragRect = { start: p };
           this.draft = { id: 'draft', type: 'rect', x1: p.idx, y1: p.price, x2: p.idx, y2: p.price };
           this.draw({ redrawOnly: true });
           return;
         }
         // trend：第一次点定起点，第二次点成交
-        if (!pendingStart) {
-          pendingStart = { idx: p.idx, price: p.price };
+        if (!this._pendingStart) {
+          this._pendingStart = { idx: p.idx, price: p.price, t: (this.data.bars[p.idx] || {}).t };
           this.draft = { id: 'draft', type: 'trend', x1: p.idx, y1: p.price, x2: p.idx, y2: p.price };
           this.draw({ redrawOnly: true });
         } else {
-          if (Math.abs(p.idx - pendingStart.idx) >= 1) {
-            commit({ id: newId(), type: 'trend', x1: pendingStart.idx, y1: pendingStart.price, x2: p.idx, y2: p.price });
+          const st = this._pendingStart;
+          if (p.idx !== st.idx || true) {
+            commit({ id: newId(), type: 'trend', x1: st.idx, y1: st.price, x2: p.idx, y2: p.price });
           }
-          pendingStart = null;
+          this._pendingStart = null;
         }
       });
 
       c.addEventListener('pointermove', (e) => {
         if (!this.data) return;
-        if (dragRect) {
+        if (this._dragRect) {
           const p = this.dataAt(e.clientX, e.clientY);
           this.draft.x2 = p.idx;
           this.draft.y2 = p.price;
           this.draw({ redrawOnly: true });
           return;
         }
-        if (pendingStart && this.drawMode === 'trend') {
+        if (this._pendingStart && this.drawMode === 'trend') {
           const p = this.dataAt(e.clientX, e.clientY);
-          this.draft = { id: 'draft', type: 'trend', x1: pendingStart.idx, y1: pendingStart.price, x2: p.idx, y2: p.price };
+          this.draft = { id: 'draft', type: 'trend', x1: this._pendingStart.idx, y1: this._pendingStart.price, x2: p.idx, y2: p.price };
           this.draw({ redrawOnly: true });
         }
       });
 
       c.addEventListener('pointerup', (e) => {
-        if (!dragRect) return;
+        const dr = this._dragRect;
+        this._dragRect = null;          // 无论成败都复位：画布外松手也不会留下半成品
+        if (!dr) return;
         const p = this.dataAt(e.clientX, e.clientY);
-        const dxBars = Math.abs(p.idx - dragRect.start.idx);
-        const dyPct = Math.abs(p.price - dragRect.start.price) / (dragRect.start.price || 1);
+        const dxBars = Math.abs(p.idx - dr.start.idx);
+        const dyPct = Math.abs(p.price - dr.start.price) / (dr.start.price || 1);
         if (dxBars >= 2 && dyPct >= 0.002) {
-          commit({ id: newId(), type: 'rect', x1: dragRect.start.idx, y1: dragRect.start.price, x2: p.idx, y2: p.price });
+          commit({ id: newId(), type: 'rect', x1: dr.start.idx, y1: dr.start.price, x2: p.idx, y2: p.price });
         } else {
           this.draft = null;
           this.setDrawMode('none');
           this.draw({ redrawOnly: true });
         }
-        dragRect = null;
+      });
+
+      window.addEventListener('pointerup', (e) => {
+        if (!this._dragRect) return;
+        const dr = this._dragRect;
+        this._dragRect = null;
+        const rect = c.getBoundingClientRect();
+        const outside = e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom;
+        if (outside) {
+          // 画布外松手 = 取消，不要用画布外的坐标凭空生成一条矩形
+          this.draft = null;
+          this.setDrawMode('none');
+          this.draw({ redrawOnly: true });
+          return;
+        }
+        const p = this.dataAt(e.clientX, e.clientY);
+        const dxBars = Math.abs(p.idx - dr.start.idx);
+        const dyPct = Math.abs(p.price - dr.start.price) / (dr.start.price || 1);
+        if (dxBars >= 2 && dyPct >= 0.002) {
+          commit({ id: newId(), type: 'rect', x1: dr.start.idx, y1: dr.start.price, x2: p.idx, y2: p.price });
+        } else {
+          this.draft = null;
+          this.setDrawMode('none');
+          this.draw({ redrawOnly: true });
+        }
       });
 
       c.addEventListener('pointercancel', () => {
-        dragRect = null;
-        pendingStart = null;
+        this._dragRect = null;
+        this._pendingStart = null;
         this.draft = null;
         this.draw({ redrawOnly: true });
       });
@@ -887,6 +966,7 @@
         'touchstart',
         (e) => {
           if (!this.data) return;
+          if (this.drawMode !== 'none') return;  // 画线时不响应平移/捏合（否则拖框会把图一起拖走）
           const rect = c.getBoundingClientRect();
           if (e.touches.length >= 2) {
             const [a, b] = e.touches;

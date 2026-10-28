@@ -72,11 +72,8 @@
         return;
       }
       chart.setData(res);
-      // 手绘线按「标的+周期」分别保存：切了就重新加载，避免画在别的票上
-      {
-        const k2 = `${market}:${code}:${period}`;
-        if (k2 !== drawingKey) loadDrawings();
-      }
+      // 每次都重新载入：renderStructure 会重建 canvas，只在 key 变化时载入会让已有线消失
+      loadDrawings();
       U.stamp('liveStampStruct');
       renderState(res);
       renderSignals(res);
@@ -360,13 +357,19 @@
     return { market: st.market, code: st.symbol ? st.symbol[st.market] : st.code, period: st.period };
   }
 
+  let drawSeq = 0;
+
   async function loadDrawings() {
     const k = currentKey();
-    drawingKey = `${k.market}:${k.code}:${k.period}`;
+    const key = `${k.market}:${k.code}:${k.period}`;
+    const seq = ++drawSeq;
+    drawingKey = key;
     try {
       const res = await API.drawings(k);
+      if (seq !== drawSeq) return; // 乱序返回：丢掉，否则会把别的标的的线套上来
       drawingList = res.drawings || [];
     } catch (e) {
+      if (seq !== drawSeq) return;
       drawingList = [];
     }
     chart.setDrawings(drawingList);
@@ -379,7 +382,7 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       API.drawingsSave({ ...k, drawings: list })
-        .then(() => updateDrawHint('已保存'))
+        .then((r) => updateDrawHint(r && r.dropped ? `已保存（丢弃最早 ${r.dropped} 条）` : '已保存'))
         .catch((e) => updateDrawHint('保存失败：' + e.message));
     }, 350);
   }
@@ -400,8 +403,16 @@
       b.addEventListener('click', () => {
         const on = chart.drawMode === mode;
         chart.setDrawMode(on ? 'none' : mode);
-        ['drawTrend', 'drawLevel', 'drawRect'].forEach((bid) => U.$('#' + bid)?.classList.toggle('primary', false));
-        if (!on) b.classList.add('primary');
+        ['drawTrend', 'drawLevel', 'drawRect'].forEach((bid) => {
+          const el = U.$('#' + bid);
+          if (!el) return;
+          el.classList.toggle('primary', false);
+          el.setAttribute('aria-pressed', 'false');
+        });
+        if (!on) {
+          b.classList.add('primary');
+          b.setAttribute('aria-pressed', 'true');
+        }
         updateDrawHint(on ? '已退出画线' : mode === 'trend' ? '点两下画线' : mode === 'rect' ? '拖出一个框' : '点一下画水平线');
       });
     };
@@ -416,7 +427,11 @@
     });
     U.$('#drawVerify')?.addEventListener('click', runDrawVerify);
     document.addEventListener('keydown', (e) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement === document.body) {
+      const typing = (() => {
+        const a = document.activeElement;
+        return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+      })();
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing) {
         if (chart.deleteSelected()) e.preventDefault();
       }
       if (e.key === 'Escape') chart.setDrawMode('none');
@@ -454,7 +469,10 @@
         })
         .join('') || '<div class="hint">还没有画线</div>';
     }
-    if (U.$('#drawMethod')) U.$('#drawMethod').textContent = (res.method && res.method.steps || []).join(' · ');
+    if (U.$('#drawMethod'))
+      U.$('#drawMethod').innerHTML =
+        U.esc((res.method && res.method.steps || []).join(' · ')) +
+        `<br><span style="opacity:.75">引擎：${U.esc(res.engine || 'rule-based')}（确定性规则，非大模型）· ${U.esc(res.disclaimer || '')}</span>`;
   }
 
   document.addEventListener('DOMContentLoaded', () => {

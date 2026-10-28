@@ -260,6 +260,30 @@ async function desktopFlows() {
       check('桌面版·AI 复核给出一致度与逐条结论', /一致度/.test(await cdp.eval(`document.getElementById('drawScore')?.innerText || ''`)) && findings > 0, `结论 ${String(verdict).slice(0, 24)}… · ${findings} 条`);
       const persisted = await cdp.eval(`(async () => (await (await fetch('/api/drawings?market=A&code=600519&period=day')).json()).drawings.length)()`);
       check('桌面版·手绘线已落库', persisted >= 2, `${persisted} 条`);
+      // 复审 blocker 回归：Esc 后不能残留起点（否则下一次单击就画整条线）
+      await cdp.eval(`document.getElementById('drawTrend').click()`);
+      await sleep(200);
+      await click(bx + bw * 0.3, by + bh * 0.6);
+      await cdp.eval(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+      await sleep(250);
+      await cdp.eval(`document.getElementById('drawTrend').click()`);
+      await sleep(200);
+      await click(bx + bw * 0.5, by + bh * 0.4);
+      await cdp.eval(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+      await sleep(350);
+      const ghost = await cdp.eval(`(() => { const m = (document.querySelector('#drawHint')?.textContent || '').match(/当前 (\\d+) 条/); return m ? Number(m[1]) : -1; })()`);
+      check('桌面版·Esc 不留半成品线', ghost === 2, `线数 ${ghost}（期望 2）`);
+
+      // 复审 blocker 回归：画布外松手不能落幽灵矩形
+      await cdp.eval(`document.getElementById('drawRect').click()`);
+      await sleep(200);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: bx + bw * 0.3, y: by + bh * 0.5, button: 'left', clickCount: 1 });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: bx + bw * 0.5, y: by + bh * 0.4, button: 'left' });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 3, y: 3, button: 'left', clickCount: 1 });
+      await sleep(500);
+      const ghost2 = await cdp.eval(`(() => { const m = (document.querySelector('#drawHint')?.textContent || '').match(/当前 (\\d+) 条/); return m ? Number(m[1]) : -1; })()`);
+      check('桌面版·画布外松手不产生幽灵框', ghost2 === 2, `线数 ${ghost2}（期望 2）`);
+
       await cleanDrawings('A', '600519', 'day'); // 巡检不留脏数据
     } else check('桌面版·手绘线可画出并保存', false, '找不到图表画布');
 

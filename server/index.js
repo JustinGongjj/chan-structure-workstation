@@ -489,7 +489,11 @@ function saveDrawings() {
   fs.renameSync(tmp, DRAW_FILE);
 }
 
-const drawKey = (market, code, period) => `${String(market || 'A').toUpperCase()}:${String(code || '')}:${String(period || 'day')}`;
+const drawKey = (market, code, period) => {
+  const m = String(market || 'A').toUpperCase();
+  const norm = code ? S.normCode(m, code) || String(code).toUpperCase() : '';
+  return `${m}:${norm}:${String(period || 'day')}`;
+};
 
 function sanitizeDrawing(d) {
   const type = ['trend', 'hline', 'rect', 'ray', 'note'].includes(d && d.type) ? d.type : 'trend';
@@ -675,10 +679,15 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const key = drawKey(body.market, body.code, body.period);
-      const list = (Array.isArray(body.drawings) ? body.drawings : []).slice(0, 40).map(sanitizeDrawing);
+      if (!body.code) throw new Error('缺少 code');
+      const all = Array.isArray(body.drawings) ? body.drawings : [];
+      // 超上限时保留最新的 40 条（之前是保留最旧的，等于把刚画的丢掉）
+      const kept = all.length > 40 ? all.slice(-40) : all;
+      const list = kept.map(sanitizeDrawing);
       loadDrawings()[key] = { drawings: list, updatedAt: Date.now() };
       saveDrawings();
-      sendJSON(res, 200, { ok: true, key, count: list.length, drawings: list });
+      console.log(`[drawings] save ${key} · ${list.length} 条${all.length > 40 ? ` (丢弃最早 ${all.length - 40} 条)` : ''}`);
+      sendJSON(res, 200, { ok: true, key, count: list.length, dropped: Math.max(0, all.length - 40), drawings: list });
     } catch (e) {
       sendJSON(res, 400, { ok: false, error: e.message });
     }

@@ -155,7 +155,9 @@
         clearTimeout(drawSaveTimer);
         drawSaveTimer = setTimeout(() => {
           const k = { market: state.market, code: state.symbol[state.market], period: state.period };
-          API.drawingsSave({ ...k, drawings: list }).catch((e) => setDrawHint('保存失败：' + e.message));
+          API.drawingsSave({ ...k, drawings: list })
+            .then((r) => setDrawHint(r.dropped ? `已保存（超出上限，丢弃最早的 ${r.dropped} 条）` : '已保存'))
+            .catch((e) => setDrawHint('保存失败：' + e.message));
         }, 350);
       };
     }
@@ -167,10 +169,20 @@
     el.textContent = (msg ? msg + ' · ' : '') + `当前 ${drawList.length} 条 · 点线选中后可删除`;
   }
 
+  let drawSeq = 0;
+
   async function loadDrawings() {
     const k = { market: state.market, code: state.symbol[state.market], period: state.period };
+    const seq = ++drawSeq;
     drawKey = `${k.market}:${k.code}:${k.period}`;
-    try { drawList = (await API.drawings(k)).drawings || []; } catch (e) { drawList = []; }
+    try {
+      const res = await API.drawings(k);
+      if (seq !== drawSeq) return; // 乱序返回直接丢弃
+      drawList = res.drawings || [];
+    } catch (e) {
+      if (seq !== drawSeq) return;
+      drawList = [];
+    }
     if (state.chart) state.chart.setDrawings(drawList);
     setDrawHint('');
   }
@@ -190,6 +202,7 @@
           ${(res.lines || []).map((ln) => `<div class="dv-line" style="margin-top:8px"><div class="dv-h">${ln.type === 'hline' ? '水平线' : ln.type === 'rect' ? '矩形' : '趋势线'} · ${ln.score} 分</div>
             ${ln.findings.map((f) => `<div class="dv-f ${f.level}">${f.level === 'ok' ? '✓' : f.level === 'warn' ? '!' : '✗'} ${U.esc(f.text)}</div>`).join('')}</div>`).join('')}
           <div class="hint" style="margin-top:8px">${U.esc((res.method.steps || []).join(' · '))}</div>
+          <div class="hint" style="margin-top:4px;opacity:.75">${U.esc(res.engine || '')} · ${U.esc(res.disclaimer || '')}</div>
         </div>`;
     } catch (e) {
       if (box) box.innerHTML = `<div class="card empty">复核失败：${U.esc(e.message)}</div>`;
@@ -513,10 +526,7 @@
       }
       state.lastChan = res;
       state.chart.setData(res);
-      {
-        const k2 = `${state.market}:${state.symbol[state.market]}:${state.period}`;
-        if (k2 !== drawKey) loadDrawings();
-      }
+      loadDrawings(); // 图表实例每次重建，必须重新载入，否则已有线会消失并被"1 条"覆盖保存
       paintStructure(res);
       loadMobileBacktest(market, code, state.period);
     } catch (e) {

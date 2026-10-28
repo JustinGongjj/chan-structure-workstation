@@ -72,6 +72,12 @@ function checkLine(line, a, opts = {}) {
   let score = 70; // 基准分：一条合法但无特别含义的线
   const stats = {};
 
+  if (!Number.isFinite(Number(line.x1)) || !Number.isFinite(Number(line.y1)) ||
+      (line.type !== 'hline' && line.x2 != null && !Number.isFinite(Number(line.x2))) ||
+      (line.type !== 'hline' && line.y2 != null && !Number.isFinite(Number(line.y2)))) {
+    add('fail', 'bad-value', '坐标不是有效数值（可能画到画布外或数据未加载），这条线不计入结论');
+    return { findings, score: 0, stats: {} };
+  }
   const x1 = clampIdx(line.x1);
   const y1 = Number(line.y1);
   const isLevel = line.type === 'hline';
@@ -119,9 +125,12 @@ function checkLine(line, a, opts = {}) {
     const spanBars = Math.max(1, x2 - x1);
     const dirWord = slope > 0 ? '向上' : '向下';
     const trendType = (a.trend && a.trend.type) || '';
-    if (/上涨/.test(trendType) && slope < 0) add('warn', 'against-trend', `当前走势是「${trendType}」，这条线却是${dirWord}的——逆势线在缠论里只能当"次级别回抽"看，不能当主趋势`);
-    else if (/下跌/.test(trendType) && slope > 0) add('warn', 'against-trend', `当前走势是「${trendType}」，这条线却是${dirWord}的——同上，只能算次级别反抽`);
-    else if (trendType) add('ok', 'with-trend', `线的方向与「${trendType}」一致`);
+    const isUp = /上涨/.test(trendType);
+    const isDown = /下跌/.test(trendType);
+    if (isUp && slope < 0) add('warn', 'against-trend', `当前走势是「${trendType}」，这条线却是${dirWord}的——逆势线在缠论里只能当"次级别回抽"看，不能当主趋势`);
+    else if (isDown && slope > 0) add('warn', 'against-trend', `当前走势是「${trendType}」，这条线却是${dirWord}的——同上，只能算次级别反抽`);
+    else if (isUp || isDown) add('ok', 'with-trend', `线的方向与「${trendType}」一致`);
+    else add('info', 'trend-neutral', `当前是「${trendType || '走势未定'}」，没有明确方向可以对照——这类线只能当区间参考`);
     stats.slopePerBar = round(slope / spanBars, 4);
 
     /* ---- 3. 是否穿过中枢（穿中枢 = 中枢震荡，不是趋势） ---- */
@@ -153,7 +162,7 @@ function checkLine(line, a, opts = {}) {
       const lows = bars.map((b) => b.l);
       const nearHigh = Math.min(...highs.map((h) => Math.abs(pct(y1, h))));
       const nearLow = Math.min(...lows.map((l) => Math.abs(pct(y1, l))));
-      if (Math.min(nearHigh, nearLow) <= TOL_PRICE) {
+      if (Math.min(nearHigh, nearLow) <= TOL_PRICE / 3) {
         score += 4;
         add('ok', 'extreme', `水平线贴近区间${nearHigh < nearLow ? '最高价' : '最低价'}，可作前高/前低参考`);
       } else {
@@ -186,10 +195,8 @@ function checkLine(line, a, opts = {}) {
   }
 
   /* ---- 6. 端点是否贴着买卖点 ---- */
-  for (const [idx, price, tag] of [
-    [x1, y1, '起点'],
-    [x2, y2, '终点']
-  ]) {
+  const epPairs = isLevel ? [[x1, y1, '价格']] : [[x1, y1, '起点'], [x2, y2, '终点']];
+  for (const [idx, price, tag] of epPairs) {
     const ns = nearestSignal(signals, idx, price);
     if (ns && ns.dIdx <= TOL_BAR && ns.dPrice <= TOL_PRICE) {
       score += 12;
@@ -210,8 +217,9 @@ function checkLine(line, a, opts = {}) {
       const hi = Math.max(...between.map((b) => b.h));
       const lo = Math.min(...between.map((b) => b.l));
       const overshoot = Math.max(...between.map((b) => Math.max(b.h - Math.max(y1, y2), Math.min(y1, y2) - b.l)));
-      if (overshoot > (hi - lo) * 0.6 && hi > lo) {
-        add('warn', 'cut-candles', '线的方向没错，但中途大量 K 线穿到线的另一侧；缠论更看"笔"的实体穿越，而不是线的贴合度', {});
+      const beyond = between.filter((b) => b.h > Math.max(y1, y2) + (hi - lo) * 0.05 || b.l < Math.min(y1, y2) - (hi - lo) * 0.05).length;
+      if (hi > lo && beyond >= 3 && beyond / between.length > 0.25) {
+        add('warn', 'cut-candles', `${beyond} 根 K 线穿到了线的另一侧（占这段 ${Math.round((beyond / between.length) * 100)}%），线没有贴着这波走势的边界`, {});
         score -= 4;
       }
     }
@@ -248,7 +256,17 @@ function verify({ drawings = [], analysis, market, code, period }) {
   let verdict;
   if (!results.length) verdict = { level: 'info', text: '还没有画线。先用工具栏画一条趋势线或水平线，我再帮你和笔/中枢/买卖点对齐。' };
   else if (failN) verdict = { level: 'fail', text: `有 ${failN} 条硬错误（坐标无效等），先修掉再看结论。` };
-  else if (avg >= 80) verdict = { level: 'ok', text: `画法与结构基本吻合（平均 ${avg} 分）：端点多落在笔的端点上，价位也和中枢/买卖点对得上。` };
+  else if (avg >= 80) {
+    const hitsPivot = all.some((f) => f.code === 'pivot-edge' || f.code === 'box-pivot');
+    const hitsSignal = all.some((f) => f.code === 'near-signal');
+    const snaps = all.filter((f) => f.code === 'snap-bi' || f.code === 'snap-bi-end').length;
+    const facts = [
+      snaps ? `有 ${snaps} 个端点落在笔端点上` : '',
+      hitsPivot ? '有线的价位/框与中枢对齐' : '',
+      hitsSignal ? '有端点贴着买卖点' : ''
+    ].filter(Boolean);
+    verdict = { level: 'ok', text: `画法与结构基本吻合（平均 ${avg} 分）：${facts.join('，') || '整体没有明显冲突'}。` };
+  }
   else if (avg >= 60) verdict = { level: 'warn', text: `画法大致合理（平均 ${avg} 分），但还有 ${warnN} 处可以对齐：优先把端点吸到笔的端点、把水平线贴到中枢上下沿。` };
   else verdict = { level: 'warn', text: `画法与结构偏离较多（平均 ${avg} 分）：${warnN} 处提示。缠论不看趋势线，建议改用"框住中枢 + 标出买卖点"的方式。` };
 
