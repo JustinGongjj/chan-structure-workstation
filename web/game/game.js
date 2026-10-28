@@ -23,8 +23,14 @@
   let graded = null;
 
   function load() {
-    try { return JSON.parse(localStorage.getItem(KEY)) || { levels: {}, streak: 0, best: 0 }; }
-    catch (e) { return { levels: {}, streak: 0, best: 0 }; }
+    try {
+      const raw = JSON.parse(localStorage.getItem(KEY));
+      if (!raw || typeof raw !== 'object' || typeof raw.levels !== 'object' || raw.levels === null) throw new Error('bad shape');
+      return { levels: raw.levels, streak: Number(raw.streak) || 0, best: Number(raw.best) || 0 };
+    } catch (e) {
+      try { localStorage.removeItem(KEY); } catch (e2) {}
+      return { levels: {}, streak: 0, best: 0 };
+    }
   }
   function save(p) { localStorage.setItem(KEY, JSON.stringify(p)); }
   let prog = load();
@@ -141,7 +147,7 @@
           <span class="tag">${l.rankName}</span>
         </div>
         <div class="q-text">${escapeHtml(l.question.text)}</div>
-        <div class="q-text" style="opacity:.8">${escapeHtml(l.market)} · ${escapeHtml(l.code)} · 日线 · 数据源 ${escapeHtml(l.source || '')} · 隐藏了后 ${l.hidden} 根</div>
+        <div class="q-text" style="opacity:.8">${escapeHtml(l.marketLabel || l.market)} · 日线 · 已隐藏后 ${l.hidden} 根（答完才揭晓标的）</div>
         <div class="chart-wrap"><canvas id="gchart"></canvas></div>
         <div class="chart-note" id="chartNote">${MECH_HINT[l.mechanic] || ''}</div>
         <div id="answerArea"></div>
@@ -171,29 +177,36 @@
       pickMode = true;
       bindPick();
     } else {
-      area.innerHTML = `<div class="tools"><button class="tool on" id="rectBtn">拖框选中中枢</button><button class="tool" id="clearBtn">清空</button></div>`;
+      area.innerHTML = `<div class="tools"><button class="tool on" id="rectBtn">拖框选中中枢</button><button class="tool" id="clearBtn">清空重画</button></div>`;
       chart.setDrawMode('rect');
       chart.onDraws = (list) => {
         pickedIdx = list.length ? list[list.length - 1] : null;
-        $('#submit').disabled = !pickedIdx;
-        $('#chartNote').textContent = pickedIdx ? '已框选：确认后交卷' : MECH_HINT.pivot;
+        const sb = $('#submit');
+        if (sb) sb.disabled = !pickedIdx;
+        $('#chartNote').textContent = pickedIdx ? '已框选：确认后交卷（不满意点"清空重画"）' : MECH_HINT.pivot;
       };
+      $('#rectBtn').addEventListener('click', () => { chart.setDrawMode('rect'); toast('在图上拖出一个框'); });
+      $('#clearBtn').addEventListener('click', () => { chart.clearDrawings(); pickedIdx = null; const sb = $('#submit'); if (sb) sb.disabled = true; chart.setDrawMode('rect'); });
     }
     $('#submit').addEventListener('click', doSubmit);
   }
 
   function bindPick() {
     const cv = $('#gchart');
-    const handler = (e) => {
-      if (!pickMode || !chart || !chart.data) return;
+    let downX = 0, downY = 0, moved = false;
+    cv.addEventListener('pointerdown', (e) => { downX = e.clientX; downY = e.clientY; moved = false; });
+    cv.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - downX, e.clientY - downY) > 8) moved = true; });
+    cv.addEventListener('pointerup', (e) => {
+      if (!pickMode || moved || graded || !chart || !chart.data) return;
       const p = chart.dataAt(e.clientX, e.clientY);
       if (!p) return;
       pickedIdx = p.idx;
       chart.setHighlight({ title: `第 ${p.idx} 根`, marks: [{ idx: p.idx, type: 'pick' }] });
-      $('#pickInfo').textContent = `已选第 ${p.idx} 根（${chart.data.bars[p.idx] ? chart.data.bars[p.idx].c.toFixed(2) : ''}）`;
-      $('#submit').disabled = false;
-    };
-    cv.addEventListener('pointerdown', handler);
+      const info = $('#pickInfo');
+      if (info) info.textContent = `已选第 ${p.idx} 根（${chart.data.bars[p.idx] ? chart.data.bars[p.idx].c.toFixed(2) : ''}）`;
+      const sb = $('#submit');
+      if (sb) sb.disabled = false;
+    });
   }
 
   async function doSubmit() {
@@ -201,7 +214,7 @@
     btn.disabled = true;
     btn.textContent = '判分中…';
     try {
-      const payload = { no: level.no, token: level.token };
+      const payload = { no: level.no, token: level.token, attemptId: level.attemptId };
       if (level.mechanic === 'predict' || level.mechanic === 'beichi') payload.answer = picked;
       else if (level.mechanic === 'signal') payload.answer = { idx: pickedIdx };
       else payload.answer = { box: pickedIdx };
@@ -219,17 +232,22 @@
   }
 
   function showResult(res) {
-    const prev = prog.levels[res.no] || { score: 0, stars: 0 };
-    const better = res.score > prev.score;
-    prog.levels[res.no] = { score: Math.max(prev.score, res.score), stars: Math.max(prev.stars, res.stars) };
+    const prev = prog.levels[res.no] || null;
+    const better = !!prev && res.score > prev.score;
+    if (res.score > 0) prog.levels[res.no] = { score: Math.max(prev ? prev.score : 0, res.score), stars: Math.max(prev ? prev.stars : 0, res.stars) };
     prog.streak = res.stars >= 2 ? (prog.streak || 0) + 1 : 0;
     prog.best = Math.max(prog.best || 0, prog.streak);
     save(prog);
 
     const cls = res.score >= 70 ? 'ok' : res.score >= 45 ? 'mid' : 'bad';
     // 揭示答案：把完整数据画出来，并标出正确答案
-    chart.toggles = { bi: true, seg: true, pivot: true, signal: true, beichi: true, vol: false, macd: true, fractal: false };
-    const full = { bars: res.revealedBars, period: level.period, bis: [], segments: [], pivots: [], signals: [] };
+    chart.toggles = { bi: true, seg: true, pivot: true, signal: true, beichi: true, vol: false, macd: false, fractal: false };
+    const st = res.revealedStructure || {};
+    const full = {
+      bars: res.revealedBars, period: level.period,
+      bis: st.bis || [], segments: st.segments || [], pivots: st.pivots || [],
+      signals: st.signals || [], beichi: st.beichi || []
+    };
     chart.setData(full, { keepView: false });
     if (res.answer.signal) chart.setHighlight({ title: res.answer.signal.name, marks: [{ idx: res.answer.signal.barIdx - res.revealedFrom, type: 'signal' }] });
     else if (res.answer.pivot) chart.setHighlight({ title: '中枢', bands: [{ from: res.answer.pivot.i0 - res.revealedFrom, to: res.answer.pivot.i1 - res.revealedFrom, zg: res.answer.pivot.zg, zd: res.answer.pivot.zd }] });
@@ -240,8 +258,10 @@
     box.innerHTML = `
       <div class="score"><b style="color:${cls === 'ok' ? 'var(--ok)' : cls === 'mid' ? 'var(--warn)' : 'var(--bad)'}">${res.score}</b>
         <span class="stars">${'★'.repeat(res.stars)}${'☆'.repeat(3 - res.stars)}</span>
-        <span class="tag">${better ? '新纪录' : '保留最高分'}</span></div>
+        <span class="tag">${better ? '新纪录' : (prev ? '保留最高分' : '首通')}</span>
+        ${prog.streak > 1 ? `<span class="tag">连击 ${prog.streak}</span>` : ''}</div>
       <div class="verdict ${cls}">${escapeHtml(res.verdict)}</div>
+      <div class="chart-note">${res.target ? `本关标的：${escapeHtml(res.target.market)} · ${escapeHtml(res.target.code)}${res.target.name ? ' · ' + escapeHtml(res.target.name) : ''}` : ''}</div>
       <ul class="explain">${res.explain.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
       ${res.gist ? `<div class="gist"><b>本关要点：</b>${escapeHtml(res.gist)}</div>` : ''}
       <div class="row">

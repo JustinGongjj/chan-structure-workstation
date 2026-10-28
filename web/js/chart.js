@@ -302,7 +302,8 @@
         ctx.moveTo(x, g.priceTop);
         ctx.lineTo(x, g.priceTop + g.priceH);
         ctx.stroke();
-        ctx.fillText(U.ts(d.bars[i].t, d.period), x - 16, g.h - 5);
+        const label = U.ts(d.bars[i].t, d.period);
+        ctx.fillText(label, Math.max(2, x - 16), g.h - 5);
       }
 
       // K线
@@ -677,7 +678,7 @@
 
     drawHighlight(g, r, C, bodyW) {
       const hl = this.hl;
-      if (!hl || !Array.isArray(hl.bands) || !hl.bands.length) return;
+      if (!hl) return;
       const { ctx } = this;
       const left = g.padL;
       const right = g.padL + g.plotW;
@@ -693,7 +694,7 @@
       ctx.restore();
 
       // 段落色带
-      for (const b of hl.bands) {
+      for (const b of hl.bands || []) {
         const x0 = xOfClamp(b.from);
         const x1 = xOfClamp(b.to);
         const w = Math.max(2, x1 - x0);
@@ -701,7 +702,15 @@
         ctx.save();
         ctx.globalAlpha = 0.16;
         ctx.fillStyle = col;
-        ctx.fillRect(x0, g.priceTop, w, g.priceH);
+        let bandTop = g.priceTop;
+        let bandH = g.priceH;
+        if (b.zd != null && b.zg != null) {
+          const yTop = this.yOf(b.zg, g, r);
+          const yBot = this.yOf(b.zd, g, r);
+          bandTop = Math.max(g.priceTop, Math.min(yTop, yBot));
+          bandH = Math.max(2, Math.abs(yBot - yTop));
+        }
+        ctx.fillRect(x0, bandTop, w, bandH);
         ctx.globalAlpha = 1;
         ctx.strokeStyle = col;
         ctx.lineWidth = 1;
@@ -757,8 +766,12 @@
 
       // 关键点
       for (const m of hl.marks || []) {
-        const x = xOfClamp(m.bar);
-        const y = this.yOf(m.price, g, r);
+        const bar = m.bar != null ? m.bar : m.idx;
+        if (bar == null) continue;
+        const px = m.price != null ? m.price : (this.data.bars[bar] ? this.data.bars[bar].c : null);
+        if (px == null) continue;
+        const x = xOfClamp(bar);
+        const y = this.yOf(px, g, r);
         const col = this.colorOf(C, m.color || 'gold');
         ctx.save();
         ctx.fillStyle = col;

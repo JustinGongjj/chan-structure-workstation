@@ -17,7 +17,8 @@ const crypto = require('crypto');
 const S = require('./sources');
 const C = require('./chan');
 
-const SECRET = process.env.GAME_SECRET || 'chan-game-2026';
+const SECRET = process.env.GAME_SECRET || crypto.randomBytes(16).toString('hex');
+if (!process.env.GAME_SECRET) console.warn('[game] GAME_SECRET 未设置，已随机生成（重启后旧关卡会失效，属预期）');
 const HIDDEN = 12; // 每关隐藏 12 根 K 线等着玩家判断
 
 /* 题库素材：四市场轮换，保证"最新行情"覆盖各市场 */
@@ -75,10 +76,10 @@ function buildMap(K) {
       no,
       rank: rankOf(no).key,
       mechanic: ch.mechanic,
-      title: lesson.title || `${ch.name} · 第 ${no} 关`,
+      title: lesson.title || `${ch.name} · 第 ${no} 练`,
       theme: ch.id,
       themeName: ch.name,
-      gist: lesson.gist || '',
+      gist: lesson.gist || ch.desc || '',
       confirmed: !!lesson.confirmed
     });
   }
@@ -90,10 +91,11 @@ function levelPlan(no) {
   const markets = ['A', 'A', 'HK', 'US', 'CR'];
   const market = markets[parseInt(seed.slice(0, 2), 16) % markets.length];
   const code = pick(POOL[market], seed.slice(2));
-  // 难度越高：截断点越靠前（留更长的历史）、隐藏段越长
   const rank = rankOf(no).key;
   const hidden = rank === 'king' ? 20 : rank === 'gold' ? 16 : rank === 'silver' ? 14 : 12;
-  return { seed, market, code, hidden, rank };
+  // 截断点在历史里随机（同一关固定）：否则每关都截在最后一段，108 关会大量重复
+  const offset = parseInt(seed.slice(8, 12), 16) % 90;
+  return { seed, market, code, hidden, rank, offset };
 }
 
 async function fetchBars(market, code) {
@@ -102,9 +104,24 @@ async function fetchBars(market, code) {
   return kl;
 }
 
+/* ---------------- 答题凭据（单次有效） ----------------
+   同一个 token 不能被反复提交（否则"看走势"只有三选一，试三次必中）。
+   这里保存 attempt：{no, market, code, cutoffT, used, at}，
+   判分时按 cutoffT 在最新数据里重新定位那根 K 线（数据只会往后追加，时间戳不会变）。 */
+const ATTEMPTS = new Map();
+const ATTEMPT_TTL = 20 * 60 * 1000;
+const ATTEMPT_MAX = 300;
+
+function purgeAttempts() {
+  const now = Date.now();
+  for (const [k, v] of ATTEMPTS) if (now - v.at > ATTEMPT_TTL) ATTEMPTS.delete(k);
+  while (ATTEMPTS.size > ATTEMPT_MAX) ATTEMPTS.delete(ATTEMPTS.keys().next().value);
+}
+
 /** 从 K 线里算这一关的"正确答案"（服务端专用） */
-function computeAnswer(plan, bars) {
-  const cutoff = bars.length - plan.hidden; // 隐藏起点
+function computeAnswer(plan, bars, offset) {
+  const off = offset == null ? plan.offset || 0 : offset;
+  const cutoff = Math.max(130, Math.min(bars.length - plan.hidden, bars.length - plan.hidden - off)); // 隐藏起点（随机靠前）
   const a = C.analyze(bars.slice(0, cutoff), { period: 'day', market: plan.market, code: plan.code });
   const future = bars.slice(cutoff, cutoff + plan.hidden);
   const firstClose = bars[cutoff - 1].c;
@@ -113,12 +130,22 @@ function computeAnswer(plan, bars) {
   const hi = Math.max(...future.map((b) => b.h));
   const lo = Math.min(...future.map((b) => b.l));
   const amp = (hi - lo) / firstClose;
-  const dir = ret > 0.015 ? 'up' : ret < -0.015 ? 'down' : 'flat';
+  // 震荡带：按"同样长度的历史窗口"的中位绝对涨幅自适应（A股/加密/美股差异很大）
+  const windowRets = [];
+  for (let i = 40; i + plan.hidden < cutoff; i += 7) {
+    const a0 = bars[i].c;
+    const a1 = bars[i + plan.hidden].c;
+    if (a0 > 0) windowRets.push(Math.abs((a1 - a0) / a0));
+  }
+  windowRets.sort((x, y) => x - y);
+  const median = windowRets.length ? windowRets[Math.floor(windowRets.length / 2)] : 0.04;
+  const flatBand = Math.max(0.015, Math.min(0.05, median * 0.6));
+  const dir = ret > flatBand ? 'up' : ret < -flatBand ? 'down' : 'flat';
   // 截断处最近的结构信号（用于讲解 + 加分）
   const lastSignal = (a.signals || []).slice(-1)[0] || null;
   const lastPivot = (a.pivots || []).filter((p) => p.i1 <= cutoff - 1).slice(-1)[0] || null;
   const lastBi = (a.bis || []).slice(-1)[0] || null;
-  return { cutoff, future, ret, amp, dir, hi, lo, analysis: a, lastSignal, lastPivot, lastBi, firstClose, lastClose };
+  return { cutoff, future, ret, amp, dir, flatBand, hi, lo, analysis: a, lastSignal, lastPivot, lastBi, firstClose, lastClose };
 }
 
 function tokenFor(no, market, code, cutoff) {
@@ -133,10 +160,20 @@ async function makeLevel(K, no) {
   const plan = levelPlan(no);
   const kl = await fetchBars(plan.market, plan.code);
   const bars = kl.bars;
-  const ans = computeAnswer(plan, bars);
-  const visible = bars.slice(0, ans.cutoff);
+  const ans = computeAnswer(plan, bars, plan.offset);
+  // 匿名化：出题阶段不告诉玩家是哪个标的，也不给真实时间轴，
+  // 否则玩家可以直接查 /api/kline 把隐藏段读出来（等于开卷）。
+  const visible = bars.slice(0, ans.cutoff).map((b, i) => ({
+    t: Date.UTC(2020, 0, 1) + i * 86400000,
+    o: b.o, h: b.h, l: b.l, c: b.c, v: b.v
+  }));
   const map = buildMap(K);
   const level = map.chapters.flatMap((c) => c.levels).find((l) => l.no === no) || {};
+
+  purgeAttempts();
+  const attemptId = crypto.randomUUID();
+  const cutoffT = bars[ans.cutoff - 1].t;
+  ATTEMPTS.set(attemptId, { no, market: plan.market, code: plan.code, cutoffT, used: false, at: Date.now() });
 
   const base = {
     ok: true,
@@ -148,14 +185,12 @@ async function makeLevel(K, no) {
     title: level.title,
     gist: level.gist,
     market: plan.market,
-    code: plan.code,
-    name: kl.name || '',
+    marketLabel: { A: 'A股', HK: '港股', US: '美股', CR: '加密' }[plan.market] || plan.market,
     period: 'day',
-    source: kl.source,
     visibleBars: visible,
     hidden: plan.hidden,
-    token: tokenFor(no, plan.market, plan.code, ans.cutoff),
-    cutoff: ans.cutoff
+    attemptId,
+    token: tokenFor(no, plan.market, plan.code, ans.cutoff) // 仅用于完整性校验，含尝试 id 之外的指纹
   };
 
   if (level.mechanic === 'predict') {
@@ -186,12 +221,21 @@ async function makeLevel(K, no) {
 }
 
 /** 判分：答案由服务端重算，客户端只提交选择/点击位置 */
-async function gradeLevel(K, { no, token, answer }) {
+async function gradeLevel(K, { no, token, attemptId, answer }) {
+  purgeAttempts();
+  const att = ATTEMPTS.get(attemptId);
+  if (!att) throw new Error('这道题已过期，请重新开一关');
+  if (att.used) throw new Error('这道题已经判过分了，同一题不能重复作答');
+  if (Number(no) !== att.no) throw new Error('关卡号不匹配');
   const plan = levelPlan(Number(no));
-  const kl = await fetchBars(plan.market, plan.code);
-  const ans = computeAnswer(plan, kl.bars);
-  const expect = tokenFor(Number(no), plan.market, plan.code, ans.cutoff);
-  if (!token || token !== expect) throw new Error('这道题的数据已过期（行情刷新了），重新开一关吧');
+  const kl = await fetchBars(att.market, att.code);
+  const cutoffIdx = kl.bars.findIndex((b) => b.t === att.cutoffT);
+  if (cutoffIdx < 0) throw new Error('行情数据已更新，这题失效了，重新开一关吧');
+  // cutoff = cutoffIdx + 1 → offset = len - hidden - cutoff
+  const ans = computeAnswer(plan, kl.bars, kl.bars.length - plan.hidden - (cutoffIdx + 1));
+  const expect = tokenFor(Number(no), att.market, att.code, ans.cutoff);
+  if (!token || token !== expect) throw new Error('校验失败，请重新开一关');
+  att.used = true; // 单次有效：判完即作废
   const map = buildMap(K);
   const level = map.chapters.flatMap((c) => c.levels).find((l) => l.no === Number(no)) || {};
   const revealed = kl.bars;
@@ -206,17 +250,17 @@ async function gradeLevel(K, { no, token, answer }) {
     const correct = answer === ans.dir;
     const agree = ans.lastSignal && ((ans.dir === 'up' && /B$/.test(ans.lastSignal.type)) || (ans.dir === 'down' && /S$/.test(ans.lastSignal.type)));
     if (correct) {
-      score = 62 + Math.min(30, Math.round((Math.abs(ans.ret) / 0.06) * 30));
+      score = 70 + Math.min(28, Math.round((Math.abs(ans.ret) / 0.06) * 28));
       if (agree) score = Math.min(100, score + 8); // 与结构信号一致，额外加分
       verdict = agree ? '方向对，而且还和缠论信号同向' : '方向判断正确';
     } else if (answer === 'flat' || ans.dir === 'flat') {
-      score = 40; // 方向与震荡互判，算半对
+      score = 45; // 方向与震荡互判，算半对
       verdict = '方向把握偏了（震荡与趋势混淆）';
     } else {
       score = 8;
       verdict = '方向判断反了';
     }
-    explain.push(`实际走势：${(ans.ret * 100).toFixed(2)}%（振幅 ${(ans.amp * 100).toFixed(1)}%），你判断为「${answer}」，正确答案是「${ans.dir}」。`);
+    explain.push(`实际走势：${(ans.ret * 100).toFixed(2)}%（振幅 ${(ans.amp * 100).toFixed(1)}%），震荡带 ±${(ans.flatBand * 100).toFixed(1)}%，判为「${ans.dir}」；你选的是「${answer}」。`);
     explain.push(`截断时的结构：${sd}；${pv}。`);
     if (ans.lastBi) explain.push(`最后一笔：${ans.lastBi.dir > 0 ? '向上' : '向下'}（${ans.lastBi.p0.toFixed(2)} → ${ans.lastBi.p1.toFixed(2)}）。`);
   } else if (level.mechanic === 'signal') {
@@ -293,8 +337,22 @@ async function gradeLevel(K, { no, token, answer }) {
       pivot: ans.lastPivot ? { i0: ans.lastPivot.i0, i1: ans.lastPivot.i1, zd: ans.lastPivot.zd, zg: ans.lastPivot.zg } : null,
       cutoff: ans.cutoff
     },
+    target: { market: att.market, code: att.code, name: kl.name || '' },
     revealedBars: revealed.slice(Math.max(0, ans.cutoff - 60)),
     revealedFrom: Math.max(0, ans.cutoff - 60),
+    // 揭示段的结构（下标已平移到揭示窗口内），让玩家看到笔/中枢/买卖点是怎么落在这段走势里的
+    revealedStructure: (() => {
+      const from = Math.max(0, ans.cutoff - 60);
+      const shift = (i) => i - from;
+      const a2 = C.analyze(revealed, { period: 'day', market: plan.market, code: plan.code });
+      return {
+        bis: (a2.bis || []).filter((b) => b.i0 >= from).map((b) => ({ ...b, i0: shift(b.i0), i1: shift(b.i1) })),
+        segments: (a2.segments || []).filter((sg) => sg.i0 >= from).map((sg) => ({ ...sg, i0: shift(sg.i0), i1: shift(sg.i1) })),
+        pivots: (a2.pivots || []).filter((p) => p.i0 >= from).map((p) => ({ ...p, i0: shift(p.i0), i1: shift(p.i1) })),
+        signals: (a2.signals || []).filter((sg) => sg.barIdx >= from).map((sg) => ({ ...sg, barIdx: shift(sg.barIdx) })),
+        beichi: (a2.beichi || []).filter((b) => (b.i1 != null ? b.i1 >= from : true)).map((b) => ({ ...b, i1: b.i1 != null ? shift(b.i1) : b.i1 }))
+      };
+    })(),
     gist: level.gist || '',
     note: '关卡由实时行情生成；同一关刷新行情后题目会变，这是有意的（练的是结构识别，不是背答案）。'
   };

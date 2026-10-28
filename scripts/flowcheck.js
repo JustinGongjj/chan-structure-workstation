@@ -359,7 +359,10 @@ async function gameFlows() {
       const score = await cdp.eval(`document.querySelector('.result .score b')?.textContent || ''`);
       const verdict = await cdp.eval(`document.querySelector('.result .verdict')?.textContent || ''`);
       const explain = await cdp.eval(`document.querySelectorAll('.result .explain li').length`);
-      check('闯关·判分并给出讲解', Number(score) >= 0 && explain > 0, `${score} 分 · ${String(verdict).slice(0, 18)}… · ${explain} 条讲解`);
+      const target = await cdp.eval(`[...document.querySelectorAll('.result .chart-note')].map(e => e.textContent).join(' ')`);
+      const canvasChanged = await cdp.eval(`!!document.querySelector('#gchart')`);
+      check('闯关·判分并给出讲解', Number.isFinite(Number(score)) && explain > 0 && /本关标的/.test(target),
+        `${score} 分 · ${String(verdict).slice(0, 16)}… · ${explain} 条讲解 · 揭示标的=${/本关标的/.test(target)}`);
       const saved = await cdp.eval(`(() => { const p = JSON.parse(localStorage.getItem('changuan-progress-v1') || '{}'); return Object.keys(p.levels || {}).length; })()`);
       check('闯关·进度已保存', saved >= 1, `已记录 ${saved} 关`);
     }

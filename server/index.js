@@ -687,7 +687,7 @@ const server = http.createServer(async (req, res) => {
   if (u.pathname === '/api/game/answer' && req.method === 'POST') {
     try {
       const body = await readBody(req);
-      const out = await GAME.gradeLevel(K, { no: body.no, token: body.token, answer: body.answer });
+      const out = await GAME.gradeLevel(K, { no: body.no, token: body.token, attemptId: body.attemptId, answer: body.answer });
       sendJSON(res, 200, out);
     } catch (e) {
       sendJSON(res, 400, { ok: false, error: e.message });
