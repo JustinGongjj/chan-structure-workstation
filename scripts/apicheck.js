@@ -74,6 +74,20 @@ async function expectFail(name, path, status, opts = {}) {
   await hit('手绘线保存', '/api/drawings', j => need(j.count === 1 && j.drawings[0].type === 'hline', '保存失败'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [{ type: 'hline', x1: 10, y1: 1355.9 }] } });
   await hit('手绘线校验', '/api/drawings/verify', j => need(typeof j.score === 'number' && Array.isArray(j.lines) && j.verdict, '缺 score/lines/verdict'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [{ type: 'hline', x1: 10, y1: 1355.9 }, { type: 'trend', x1: 2, y1: 1362, x2: 32, y2: 1486 }] } });
   await hit('手绘线清空', '/api/drawings', j => need(j.count === 0, '清空失败'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [] } });
+  await hit('闯关地图', '/api/game/map', j => need(j.total === 108 && j.chapters.length >= 10, '关卡总数/章节不对'));
+  const lv = await hit('闯关出题', '/api/game/level?no=7', j => need(j.visibleBars?.length > 80 && j.token && j.question, '缺 K 线/token/题目'));
+  if (lv) {
+    // 答案不能出现在出题响应里（否则等于开卷）
+    const leaked = JSON.stringify(lv).includes('"dir"') || JSON.stringify(lv).includes('revealedBars');
+    results.push({
+      name: '闯关不泄题', path: 'level payload', ms: 0,
+      ok: !leaked, note: leaked ? '' : '题目里没有答案字段',
+      error: leaked ? '出题响应里带了答案（dir/revealedBars），玩家可以直接读出正确答案' : ''
+    });
+    const answer = lv.mechanic === 'predict' ? 'up' : lv.mechanic === 'signal' ? { idx: lv.cutoff - 2 } : lv.mechanic === 'pivot' ? { box: { x1: lv.cutoff - 20, y1: 1, x2: lv.cutoff - 5, y2: 2 } } : 'yes';
+    await hit('闯关判分', '/api/game/answer', j => need(typeof j.score === 'number' && j.stars >= 0 && j.explain?.length && j.revealedBars?.length, '判分结构不全'), { method: 'POST', body: { no: 7, token: lv.token, answer } });
+    await expectFail('闯关防伪造 token', '/api/game/answer', 400, { method: 'POST', body: { no: 7, token: 'deadbeef', answer } });
+  }
   await hit('108 课', '/api/chan-lessons', j => need(j.lessons?.length === 108, '课数不是 108'));
   await hit('天涯言论集', '/api/chan-lore', j => need(j.lore?.length > 10, '言论集过少'));
   await hit('形而上索引', '/api/metaphysics', j => need(Object.keys(j.systems || {}).length >= 5 || j.books, '缺系统/书目'));

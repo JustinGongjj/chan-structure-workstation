@@ -176,7 +176,23 @@ docker run -p 8931:8931 -v "$PWD/data:/app/data" chan-station
 
 ---
 
-### 手绘线 + AI 复核（新增）
+### 缠关 · 108（独立闯关小游戏）
+
+`/game/` 是一个可以单独玩、单独测的小游戏：**把 108 课变成 108 关**，每关用**实时行情**生成一道题。
+
+| 题型 | 玩法 | 判分 |
+| --- | --- | --- |
+| 看走势 | 图截断在某个位置，判断接下来 12–20 根涨/跌/震荡 | 方向 + 幅度，和缠论信号同向额外加分 |
+| 找买卖点 | 在图上点出买卖点所在 K 线 | 与标准答案的 K 线距离 |
+| 框中枢 | 拖一个框框住中枢 | 与真实中枢区间的 IoU |
+| 判背驰 | 判断最后一段有没有背驰 | 二选一 + 力度对比数字 |
+
+- 108 关 → 14 章（沿用 108 课的主题分组），难度四档：青铜 / 白银 / 黄金 / 王者。
+- **答案不下发**：出题只给截断前的 K 线 + 一张 HMAC token，判分在服务端重算。
+- 进度存本地：星级、平均分、连击；关卡按顺序解锁。
+- 设计细节见 [`docs/GAME.md`](docs/GAME.md)。
+
+### 手绘线 + AI 复核
 
 在结构图上自己画线，然后让规则引擎把它和缠论结构对齐检查：
 
@@ -209,6 +225,9 @@ docker run -p 8931:8931 -v "$PWD/data:/app/data" chan-station
 | `GET /api/sources` | live probe of every free data provider |
 | `GET/POST /api/drawings?market=A&code=600519&period=day` | load / save user-drawn lines (per symbol+period, atomic JSON store) |
 | `POST /api/drawings/verify` | rule-engine review of drawings against 笔/中枢/买卖点 → score + per-line findings |
+| `GET /api/game/map` | 108 关地图（章节 / 题型 / 难度） |
+| `GET /api/game/level?no=7` | 出题：截断后的 K 线 + 题目 + HMAC token（**不含答案**） |
+| `POST /api/game/answer` | 判分：服务端重算答案 → 0–100 分、星级、逐条讲解、揭示段 |
 
 All responses are `{ ok: true, … }`; failures are `{ ok: false, error }` with a 4xx/5xx status.
 
@@ -220,8 +239,8 @@ All responses are `{ ok: true, … }`; failures are `{ ok: false, error }` with 
 
 | 命令 | 覆盖 | 现状 |
 | --- | --- | --- |
-| `npm test` | 缠论引擎不变量、干支锚点、农历/紫微/奇门、择时、算卦确定性、**手绘线校验引擎** | **52 项** |
-| `npm run check:api` | 逐条打 43 个接口：四市场报价/K线/缠论、多级别、雷达、择时七法、择时验证、回测、算卦可变性、自选池增删+去重+垃圾代码拒绝、静态资源 | **39/39** |
+| `npm test` | 缠论引擎不变量、干支锚点、农历/紫微/奇门、择时、算卦确定性、手绘线校验引擎、**闯关关卡引擎** | **57 项** |
+| `npm run check:api` | 逐条打 48 个接口：四市场报价/K线/缠论、多级别、雷达、择时七法、择时验证、回测、算卦可变性、自选池增删+去重+垃圾代码拒绝、静态资源 | **39/39** |
 | `npm run check:ui` | 真实 Chromium(CDP)：桌面 1440/1024、iOS 390×844、Android 412×915 × 深浅色。查 JS 报错、横向溢出、**内容超出却滚不动**、轮询是否打回滚动位置、5 个 Tab 是否都有内容 | **6/6** |
 | `npm run check:sheet` | 弹层矩阵：5 Tab × 3 弹层 × 2 皮肤 × 2 主题，断言弹层背景不透明、不被页面压住、无零宽标题、无超宽元素 | **48/48** |
 | `npm run check:flow` | 交互链路：搜索→进结构、自选池增删、**算卦两次必换卦**、切市场自动退回兼容周期、教学标注齐全、理论弹层、深链、桌面 6 页与弹窗 | **25/25** |
@@ -307,6 +326,7 @@ space/                Hugging Face Space (Docker SDK)
 | 2026-10-27 | v1.1 | **弹层两层框架冲突**：`.view{z-index:5000}` 把页面压到弹层之上（文字叠在一起）；元素级 `button{width:100%}` 把弹层标题挤成 0 宽。同时修 toast 被 `.ios/.md .toast` 顶出屏幕、`.btn` 被 F7 的 `--f7-button-height` 裁字 | `npm run check:sheet`（48 组断言：背景/层级/零宽/超宽） |
 | 2026-10-27 | v1.1 | **服务端加固**：自选池原子写（tmp+rename）、空表不再回退默认、垃圾代码被拒（先取行情校验）、60 个上限、并发重复二次校验、写接口去掉 `Access-Control-Allow-Origin:*` | `npm run check:api`（含"去重被正确拒绝"与"垃圾代码被拒"） |
 | 2026-10-27 | v1.1 | **交互健壮性**：切 Tab 清掉算卦 12s 跟随定时器、异步渲染加防串页守卫、雷达轮询改原地更新（不再把手指下的行换掉）、返回键先关弹层再回上页、未捕获异常给可见提示、chart 支持 `destroy()` 修监听泄漏、滚轮默认交还页面滚动（Ctrl/⌘+滚轮才缩放） | `npm run check:flow`（17 步） |
+| 2026-10-28 | v1.3 | **新增「缠关 · 108」独立闯关小游戏**（`/game/`）：108 课变 108 关，题型 4 种（看走势/找买卖点/框中枢/判背驰），实时行情出题、答案不下发、服务端判分、讲解 + 星级 + 本地进度；品牌去掉"炒股"字样 | `check:flow` 6 步闯关链路、`check:api` 5 项（含不泄题/防伪造 token）、5 个引擎单测 |
 | 2026-10-28 | v1.2 | **复审闭环**：独立复审 agent 报 4 blocker / 11 major / 12 minor；已修 4 个 blocker（半成品线残留、画布外松手幽灵框、图表重建导致线丢失、40 条上限丢最新的）+ 主要 major（线改按时间戳 `t` 锚定不再随 K 线漂移、请求令牌防串标的、画线时禁用平移、hline 重复加分、`extreme` 误判、文案不再夸大、NaN 净化、cap 保留最新），三项落成 flow 断言；报告归档 `docs/reviews/drawing.md` | `check:flow`（25 步，含两条 blocker 回归） |
 | 2026-10-28 | v1.2 | **手绘线 + AI 复核**：趋势线（吸附笔端点）/水平线/矩形，按标的+周期存服务端；`POST /api/drawings/verify` 用确定性规则把线对齐笔·中枢·买卖点，给 0–100 一致度与逐条结论 | `npm test`（10 个校验引擎单测）、`check:api`（4 个新接口）、`check:flow`（画线→复核→落库） |
 | 2026-10-28 | v1.2 | **样式分层 + 冲突自动审计**：`f7-compat.css` 成为唯一框架对抗层（`mobile.css` 的 `!important` 归零），`check:css` 对 5706 条 F7 规则里的 111 个危险属性逐条核对 | `npm run check:css` |

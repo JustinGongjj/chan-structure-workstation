@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 缠论炒股工作站 —— 零依赖 HTTP 服务
+ * 缠论工作站 —— 零依赖 HTTP 服务
  * 静态站点（web/） + JSON API（行情 / 缠论结构 / 雷达 / 干支算卦 / 数据源探测）
  */
 
@@ -19,6 +19,7 @@ const BT = require('./lib/backtest');
 const META = require('./lib/metaphysics');
 const K = require('./lib/chan-lessons');
 const DRAW = require('./lib/drawing');
+const GAME = require('./lib/game');
 const { cached, mapPool, cacheStats } = require('./lib/http');
 
 const PORT = Number(process.env.PORT || 8931);
@@ -548,6 +549,14 @@ const routes = {
       period: u.searchParams.get('period') || 'day',
       nocache: u.searchParams.get('nocache') === '1',
     }),
+  '/api/game/map': async () => {
+    const map = GAME.buildMap(K);
+    return { ok: true, ...map, generatedAt: Date.now() };
+  },
+  '/api/game/level': async (u) => {
+    const no = Number(u.searchParams.get('no') || 1);
+    return await GAME.makeLevel(K, no);
+  },
   '/api/drawings': async (u) => {
     const key = drawKey(u.searchParams.get('market'), u.searchParams.get('code'), u.searchParams.get('period'));
     const rec = loadDrawings()[key] || { drawings: [], updatedAt: null };
@@ -674,6 +683,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   // 自选池写操作
+  // 闯关判分（POST）：答案只在服务端重算
+  if (u.pathname === '/api/game/answer' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const out = await GAME.gradeLevel(K, { no: body.no, token: body.token, answer: body.answer });
+      sendJSON(res, 200, out);
+    } catch (e) {
+      sendJSON(res, 400, { ok: false, error: e.message });
+    }
+    return;
+  }
   // 手绘线保存（POST）与校验（POST /api/drawings/verify）
   if (u.pathname === '/api/drawings' && req.method === 'POST') {
     try {
@@ -785,7 +805,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`\n  缠论炒股工作站 · Chan Workstation`);
+  console.log(`\n  缠论工作站 · Chan Workstation`);
   console.log(`  http://127.0.0.1:${PORT}/  (bind ${HOST}:${PORT})\n`);
 });
 

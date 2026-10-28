@@ -40,6 +40,7 @@
 
   window.API = {
     get,
+    post,
     health: () => get('/api/health'),
     markets: () => get('/api/markets'),
     overview: () => get('/api/overview'),

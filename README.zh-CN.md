@@ -1,9 +1,9 @@
-# 缠论炒股工作站 · Chan Station
+# 缠论工作站 · Chan Station
 
 [English](README.md) · **简体中文**
 
 <p align="center">
-  <img src="docs/assets/banner.png" alt="缠论炒股工作站" width="100%">
+  <img src="docs/assets/banner.png" alt="缠论工作站" width="100%">
 </p>
 
 <p align="center">

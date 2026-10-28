@@ -330,10 +330,48 @@ async function desktopFlows() {
   } finally { s.close(); }
 }
 
+/* 闯关小游戏：出一关 → 作答 → 判分 → 揭示 → 进度落本地 */
+async function gameFlows() {
+  const s = await open({ url: `${BASE}/game/`, w: 390, h: 844, ua: UA_IOS, mobile: true });
+  const { cdp, errors } = s;
+  try {
+    const chapters = await cdp.eval(`document.querySelectorAll('.chapter').length`);
+    const levels = await cdp.eval(`document.querySelectorAll('.lv').length`);
+    check('闯关·地图渲染', chapters >= 10 && levels === 108, `${chapters} 章 / ${levels} 关`);
+    await cdp.eval(`document.querySelector('.lv.next').click()`);
+    await sleep(5200);
+    const title = await cdp.eval(`document.querySelector('.q-head h2')?.textContent || ''`);
+    const canvas = await cdp.eval(`!!document.querySelector('#gchart')`);
+    check('闯关·出题并画出行情图', /第 \d+ 关/.test(title) && canvas, `${title.trim().slice(0, 26)}`);
+    const opts = await cdp.eval(`document.querySelectorAll('.opt').length`);
+    const tools = await cdp.eval(`document.querySelectorAll('.tool').length`);
+    if (opts) await cdp.eval(`document.querySelectorAll('.opt')[0].click()`);
+    else if (tools) {
+      // 找买卖点/框中枢：直接给一个 K 线号
+      await cdp.eval(`(() => { const c = document.querySelector('#gchart'); if (c) { const r = c.getBoundingClientRect(); c.dispatchEvent(new PointerEvent('pointerdown', { clientX: r.left + r.width * 0.6, clientY: r.top + r.height * 0.5, bubbles: true })); } })()`);
+    }
+    await sleep(600);
+    const canSubmit = await cdp.eval(`!document.getElementById('submit')?.disabled`);
+    check('闯关·可作答并交卷', canSubmit === true, `选项 ${opts} / 工具 ${tools}`);
+    if (canSubmit) {
+      await cdp.eval(`document.getElementById('submit').click()`);
+      await sleep(5200);
+      const score = await cdp.eval(`document.querySelector('.result .score b')?.textContent || ''`);
+      const verdict = await cdp.eval(`document.querySelector('.result .verdict')?.textContent || ''`);
+      const explain = await cdp.eval(`document.querySelectorAll('.result .explain li').length`);
+      check('闯关·判分并给出讲解', Number(score) >= 0 && explain > 0, `${score} 分 · ${String(verdict).slice(0, 18)}… · ${explain} 条讲解`);
+      const saved = await cdp.eval(`(() => { const p = JSON.parse(localStorage.getItem('changuan-progress-v1') || '{}'); return Object.keys(p.levels || {}).length; })()`);
+      check('闯关·进度已保存', saved >= 1, `已记录 ${saved} 关`);
+    }
+    check('闯关·无 JS 报错', errors.length === 0, errors.slice(0, 2).join(' | '));
+  } finally { s.close(); }
+}
+
 (async () => {
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
   await mobileFlows();
   await desktopFlows();
+  await gameFlows();
   let bad = 0;
   for (const s of steps) {
     if (!s.ok) bad++;
