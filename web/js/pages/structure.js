@@ -426,6 +426,14 @@
       if (confirm('清空当前标的的全部手绘线？')) chart.clearDrawings();
     });
     U.$('#drawVerify')?.addEventListener('click', runDrawVerify);
+    U.$('#drawModalClose')?.addEventListener('click', closeDrawModal);
+    U.$('#drawModalAgain')?.addEventListener('click', runDrawVerify);
+    U.$('#drawModal')?.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'drawModal') closeDrawModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && U.$('#drawModal')?.classList.contains('show')) closeDrawModal();
+    });
     document.addEventListener('keydown', (e) => {
       const typing = (() => {
         const a = document.activeElement;
@@ -442,22 +450,42 @@
     };
   }
 
+  function openDrawModal() {
+    const m = U.$('#drawModal');
+    if (!m) return;
+    m.classList.add('show');
+    m.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    U.$('#drawModalClose')?.focus();
+  }
+
+  function closeDrawModal() {
+    const m = U.$('#drawModal');
+    if (!m) return;
+    m.classList.remove('show');
+    m.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
   async function runDrawVerify() {
     const k = currentKey();
-    const card = U.$('#drawVerifyCard');
-    if (card) card.style.display = '';
-    if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = '<div class="loading">复核中…</div>';
+    if (U.$('#drawScore')) U.$('#drawScore').textContent = '复核中…';
+    if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = '<div class="loading">正在把线和笔/中枢/买卖点对齐…</div>';
+    if (U.$('#drawFindings')) U.$('#drawFindings').innerHTML = '';
+    if (U.$('#drawMethod')) U.$('#drawMethod').textContent = '';
+    openDrawModal(); // 结果直接在弹窗里出来，而不是塞在页面底部
     try {
       const res = await API.drawingsVerify({ ...k, drawings: chart.getDrawings() });
       renderDrawVerify(res);
     } catch (e) {
       if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = '<div class="loading">复核失败：' + U.esc(e.message) + '</div>';
+      if (U.$('#drawScore')) U.$('#drawScore').textContent = '失败';
     }
   }
 
   function renderDrawVerify(res) {
     const lv = { ok: 'ok', warn: 'warn', fail: 'fail' }[res.verdict.level] || 'warn';
-    if (U.$('#drawScore')) U.$('#drawScore').innerHTML = `一致度 <b>${res.score}</b> / 100 · ${(res.analysisSummary && res.analysisSummary.trend) || ''}`;
+    if (U.$('#drawScore')) U.$('#drawScore').innerHTML = `一致度 <b>${res.score}</b> / 100`;
     if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = `<div class="dv ${lv}">${U.esc(res.verdict.text)}</div>`;
     if (U.$('#drawFindings')) {
       U.$('#drawFindings').innerHTML = (res.lines || [])

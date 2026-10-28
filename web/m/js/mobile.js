@@ -187,25 +187,47 @@
     setDrawHint('');
   }
 
+  /* 复核结果直接弹层显示（用户反馈：塞在页面里找不到） */
+  function drawVerdictHtml(res) {
+    const lv = res.verdict.level || 'warn';
+    const lines = (res.lines || [])
+      .map(
+        (ln) => `<div class="dv-line"><div class="dv-h">${ln.type === 'hline' ? '水平线' : ln.type === 'rect' ? '矩形' : '趋势线'}${ln.label ? ' · ' + U.esc(ln.label) : ''} · ${ln.score} 分</div>
+        ${ln.findings
+          .map((f) => `<div class="dv-f ${f.level}">${f.level === 'ok' ? '✓' : f.level === 'warn' ? '!' : '✗'} ${U.esc(f.text)}</div>`)
+          .join('')}</div>`
+      )
+      .join('');
+    return `<div class="card" style="margin-bottom:0">
+      <div class="row between" style="margin-bottom:8px"><span class="hint">一致度</span><span style="font-size:20px;font-weight:800">${res.score} / 100</span></div>
+      <div class="dv ${lv}">${U.esc(res.verdict.text)}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${lines || '<div class="hint">还没有画线</div>'}</div>
+      <div class="hint" style="margin-top:10px">${U.esc((res.method && res.method.steps || []).join(' · '))}</div>
+      <div class="hint" style="margin-top:6px;opacity:.75">${U.esc(res.engine || '')} · ${U.esc(res.disclaimer || '')}</div>
+      <button class="btn button primary block" id="dReVerify" style="margin-top:12px">重新复核</button>
+    </div>`;
+  }
+
   async function runMobileVerify() {
-    const box = $('#dVerifyBox');
     const k = { market: state.market, code: state.symbol[state.market], period: state.period };
-    if (box) box.innerHTML = '<div class="card empty">复核中…</div>';
+    openSheet('AI 复核 · 手绘线 vs 缠论结构', '<div class="empty">正在把线和笔/中枢/买卖点对齐…</div>');
     try {
       const res = await API.drawingsVerify({ ...k, drawings: state.chart ? state.chart.getDrawings() : [] });
       if (stale('structure')) return;
-      const lv = res.verdict.level || 'warn';
-      if (box)
-        box.innerHTML = `<div class="card">
-          <div class="row between"><span class="hint">AI 复核一致度</span><span style="font-weight:800">${res.score} / 100</span></div>
-          <div class="dv ${lv}" style="margin-top:8px">${U.esc(res.verdict.text)}</div>
-          ${(res.lines || []).map((ln) => `<div class="dv-line" style="margin-top:8px"><div class="dv-h">${ln.type === 'hline' ? '水平线' : ln.type === 'rect' ? '矩形' : '趋势线'} · ${ln.score} 分</div>
-            ${ln.findings.map((f) => `<div class="dv-f ${f.level}">${f.level === 'ok' ? '✓' : f.level === 'warn' ? '!' : '✗'} ${U.esc(f.text)}</div>`).join('')}</div>`).join('')}
-          <div class="hint" style="margin-top:8px">${U.esc((res.method.steps || []).join(' · '))}</div>
-          <div class="hint" style="margin-top:4px;opacity:.75">${U.esc(res.engine || '')} · ${U.esc(res.disclaimer || '')}</div>
-        </div>`;
+      const box = $('#sheet');
+      if (!box) return;
+      box.innerHTML =
+        `<div class="sheet-head"><h3>AI 复核 · 手绘线 vs 缠论结构</h3><button class="sheet-close" id="sheetClose" aria-label="关闭"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>` +
+        drawVerdictHtml(res);
+      $('#sheetClose')?.addEventListener('click', closeSheet);
+      $('#dReVerify')?.addEventListener('click', runMobileVerify);
+      haptic(10);
     } catch (e) {
-      if (box) box.innerHTML = `<div class="card empty">复核失败：${U.esc(e.message)}</div>`;
+      const box = $('#sheet');
+      if (box)
+        box.innerHTML =
+          `<div class="sheet-head"><h3>AI 复核</h3><button class="sheet-close" id="sheetClose" aria-label="关闭"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div class="empty">复核失败：${U.esc(e.message)}</div>`;
+      $('#sheetClose')?.addEventListener('click', closeSheet);
     }
   }
 
@@ -459,7 +481,7 @@
         <div class="hint" style="padding:4px 2px 2px">单指拖动平移 · 双指捏合缩放</div>
       </div>
       <div class="section">
-        <div class="section-head"><h3>手绘线</h3><button class="chip" id="dVerify">AI 复核</button></div>
+        <div class="section-head"><h3>手绘线</h3><button class="chip gold" id="dVerify">AI 复核 →</button></div>
         <div class="hscroll" id="drawTools">
           <button class="chip" data-draw="trend">趋势线</button>
           <button class="chip" data-draw="hline">水平线</button>

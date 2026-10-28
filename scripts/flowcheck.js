@@ -255,9 +255,16 @@ async function desktopFlows() {
       check('桌面版·手绘线可画出并保存', /当前 [2-9] 条/.test(drawn), drawn.replace(/\s+/g, ' ').slice(0, 48));
       await cdp.eval(`document.getElementById('drawVerify').click()`);
       await sleep(4800);
-      const verdict = await cdp.eval(`document.getElementById('drawVerdict')?.innerText || ''`);
+      const modalOpen = await cdp.eval(`document.getElementById('drawModal')?.classList.contains('show')`);
+      const verdict = await cdp.eval(`document.getElementById('drawVerdict')?.textContent || ''`);
       const findings = await cdp.eval(`document.querySelectorAll('#drawFindings .dv-f').length`);
-      check('桌面版·AI 复核给出一致度与逐条结论', /一致度/.test(await cdp.eval(`document.getElementById('drawScore')?.innerText || ''`)) && findings > 0, `结论 ${String(verdict).slice(0, 24)}… · ${findings} 条`);
+      const scoreTxt = await cdp.eval(`document.getElementById('drawScore')?.textContent || ''`);
+      check('桌面版·AI 复核弹窗给出一致度与逐条结论', modalOpen === true && /一致度/.test(scoreTxt) && findings > 0, `弹窗=${modalOpen} · ${scoreTxt.trim()} · ${findings} 条 · ${String(verdict).slice(0, 20)}…`);
+      const closeIcon = await cdp.eval(`(() => { const s = document.querySelector('#drawModalClose svg'); if (!s) return 0; const b = s.getBoundingClientRect(); return Math.round(b.width * b.height); })()`);
+      await cdp.eval(`document.getElementById('drawModalClose')?.click()`);
+      await sleep(350);
+      const closed = await cdp.eval(`!document.getElementById('drawModal')?.classList.contains('show')`);
+      check('桌面版·复核弹窗可关闭（关闭图标可见）', closed === true && closeIcon > 100, `图标 ${closeIcon}px² · 关闭后 hidden=${closed}`);
       const persisted = await cdp.eval(`(async () => (await (await fetch('/api/drawings?market=A&code=600519&period=day')).json()).drawings.length)()`);
       check('桌面版·手绘线已落库', persisted >= 2, `${persisted} 条`);
       // 复审 blocker 回归：Esc 后不能残留起点（否则下一次单击就画整条线）

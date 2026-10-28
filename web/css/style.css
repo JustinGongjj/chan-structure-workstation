@@ -755,3 +755,15 @@ button{font-family:inherit}
 .dv-f.ok{color:var(--down-text)}
 .dv-f.warn{color:var(--ink-gold)}
 .dv-f.fail{color:var(--up-text)}
+
+/* 手绘复核弹窗 */
+.draw-modal{max-width:720px}
+.draw-modal .modal-body{padding-top:4px}
+.draw-modal .draw-verdict{margin-bottom:12px}
+
+/* 复核弹窗底部：步骤说明单独成行，别和按钮挤在一起 */
+.draw-foot{flex-wrap:wrap;gap:10px;align-items:flex-start}
+.draw-foot .modal-kbd{flex:1 1 100%;line-height:1.6;white-space:normal}
+.draw-foot .btn{flex:0 0 auto;margin-left:auto}
+.modal-btn.close{color:var(--text)}
+.modal-btn.close svg{display:block;width:17px;height:17px;stroke-width:2.4}

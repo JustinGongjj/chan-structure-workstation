@@ -170,12 +170,7 @@
             <div class="draw-hint" id="drawHint">手绘：点「趋势线」后点两下（自动吸附笔端点）· 点线可选中，Delete 删除 · 线按标的+周期保存在服务端</div>
           </div>
 
-          <div class="card" id="drawVerifyCard" style="display:none">
-            <div class="card-head"><h3>AI 复核 · 手绘线 vs 缠论结构</h3><span class="hint" id="drawScore"></span></div>
-            <div id="drawVerdict" class="draw-verdict"></div>
-            <div id="drawFindings" class="draw-findings"></div>
-            <div class="hint" id="drawMethod"></div>
-          </div>
+
 
           <div class="card">
             <div class="card-head"><h3>区间套 · 多级别联立</h3><span class="hint" id="suiteHint">大级别定方向 → 小级别等买点</span></div>
@@ -356,6 +351,29 @@
 </div>
 
 <!-- 理论详情弹窗 -->
+<div class="modal-mask" id="drawModal" aria-hidden="true">
+  <div class="modal draw-modal" role="dialog" aria-modal="true" aria-labelledby="drawModalTitle">
+    <header class="modal-head">
+      <div class="modal-head-l">
+        <span class="modal-kind">结构复核</span>
+        <h3 class="modal-title" id="drawModalTitle">AI 复核 · 手绘线 vs 缠论结构</h3>
+      </div>
+      <div class="modal-tools">
+        <span class="modal-count" id="drawScore"></span>
+        <button class="modal-btn close" id="drawModalClose" title="关闭（Esc）" aria-label="关闭"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </header>
+    <div class="modal-body" id="drawModalBody">
+      <div id="drawVerdict" class="draw-verdict"></div>
+      <div id="drawFindings" class="draw-findings"></div>
+    </div>
+    <footer class="modal-foot draw-foot">
+      <span class="modal-kbd" id="drawMethod"></span>
+      <button class="btn ghost sm" id="drawModalAgain">重新复核</button>
+    </footer>
+  </div>
+</div>
+
 <div class="modal-mask" id="modalMask" aria-hidden="true">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <header class="modal-head">
