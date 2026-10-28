@@ -312,12 +312,13 @@ button{font-family:inherit}
 .struct-side{display:flex;flex-direction:column;gap:12px}
 .side-block{margin-bottom:0}
 .chart-card{padding:10px 12px 6px}
-.chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap}
 .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--faint)}
 .legend span{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
 .legend i{width:14px;height:2px;border-radius:2px;display:inline-block}
 .legend .off{opacity:.35;text-decoration:line-through}
-.chart-tools{display:flex;gap:6px}
+.chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chart-tools .btn{white-space:nowrap}
 .chart-wrap{position:relative;height:560px}
 .chart-wrap canvas{width:100%;height:100%;display:block}
 .crosshair-tip{
@@ -737,3 +738,20 @@ button{font-family:inherit}
   .idx-grid{grid-template-columns:repeat(2,1fr)}
   .hex-grid{grid-template-columns:1fr}
 }
+
+/* ---------- 手绘线与 AI 复核 ---------- */
+.draw-hint{font-size:11.5px;color:var(--faint);padding:6px 2px 0;line-height:1.6}
+.vr{width:1px;height:18px;background:var(--line2);display:inline-block;margin:0 2px}
+.draw-verdict{margin-bottom:10px}
+.draw-verdict .dv{padding:9px 12px;border-radius:10px;font-size:13px;line-height:1.6;border:1px solid var(--line)}
+.draw-verdict .dv.ok{background:var(--down-tint);border-color:var(--down);color:var(--down-text)}
+.draw-verdict .dv.warn{background:var(--gold-tint);border-color:var(--gold);color:var(--ink-gold)}
+.draw-verdict .dv.fail{background:var(--up-tint);border-color:var(--up);color:var(--up-text)}
+.draw-findings{display:flex;flex-direction:column;gap:10px}
+.dv-line{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--panel2)}
+.dv-h{font-size:12px;font-weight:650;margin-bottom:6px;color:var(--muted)}
+.dv-f{font-size:12.5px;line-height:1.65;padding-left:16px;position:relative;margin-top:3px}
+.dv-f::before{position:absolute;left:0;top:0}
+.dv-f.ok{color:var(--down-text)}
+.dv-f.warn{color:var(--ink-gold)}
+.dv-f.fail{color:var(--up-text)}

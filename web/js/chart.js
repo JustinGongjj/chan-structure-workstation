@@ -51,6 +51,12 @@
       this.view = { start: 0, count: 150 };
       this.hover = -1;
       this.drag = null;
+      this.drawings = [];      // 用户手绘线（坐标用 K 线序号 + 价格，平移缩放不会漂）
+      this.drawMode = 'none';  // none | trend | hline | rect
+      this.selectedId = null;
+      this.draft = null;
+      this.onDraws = null;
+      this._drawWanted = -1;   // 只画到最近一根"已走完"的 K 线，避免手绘线被未来数据带偏
       this.bind();
       this._onResize = () => this.draw();
       window.addEventListener('resize', this._onResize);
@@ -60,6 +66,70 @@
       if (this._onResize) window.removeEventListener('resize', this._onResize);
       this._onResize = null;
       this.data = null;
+    }
+
+    /* ---------------- 手绘线 ---------------- */
+    setDrawings(list) {
+      this.drawings = Array.isArray(list) ? list.slice() : [];
+      this.selectedId = null;
+      this.draw({ redrawOnly: true });
+    }
+    getDrawings() {
+      return this.drawings.slice();
+    }
+    setDrawMode(mode) {
+      this.drawMode = ['trend', 'hline', 'rect'].includes(mode) ? mode : 'none';
+      this.draft = null;
+      if (this.canvas) this.canvas.style.cursor = this.drawMode === 'none' ? 'default' : 'crosshair';
+      this.draw({ redrawOnly: true });
+    }
+    clearDrawings() {
+      this.drawings = [];
+      this.selectedId = null;
+      this.emitDraws();
+      this.draw({ redrawOnly: true });
+    }
+    deleteSelected() {
+      if (!this.selectedId) return false;
+      this.drawings = this.drawings.filter((d) => d.id !== this.selectedId);
+      this.selectedId = null;
+      this.emitDraws();
+      this.draw({ redrawOnly: true });
+      return true;
+    }
+    emitDraws() {
+      if (typeof this.onDraws === 'function') this.onDraws(this.getDrawings());
+    }
+    /* 屏幕坐标 → 数据坐标（吸附到笔端点优先，其次最近收盘价） */
+    dataAt(clientX, clientY) {
+      const g = this.geom();
+      const rect = this.canvas.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      const idxF = this.view.start + (x - g.padL) / this.barW(g) - 0.5;
+      const idx = Math.max(0, Math.min((this.data ? this.data.bars.length : 1) - 1, Math.round(idxF)));
+      const r = this.priceRange(g);
+      const price = r.lo + (1 - (y - g.priceTop) / g.priceH) * (r.hi - r.lo);
+      return this.snap(idx, price, x, y, g);
+    }
+    /* 吸附：笔端点（±10px）> 当前价收盘（默认） */
+    snap(idx, price, x, y, g) {
+      const cands = [];
+      const bis = (this.data && this.data.bis) || [];
+      for (const bi of bis) {
+        for (const [i, p] of [[bi.i0, bi.p0], [bi.i1, bi.p1]]) {
+          const sx = this.xOf(i, g);
+          const sy = this.yOf(p, g, this.priceRange(g));
+          const dist = Math.hypot(sx - x, sy - y);
+          if (dist <= 14) cands.push({ idx: i, price: p, dist, kind: 'bi' });
+        }
+      }
+      if (cands.length) {
+        cands.sort((a, b) => a.dist - b.dist);
+        return { idx: cands[0].idx, price: cands[0].price, snapped: 'bi' };
+      }
+      const bar = this.data && this.data.bars[idx];
+      return { idx, price: bar ? bar.c : price, snapped: 'bar' };
     }
 
     setData(a, opts) {
@@ -138,7 +208,11 @@
     }
 
     /* ---------------- 主绘制 ---------------- */
-    draw() {
+    draw(opts) {
+      this._paint(opts);
+    }
+
+    _paint() {
       const { ctx, canvas } = this;
       const g = this.geom();
       ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
@@ -458,6 +532,76 @@
       } else if (this.tip) {
         this.tip.style.display = 'none';
       }
+      this.paintDrawings(g);
+    }
+
+    /* ---------------- 手绘线渲染 ---------------- */
+    paintDrawings(g) {
+      const list = this.drawings || [];
+      const draft = this.draft;
+      if (!list.length && !draft) return;
+      const ctx = this.ctx;
+      const r = this.priceRange(g);
+      ctx.save();
+      ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+      ctx.font = '11px -apple-system,sans-serif';
+
+      const drawOne = (dl, isDraft) => {
+        const sel = !isDraft && dl.id === this.selectedId;
+        ctx.strokeStyle = isDraft ? 'rgba(224,177,90,.75)' : sel ? '#e0b15a' : dl.color || '#5b8cff';
+        ctx.lineWidth = sel ? 2.4 : 1.6;
+        ctx.setLineDash(isDraft ? [5, 4] : []);
+        const x1 = this.xOf(dl.x1, g);
+        const y1 = this.yOf(dl.y1, g, r);
+        if (dl.type === 'hline') {
+          ctx.beginPath();
+          ctx.moveTo(g.padL, y1);
+          ctx.lineTo(g.padL + g.plotW, y1);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.fillText(this.fmtPrice(dl.y1), g.padL + g.plotW + 4, y1 + 3);
+        } else if (dl.type === 'rect') {
+          const x2 = this.xOf(dl.x2, g);
+          const y2 = this.yOf(dl.y2, g, r);
+          const rx = Math.min(x1, x2);
+          const ry = Math.min(y1, y2);
+          ctx.fillStyle = 'rgba(91,140,255,.10)';
+          ctx.fillRect(rx, ry, Math.abs(x2 - x1), Math.abs(y2 - y1));
+          ctx.strokeRect(rx, ry, Math.abs(x2 - x1), Math.abs(y2 - y1));
+        } else {
+          const x2 = this.xOf(dl.x2 != null ? dl.x2 : dl.x1, g);
+          const y2 = this.yOf(dl.y2 != null ? dl.y2 : dl.y1, g, r);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          if (!isDraft) {
+            // 端点小圆点：方便确认是否吸附到笔端点
+            ctx.setLineDash([]);
+            ctx.fillStyle = ctx.strokeStyle;
+            for (const [px, py] of [[x1, y1], [x2, y2]]) {
+              ctx.beginPath();
+              ctx.arc(px, py, 2.6, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+        if (dl.label && !isDraft) {
+          ctx.setLineDash([]);
+          ctx.fillStyle = 'rgba(0,0,0,.55)';
+          const tx = Math.min(this.xOf(dl.x1, g) + 6, g.padL + g.plotW - 60);
+          const ty = Math.max(g.priceTop + 12, this.yOf(dl.y1, g, r) - 8);
+          const tw = ctx.measureText(dl.label).width + 8;
+          ctx.fillRect(tx, ty - 11, tw, 16);
+          ctx.fillStyle = '#fff';
+          ctx.fillText(dl.label, tx + 4, ty);
+        }
+      };
+
+      for (const dl of list) drawOne(dl, false);
+      if (draft && draft.x2 != null) drawOne(draft, true);
+      ctx.restore();
     }
 
     /* ---------------- 教学标注 ---------------- */
@@ -625,6 +769,118 @@
         this.drag = null;
       });
       c.addEventListener('dblclick', () => this.resetView());
+
+      /* ---------- 手绘线交互 ---------- */
+      let dragRect = null;      // 拖拽画矩形
+      let pendingStart = null;  // 趋势线的第一个点（点两下成交）
+      const newId = () => 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+      const hitTest = (x, y, g) => {
+        const r = this.priceRange(g);
+        let best = null;
+        for (const dl of this.drawings) {
+          let dist = Infinity;
+          if (dl.type === 'hline') dist = Math.abs(this.yOf(dl.y1, g, r) - y);
+          else if (dl.type === 'rect') {
+            const x1 = this.xOf(dl.x1, g), x2 = this.xOf(dl.x2, g);
+            const y1 = this.yOf(dl.y1, g, r), y2 = this.yOf(dl.y2, g, r);
+            const inside = x >= Math.min(x1, x2) - 4 && x <= Math.max(x1, x2) + 4 && y >= Math.min(y1, y2) - 4 && y <= Math.max(y1, y2) + 4;
+            dist = inside ? 0 : Infinity;
+          } else {
+            const x1 = this.xOf(dl.x1, g), x2 = this.xOf(dl.x2 != null ? dl.x2 : dl.x1, g);
+            const y1 = this.yOf(dl.y1, g, r), y2 = this.yOf(dl.y2 != null ? dl.y2 : dl.y1, g, r);
+            const dx = x2 - x1, dy = y2 - y1;
+            const len2 = dx * dx + dy * dy || 1;
+            const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / len2));
+            dist = Math.hypot(x - (x1 + t * dx), y - (y1 + t * dy));
+          }
+          if (dist <= 9 && (!best || dist < best.dist)) best = { dl, dist };
+        }
+        return best ? best.dl : null;
+      };
+
+      const commit = (dl) => {
+        this.drawings.push(dl);
+        this.selectedId = dl.id;
+        this.emitDraws();
+        this.draft = null;
+        this.setDrawMode('none'); // 画完自动退出，手机上不会"停不下来"
+      };
+
+      c.addEventListener('pointerdown', (e) => {
+        if (!this.data || !this.data.bars.length) return;
+        const g = this.geom();
+        const rect = c.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        if (this.drawMode === 'none') {
+          const hit = hitTest(x, y, g);
+          this.selectedId = hit ? hit.id : null;
+          this.draw({ redrawOnly: true });
+          return;
+        }
+        e.preventDefault();
+        const p = this.dataAt(e.clientX, e.clientY);
+        if (this.drawMode === 'hline') {
+          commit({ id: newId(), type: 'hline', x1: p.idx, y1: p.price });
+          return;
+        }
+        if (this.drawMode === 'rect') {
+          dragRect = { start: p };
+          this.draft = { id: 'draft', type: 'rect', x1: p.idx, y1: p.price, x2: p.idx, y2: p.price };
+          this.draw({ redrawOnly: true });
+          return;
+        }
+        // trend：第一次点定起点，第二次点成交
+        if (!pendingStart) {
+          pendingStart = { idx: p.idx, price: p.price };
+          this.draft = { id: 'draft', type: 'trend', x1: p.idx, y1: p.price, x2: p.idx, y2: p.price };
+          this.draw({ redrawOnly: true });
+        } else {
+          if (Math.abs(p.idx - pendingStart.idx) >= 1) {
+            commit({ id: newId(), type: 'trend', x1: pendingStart.idx, y1: pendingStart.price, x2: p.idx, y2: p.price });
+          }
+          pendingStart = null;
+        }
+      });
+
+      c.addEventListener('pointermove', (e) => {
+        if (!this.data) return;
+        if (dragRect) {
+          const p = this.dataAt(e.clientX, e.clientY);
+          this.draft.x2 = p.idx;
+          this.draft.y2 = p.price;
+          this.draw({ redrawOnly: true });
+          return;
+        }
+        if (pendingStart && this.drawMode === 'trend') {
+          const p = this.dataAt(e.clientX, e.clientY);
+          this.draft = { id: 'draft', type: 'trend', x1: pendingStart.idx, y1: pendingStart.price, x2: p.idx, y2: p.price };
+          this.draw({ redrawOnly: true });
+        }
+      });
+
+      c.addEventListener('pointerup', (e) => {
+        if (!dragRect) return;
+        const p = this.dataAt(e.clientX, e.clientY);
+        const dxBars = Math.abs(p.idx - dragRect.start.idx);
+        const dyPct = Math.abs(p.price - dragRect.start.price) / (dragRect.start.price || 1);
+        if (dxBars >= 2 && dyPct >= 0.002) {
+          commit({ id: newId(), type: 'rect', x1: dragRect.start.idx, y1: dragRect.start.price, x2: p.idx, y2: p.price });
+        } else {
+          this.draft = null;
+          this.setDrawMode('none');
+          this.draw({ redrawOnly: true });
+        }
+        dragRect = null;
+      });
+
+      c.addEventListener('pointercancel', () => {
+        dragRect = null;
+        pendingStart = null;
+        this.draft = null;
+        this.draw({ redrawOnly: true });
+      });
       /* ---------- 触屏：单指平移，双指捏合缩放，抬手后收提示 ---------- */
       let touchState = null;
       c.addEventListener(

@@ -176,6 +176,23 @@ docker run -p 8931:8931 -v "$PWD/data:/app/data" chan-station
 
 ---
 
+### 手绘线 + AI 复核（新增）
+
+在结构图上自己画线，然后让规则引擎把它和缠论结构对齐检查：
+
+| 能画什么 | 怎么交互 | 检查什么 |
+| --- | --- | --- |
+| 趋势线 | 点两下（**自动吸附到笔的端点**，±14px） | 端点是否落在笔端点上、方向与当前趋势是否一致、是否横穿中枢 |
+| 水平线 | 点一下 | 是否就是中枢的 ZG/ZD 或前高前低（否则判"无结构意义"） |
+| 矩形 | 拖一下 | 是否正好框住某个中枢（缠论的核心对象） |
+
+- 线按 `市场:代码:周期` 存在服务端（`data/drawings.json`，原子写），换设备/换浏览器都在。
+- 点线可选中，`Delete` 删除；「清空」整表清掉；画完自动退出画线模式（手机上不会"停不下来"）。
+- **AI 复核**（`POST /api/drawings/verify`）返回 0–100 一致度 + 逐条结论 + 改进步骤。
+  引擎是**确定性的规则层**（`server/lib/drawing.js`，10 个单测），不是大模型猜。
+  每条结论都带可核对数值，例如"起点离最近的笔端点有 8 根、5.47% 的价格差"。
+  要接 LLM 做自然语言点评，只需把 findings 转成 prompt（当前不联网，保持可复现）。
+
 ## API
 
 | Endpoint | Description |
@@ -189,6 +206,8 @@ docker run -p 8931:8931 -v "$PWD/data:/app/data" chan-station
 | `GET /api/divination?market=A&code=600519&mode=price&nonce=0` | hexagram + six-line board + seed basis |
 | `GET /api/daily` | ganzhi calendar, solar terms, 建除, 旬空 |
 | `GET /api/sources` | live probe of every free data provider |
+| `GET/POST /api/drawings?market=A&code=600519&period=day` | load / save user-drawn lines (per symbol+period, atomic JSON store) |
+| `POST /api/drawings/verify` | rule-engine review of drawings against 笔/中枢/买卖点 → score + per-line findings |
 
 All responses are `{ ok: true, … }`; failures are `{ ok: false, error }` with a 4xx/5xx status.
 
@@ -200,11 +219,11 @@ All responses are `{ ok: true, … }`; failures are `{ ok: false, error }` with 
 
 | 命令 | 覆盖 | 现状 |
 | --- | --- | --- |
-| `npm test` | 缠论引擎不变量、干支锚点、农历/紫微/奇门、择时、算卦确定性 | **42 项** |
-| `npm run check:api` | 逐条打 39 个接口：四市场报价/K线/缠论、多级别、雷达、择时七法、择时验证、回测、算卦可变性、自选池增删+去重+垃圾代码拒绝、静态资源 | **39/39** |
+| `npm test` | 缠论引擎不变量、干支锚点、农历/紫微/奇门、择时、算卦确定性、**手绘线校验引擎** | **52 项** |
+| `npm run check:api` | 逐条打 43 个接口：四市场报价/K线/缠论、多级别、雷达、择时七法、择时验证、回测、算卦可变性、自选池增删+去重+垃圾代码拒绝、静态资源 | **39/39** |
 | `npm run check:ui` | 真实 Chromium(CDP)：桌面 1440/1024、iOS 390×844、Android 412×915 × 深浅色。查 JS 报错、横向溢出、**内容超出却滚不动**、轮询是否打回滚动位置、5 个 Tab 是否都有内容 | **6/6** |
 | `npm run check:sheet` | 弹层矩阵：5 Tab × 3 弹层 × 2 皮肤 × 2 主题，断言弹层背景不透明、不被页面压住、无零宽标题、无超宽元素 | **48/48** |
-| `npm run check:flow` | 交互链路：搜索→进结构、自选池增删、**算卦两次必换卦**、切市场自动退回兼容周期、教学标注齐全、理论弹层、深链、桌面 6 页与弹窗 | **20/20** |
+| `npm run check:flow` | 交互链路：搜索→进结构、自选池增删、**算卦两次必换卦**、切市场自动退回兼容周期、教学标注齐全、理论弹层、深链、桌面 6 页与弹窗 | **23/23** |
 | `npm run check:css` | 框架冲突审计：把 F7 的 5706 条规则里"会命中我们 DOM"的 111 个危险属性逐条比对，缺一条不是危险就是覆盖不足，直接失败 | **111/111 已抵消** |
 | `npm run check:perf` | 首屏传输基线（真实浏览器 + CDP Network，gzip 后字节）：手机版 **200 KB / 13 请求 / FCP 0.8s**，桌面版 151 KB | 预算 420 KB 内 |
 
@@ -262,6 +281,20 @@ space/                Hugging Face Space (Docker SDK)
 
 ---
 
+## 二次复审流程（长期规矩）
+
+每一次功能落地都走同一条流水线，**不允许"自己测完就交付"**：
+
+1. **作者自测**：实现 + 单测 + 把新断言写进 `scripts/check:*` 的某一层门禁（回归项必须固化成断言，不能只靠手点）。
+2. **复核 agent 二次复审**：另起一个独立 agent，只读代码、只跑命令、不改仓库，按"正确性 / 边界 / 契约 / 诚实性"四类出报告，
+   每条附带 `file:line`、影响、一行修法，并按 blocker / major / minor 分级。
+3. **作者处置**：blocker 与 major 必须修完并补断言；有意不修的写进报告与 README 的"已知限制"。
+4. **全量门禁**：`npm run check:all` 全绿才允许提交；提交信息里写清"本轮复核修了什么"。
+5. **留痕**：复审报告归档在 `docs/reviews/`（本轮：`docs/reviews/drawing.md`），更新日志里记一行。
+
+> 这条流程本身就是被前几轮"改完没验、用户截图才发现"逼出来的：
+> 滚动锁死、弹层透明、算卦不换卦、切市场白屏，都是**二次复审/独立 QA** 抓到的，不是自测发现的。
+
 ## 更新日志 / History
 
 按时间倒序。每条都标注了"怎么验证"，避免同一类问题重复踩。
@@ -273,6 +306,11 @@ space/                Hugging Face Space (Docker SDK)
 | 2026-10-27 | v1.1 | **弹层两层框架冲突**：`.view{z-index:5000}` 把页面压到弹层之上（文字叠在一起）；元素级 `button{width:100%}` 把弹层标题挤成 0 宽。同时修 toast 被 `.ios/.md .toast` 顶出屏幕、`.btn` 被 F7 的 `--f7-button-height` 裁字 | `npm run check:sheet`（48 组断言：背景/层级/零宽/超宽） |
 | 2026-10-27 | v1.1 | **服务端加固**：自选池原子写（tmp+rename）、空表不再回退默认、垃圾代码被拒（先取行情校验）、60 个上限、并发重复二次校验、写接口去掉 `Access-Control-Allow-Origin:*` | `npm run check:api`（含"去重被正确拒绝"与"垃圾代码被拒"） |
 | 2026-10-27 | v1.1 | **交互健壮性**：切 Tab 清掉算卦 12s 跟随定时器、异步渲染加防串页守卫、雷达轮询改原地更新（不再把手指下的行换掉）、返回键先关弹层再回上页、未捕获异常给可见提示、chart 支持 `destroy()` 修监听泄漏、滚轮默认交还页面滚动（Ctrl/⌘+滚轮才缩放） | `npm run check:flow`（17 步） |
+| 2026-10-28 | v1.2 | **手绘线 + AI 复核**：趋势线（吸附笔端点）/水平线/矩形，按标的+周期存服务端；`POST /api/drawings/verify` 用确定性规则把线对齐笔·中枢·买卖点，给 0–100 一致度与逐条结论 | `npm test`（10 个校验引擎单测）、`check:api`（4 个新接口）、`check:flow`（画线→复核→落库） |
+| 2026-10-28 | v1.2 | **样式分层 + 冲突自动审计**：`f7-compat.css` 成为唯一框架对抗层（`mobile.css` 的 `!important` 归零），`check:css` 对 5706 条 F7 规则里的 111 个危险属性逐条核对 | `npm run check:css` |
+| 2026-10-28 | v1.2 | **性能预算门禁**：CDP Network 统计首屏压缩字节（手机 202KB/13 请求/FCP 0.8s），超 420KB 直接失败 | `npm run check:perf` |
+| 2026-10-28 | v1.2 | **QA 六项缺陷修复**：切市场保留不兼容周期（白图+500）、`.btn.block` 不占满、自选池增删后总览不刷新、算卦切市场不换标的、切皮肤 html 类不同步、教学标注只有 7/19 种；顺带修掉潜伏的 `COL is not defined` | `check:flow` 六条新断言 |
+| 2026-10-28 | v1.2 | **移动端体验**：下拉刷新（自绘，原生被 overscroll 禁用）、触感反馈（仅用户操作后）、`prefers-reduced-motion`、toast `aria-live`、返回键先关弹层 | `check:ui` / 手动截图 |
 | 2026-10-27 | v1.0 | 打包下载（源码 zip + git bundle + 校验和）；下载产物改为不入库，`git filter-branch` 清掉历史里的 150MB 大包 | `/downloads/` 三个文件 + `SHA256SUMS.txt` |
 | 2026-10-27 | v1.0 | 手机版接入 Framework7 8.3.3 组件层（同仓内置、零 CDN），iOS/Android 双皮肤 + 深浅双主题 | `/m/?skin=ios|android&theme=dark|light` |
 | 2026-10-27 | v1.0 | 108 课索引（14 主题、仅收录可核实的课名）+ 天涯/博客言论集 | `npm test` 里的课数与主题唯一性断言 |

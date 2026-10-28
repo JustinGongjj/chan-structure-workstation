@@ -70,6 +70,10 @@ async function expectFail(name, path, status, opts = {}) {
   await hit('信号回测', '/api/backtest?market=A&code=600519', j => need(j.overall && j.overall.n >= 0, '缺 overall'));
   await hit('算卦', '/api/divination?market=A&code=600519', j =>
     need(j.hexagram?.ben?.name && j.hexagram?.hu?.name && j.liuyao && Array.isArray(j.narrative), '缺卦象/纳甲/断语'));
+  await hit('手绘线读取', '/api/drawings?market=A&code=600519&period=day', j => need(Array.isArray(j.drawings), '缺 drawings'));
+  await hit('手绘线保存', '/api/drawings', j => need(j.count === 1 && j.drawings[0].type === 'hline', '保存失败'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [{ type: 'hline', x1: 10, y1: 1355.9 }] } });
+  await hit('手绘线校验', '/api/drawings/verify', j => need(typeof j.score === 'number' && Array.isArray(j.lines) && j.verdict, '缺 score/lines/verdict'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [{ type: 'hline', x1: 10, y1: 1355.9 }, { type: 'trend', x1: 2, y1: 1362, x2: 32, y2: 1486 }] } });
+  await hit('手绘线清空', '/api/drawings', j => need(j.count === 0, '清空失败'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [] } });
   await hit('108 课', '/api/chan-lessons', j => need(j.lessons?.length === 108, '课数不是 108'));
   await hit('天涯言论集', '/api/chan-lore', j => need(j.lore?.length > 10, '言论集过少'));
   await hit('形而上索引', '/api/metaphysics', j => need(Object.keys(j.systems || {}).length >= 5 || j.books, '缺系统/书目'));

@@ -18,6 +18,7 @@ const TIMING = require('./lib/timing');
 const BT = require('./lib/backtest');
 const META = require('./lib/metaphysics');
 const K = require('./lib/chan-lessons');
+const DRAW = require('./lib/drawing');
 const { cached, mapPool, cacheStats } = require('./lib/http');
 
 const PORT = Number(process.env.PORT || 8931);
@@ -465,6 +466,45 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+/* ---------------- 手绘线存储 ----------------
+   结构：{ "A:600519:day": { updatedAt, drawings: [...] } }
+   用原子写，避免进程被杀造成半个文件；单文件够用（几 KB），不做数据库。 */
+const DRAW_FILE = path.join(DATA_DIR, 'drawings.json');
+let DRAW_STORE = null;
+
+function loadDrawings() {
+  if (DRAW_STORE) return DRAW_STORE;
+  try {
+    DRAW_STORE = JSON.parse(fs.readFileSync(DRAW_FILE, 'utf8')) || {};
+  } catch (e) {
+    DRAW_STORE = {};
+  }
+  return DRAW_STORE;
+}
+
+function saveDrawings() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = DRAW_FILE + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(DRAW_STORE, null, 2));
+  fs.renameSync(tmp, DRAW_FILE);
+}
+
+const drawKey = (market, code, period) => `${String(market || 'A').toUpperCase()}:${String(code || '')}:${String(period || 'day')}`;
+
+function sanitizeDrawing(d) {
+  const type = ['trend', 'hline', 'rect', 'ray', 'note'].includes(d && d.type) ? d.type : 'trend';
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    id: String((d && d.id) || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+    type,
+    x1: num(d && d.x1),
+    y1: num(d && d.y1),
+    ...(type === 'hline' ? {} : { x2: num(d && d.x2), y2: num(d && d.y2) }),
+    label: String((d && d.label) || '').slice(0, 40),
+    color: String((d && d.color) || '').slice(0, 16)
+  };
+}
+
 const routes = {
   '/api/health': async () => ({ ok: true, uptimeSec: Math.round((Date.now() - START) / 1000), cache: cacheStats(), node: process.version, assetVersion: assetVersion() }),
   '/api/markets': async () => ({
@@ -504,6 +544,11 @@ const routes = {
       period: u.searchParams.get('period') || 'day',
       nocache: u.searchParams.get('nocache') === '1',
     }),
+  '/api/drawings': async (u) => {
+    const key = drawKey(u.searchParams.get('market'), u.searchParams.get('code'), u.searchParams.get('period'));
+    const rec = loadDrawings()[key] || { drawings: [], updatedAt: null };
+    return { ok: true, key, drawings: rec.drawings || [], updatedAt: rec.updatedAt || null };
+  },
   '/api/daily': async () => V.daily(),
   '/api/chan-lessons': async () => ({
     themes: K.THEMES,
@@ -573,6 +618,24 @@ const routes = {
       ...stats,
     };
   },
+  '/api/drawings/verify': async (u, pre) => {
+    const body = pre && pre.body ? pre.body : await readBody(u.__req);
+    const market = String(body.market || 'A').toUpperCase();
+    const code = body.code || '';
+    const period = body.period || 'day';
+    const drawings = Array.isArray(body.drawings) ? body.drawings.slice(0, 40) : [];
+    const res = await analyzeOne({ market, code, period, limit: 600, withQuote: false });
+    if (!res || !res.ok) throw new Error('行情不可用，暂时无法校验');
+    const out = DRAW.verify({ drawings, analysis: res, market, code, period });
+    out.target = { market, code, name: res.name || '', price: res.quote ? res.quote.price : null };
+    out.analysisSummary = {
+      trend: res.trend && res.trend.type,
+      bis: (res.bis || []).length,
+      pivots: (res.pivots || []).length,
+      signals: (res.signals || []).slice(-3).map((s) => ({ type: s.type, name: s.name, barIdx: s.barIdx, price: s.price }))
+    };
+    return out;
+  },
   '/api/divination': async (u) => {
     const market = (u.searchParams.get('market') || 'A').toUpperCase();
     const code = u.searchParams.get('code') || u.searchParams.get('symbol') || '';
@@ -607,6 +670,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   // 自选池写操作
+  // 手绘线保存（POST）与校验（POST /api/drawings/verify）
+  if (u.pathname === '/api/drawings' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const key = drawKey(body.market, body.code, body.period);
+      const list = (Array.isArray(body.drawings) ? body.drawings : []).slice(0, 40).map(sanitizeDrawing);
+      loadDrawings()[key] = { drawings: list, updatedAt: Date.now() };
+      saveDrawings();
+      sendJSON(res, 200, { ok: true, key, count: list.length, drawings: list });
+    } catch (e) {
+      sendJSON(res, 400, { ok: false, error: e.message });
+    }
+    return;
+  }
+  if (u.pathname === '/api/drawings/verify' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const out = await routes['/api/drawings/verify'](u, { body });
+      sendJSON(res, 200, out);
+    } catch (e) {
+      sendJSON(res, 400, { ok: false, error: e.message });
+    }
+    return;
+  }
   if (u.pathname === '/api/watchlist' || u.pathname === '/api/watchlist/reset') {
     try {
       const wl = loadWatchlist();

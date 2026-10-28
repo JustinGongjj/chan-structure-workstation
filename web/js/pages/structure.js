@@ -72,6 +72,11 @@
         return;
       }
       chart.setData(res);
+      // 手绘线按「标的+周期」分别保存：切了就重新加载，避免画在别的票上
+      {
+        const k2 = `${market}:${code}:${period}`;
+        if (k2 !== drawingKey) loadDrawings();
+      }
       U.stamp('liveStampStruct');
       renderState(res);
       renderSignals(res);
@@ -345,11 +350,119 @@
     }
   }
 
+  /* ---------------- 手绘线 ---------------- */
+  let drawingKey = '';
+  let drawingList = [];
+  let saveTimer = null;
+
+  function currentKey() {
+    const st = App.state;
+    return { market: st.market, code: st.symbol ? st.symbol[st.market] : st.code, period: st.period };
+  }
+
+  async function loadDrawings() {
+    const k = currentKey();
+    drawingKey = `${k.market}:${k.code}:${k.period}`;
+    try {
+      const res = await API.drawings(k);
+      drawingList = res.drawings || [];
+    } catch (e) {
+      drawingList = [];
+    }
+    chart.setDrawings(drawingList);
+    updateDrawHint();
+  }
+
+  function persistDrawings(list) {
+    drawingList = list;
+    const k = currentKey();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      API.drawingsSave({ ...k, drawings: list })
+        .then(() => updateDrawHint('已保存'))
+        .catch((e) => updateDrawHint('保存失败：' + e.message));
+    }, 350);
+  }
+
+  function updateDrawHint(msg) {
+    const el = U.$('#drawHint');
+    if (!el) return;
+    const n = drawingList.length;
+    el.textContent =
+      (msg ? msg + ' · ' : '') +
+      `当前 ${n} 条手绘线 · 点「趋势线」后点两下（自动吸附笔端点）· 点线选中后 Delete 删除`;
+  }
+
+  function bindDrawing() {
+    const setBtn = (id, mode) => {
+      const b = U.$('#' + id);
+      if (!b) return;
+      b.addEventListener('click', () => {
+        const on = chart.drawMode === mode;
+        chart.setDrawMode(on ? 'none' : mode);
+        ['drawTrend', 'drawLevel', 'drawRect'].forEach((bid) => U.$('#' + bid)?.classList.toggle('primary', false));
+        if (!on) b.classList.add('primary');
+        updateDrawHint(on ? '已退出画线' : mode === 'trend' ? '点两下画线' : mode === 'rect' ? '拖出一个框' : '点一下画水平线');
+      });
+    };
+    setBtn('drawTrend', 'trend');
+    setBtn('drawLevel', 'hline');
+    setBtn('drawRect', 'rect');
+    U.$('#drawDel')?.addEventListener('click', () => {
+      if (!chart.deleteSelected()) U.toast('先点一条线选中它');
+    });
+    U.$('#drawClear')?.addEventListener('click', () => {
+      if (confirm('清空当前标的的全部手绘线？')) chart.clearDrawings();
+    });
+    U.$('#drawVerify')?.addEventListener('click', runDrawVerify);
+    document.addEventListener('keydown', (e) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement === document.body) {
+        if (chart.deleteSelected()) e.preventDefault();
+      }
+      if (e.key === 'Escape') chart.setDrawMode('none');
+    });
+    chart.onDraws = (list) => {
+      persistDrawings(list);
+      updateDrawHint('已保存');
+    };
+  }
+
+  async function runDrawVerify() {
+    const k = currentKey();
+    const card = U.$('#drawVerifyCard');
+    if (card) card.style.display = '';
+    if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = '<div class="loading">复核中…</div>';
+    try {
+      const res = await API.drawingsVerify({ ...k, drawings: chart.getDrawings() });
+      renderDrawVerify(res);
+    } catch (e) {
+      if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = '<div class="loading">复核失败：' + U.esc(e.message) + '</div>';
+    }
+  }
+
+  function renderDrawVerify(res) {
+    const lv = { ok: 'ok', warn: 'warn', fail: 'fail' }[res.verdict.level] || 'warn';
+    if (U.$('#drawScore')) U.$('#drawScore').innerHTML = `一致度 <b>${res.score}</b> / 100 · ${(res.analysisSummary && res.analysisSummary.trend) || ''}`;
+    if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = `<div class="dv ${lv}">${U.esc(res.verdict.text)}</div>`;
+    if (U.$('#drawFindings')) {
+      U.$('#drawFindings').innerHTML = (res.lines || [])
+        .map((ln) => {
+          const tag = ln.type === 'hline' ? '水平线' : ln.type === 'rect' ? '矩形' : '趋势线';
+          return `<div class="dv-line"><div class="dv-h">${tag} · ${ln.score} 分</div>${ln.findings
+            .map((f) => `<div class="dv-f ${f.level}">${f.level === 'ok' ? '✓' : f.level === 'warn' ? '!' : '✗'} ${U.esc(f.text)}</div>`)
+            .join('')}</div>`;
+        })
+        .join('') || '<div class="hint">还没有画线</div>';
+    }
+    if (U.$('#drawMethod')) U.$('#drawMethod').textContent = (res.method && res.method.steps || []).join(' · ');
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     initChart();
     U.$('#zoomIn').addEventListener('click', () => chart.zoom(1 / 1.25));
     U.$('#zoomOut').addEventListener('click', () => chart.zoom(1.25));
     U.$('#zoomReset').addEventListener('click', () => chart.resetView());
+    bindDrawing();
     const sel = U.$('#teachSelect');
     if (sel)
       sel.addEventListener('change', () => {

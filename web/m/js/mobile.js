@@ -119,6 +119,84 @@
   /* 防串页：异步渲染落地前再确认一次当前 Tab（用户可能已经切走了） */
   const stale = (t) => state.tab !== t;
 
+  /* ---------------- 手绘线（手机端） ---------------- */
+  let drawKey = '';
+  let drawList = [];
+  let drawSaveTimer = null;
+
+  function bindDrawTools() {
+    U.$$('#drawTools .chip').forEach((b) =>
+      b.addEventListener('click', () => {
+        const k = b.dataset.draw;
+        const chart = state.chart;
+        if (!chart) return;
+        haptic(6);
+        if (k === 'del') {
+          if (!chart.deleteSelected()) toast('先在图上点一条线选中它');
+          return;
+        }
+        if (k === 'clear') {
+          if (!confirm('清空当前标的的手绘线？')) return;
+          chart.clearDrawings();
+          return;
+        }
+        const on = chart.drawMode === k;
+        chart.setDrawMode(on ? 'none' : k);
+        U.$$('#drawTools .chip').forEach((x) => x.classList.toggle('gold', !on && x === b));
+        setDrawHint(on ? '' : k === 'trend' ? '点两下画趋势线' : k === 'rect' ? '拖出一个框' : '点一下画水平线');
+      })
+    );
+    const vb = $('#dVerify');
+    if (vb) vb.addEventListener('click', runMobileVerify);
+    if (state.chart) {
+      state.chart.onDraws = (list) => {
+        drawList = list;
+        setDrawHint('已保存');
+        clearTimeout(drawSaveTimer);
+        drawSaveTimer = setTimeout(() => {
+          const k = { market: state.market, code: state.symbol[state.market], period: state.period };
+          API.drawingsSave({ ...k, drawings: list }).catch((e) => setDrawHint('保存失败：' + e.message));
+        }, 350);
+      };
+    }
+  }
+
+  function setDrawHint(msg) {
+    const el = $('#drawHint');
+    if (!el) return;
+    el.textContent = (msg ? msg + ' · ' : '') + `当前 ${drawList.length} 条 · 点线选中后可删除`;
+  }
+
+  async function loadDrawings() {
+    const k = { market: state.market, code: state.symbol[state.market], period: state.period };
+    drawKey = `${k.market}:${k.code}:${k.period}`;
+    try { drawList = (await API.drawings(k)).drawings || []; } catch (e) { drawList = []; }
+    if (state.chart) state.chart.setDrawings(drawList);
+    setDrawHint('');
+  }
+
+  async function runMobileVerify() {
+    const box = $('#dVerifyBox');
+    const k = { market: state.market, code: state.symbol[state.market], period: state.period };
+    if (box) box.innerHTML = '<div class="card empty">复核中…</div>';
+    try {
+      const res = await API.drawingsVerify({ ...k, drawings: state.chart ? state.chart.getDrawings() : [] });
+      if (stale('structure')) return;
+      const lv = res.verdict.level || 'warn';
+      if (box)
+        box.innerHTML = `<div class="card">
+          <div class="row between"><span class="hint">AI 复核一致度</span><span style="font-weight:800">${res.score} / 100</span></div>
+          <div class="dv ${lv}" style="margin-top:8px">${U.esc(res.verdict.text)}</div>
+          ${(res.lines || []).map((ln) => `<div class="dv-line" style="margin-top:8px"><div class="dv-h">${ln.type === 'hline' ? '水平线' : ln.type === 'rect' ? '矩形' : '趋势线'} · ${ln.score} 分</div>
+            ${ln.findings.map((f) => `<div class="dv-f ${f.level}">${f.level === 'ok' ? '✓' : f.level === 'warn' ? '!' : '✗'} ${U.esc(f.text)}</div>`).join('')}</div>`).join('')}
+          <div class="hint" style="margin-top:8px">${U.esc((res.method.steps || []).join(' · '))}</div>
+        </div>`;
+    } catch (e) {
+      if (box) box.innerHTML = `<div class="card empty">复核失败：${U.esc(e.message)}</div>`;
+    }
+  }
+
+
   /* ---------------- 总览 ---------------- */
   async function renderOverview() {
     const ov = await API.overview();
@@ -368,6 +446,18 @@
         <div class="hint" style="padding:4px 2px 2px">单指拖动平移 · 双指捏合缩放</div>
       </div>
       <div class="section">
+        <div class="section-head"><h3>手绘线</h3><button class="chip" id="dVerify">AI 复核</button></div>
+        <div class="hscroll" id="drawTools">
+          <button class="chip" data-draw="trend">趋势线</button>
+          <button class="chip" data-draw="hline">水平线</button>
+          <button class="chip" data-draw="rect">框中枢</button>
+          <button class="chip" data-draw="del">删除选中</button>
+          <button class="chip" data-draw="clear">清空</button>
+        </div>
+        <div class="hint" id="drawHint" style="margin-top:2px">点「趋势线」后在图上点两下（自动吸附笔端点）</div>
+        <div id="dVerifyBox"></div>
+      </div>
+      <div class="section">
         <div class="section-head"><h3>教学标注</h3><span class="hint">在图上圈出对应结构</span></div>
         <div class="hscroll">
           ${(() => {
@@ -414,6 +504,7 @@
     const cv = $('#mChart');
     if (state.chart) state.chart.destroy();
     state.chart = new ChanChart(cv, $('#mTip'));
+    bindDrawTools(); // 必须在 chart 建好之后绑定：工具按钮要拿 state.chart
     try {
       const res = await API.chan({ market, code, period: state.period, limit: 600 });
       if (!res.ok) {
@@ -422,6 +513,10 @@
       }
       state.lastChan = res;
       state.chart.setData(res);
+      {
+        const k2 = `${state.market}:${state.symbol[state.market]}:${state.period}`;
+        if (k2 !== drawKey) loadDrawings();
+      }
       paintStructure(res);
       loadMobileBacktest(market, code, state.period);
     } catch (e) {

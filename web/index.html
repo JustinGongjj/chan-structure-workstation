@@ -151,6 +151,13 @@
             <div class="chart-toolbar">
               <div class="legend" id="chartLegend"></div>
               <div class="chart-tools">
+                <button class="btn ghost sm" id="drawTrend" title="点两下画趋势线（会吸附到笔端点）">趋势线</button>
+                <button class="btn ghost sm" id="drawLevel" title="点一下画水平线">水平线</button>
+                <button class="btn ghost sm" id="drawRect" title="拖出一个框（用来框中枢）">框</button>
+                <button class="btn ghost sm" id="drawDel" title="删除选中的线（选中后按 Delete 也行）">删除</button>
+                <button class="btn ghost sm" id="drawClear">清空</button>
+                <button class="btn sm" id="drawVerify" title="把手绘线和笔/中枢/买卖点对齐检查">AI 复核</button>
+                <span class="vr"></span>
                 <button class="btn ghost sm" id="zoomIn">＋</button>
                 <button class="btn ghost sm" id="zoomOut">－</button>
                 <button class="btn ghost sm" id="zoomReset">复位</button>
@@ -160,6 +167,14 @@
               <div class="crosshair-tip" id="crosshairTip"></div>
             </div>
             <div class="chart-note" id="chartNote"></div>
+            <div class="draw-hint" id="drawHint">手绘：点「趋势线」后点两下（自动吸附笔端点）· 点线可选中，Delete 删除 · 线按标的+周期保存在服务端</div>
+          </div>
+
+          <div class="card" id="drawVerifyCard" style="display:none">
+            <div class="card-head"><h3>AI 复核 · 手绘线 vs 缠论结构</h3><span class="hint" id="drawScore"></span></div>
+            <div id="drawVerdict" class="draw-verdict"></div>
+            <div id="drawFindings" class="draw-findings"></div>
+            <div class="hint" id="drawMethod"></div>
           </div>
 
           <div class="card">

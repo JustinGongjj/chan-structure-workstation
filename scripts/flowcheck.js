@@ -214,7 +214,16 @@ async function mobileFlows() {
   } finally { s.close(); }
 }
 
+async function cleanDrawings(market, code, period) {
+  await fetch(`${BASE}/api/drawings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ market, code, period, drawings: [] })
+  }).catch(() => {});
+}
+
 async function desktopFlows() {
+  await cleanDrawings('A', '600519', 'day');
   const s = await open({ url: `${BASE}/?desktop=1&theme=dark`, w: 1440, h: 900, ua: UA_DESK, mobile: false });
   const { cdp, errors } = s;
   try {
@@ -224,6 +233,35 @@ async function desktopFlows() {
     const chart = await cdp.eval(`!!document.querySelector('canvas')`);
     const label = await cdp.eval(`document.body.innerText.includes('中枢') || document.body.innerText.includes('笔')`);
     check('桌面版·结构页图表+标注', chart && label, `canvas=${chart}`);
+
+    // 手绘线：水平线 → 趋势线 → 复核 → 落库
+    const chartBox = await cdp.eval(`(() => { const c=document.querySelector('#mainChart'); if(!c) return null; const b=c.getBoundingClientRect(); return [Math.round(b.left),Math.round(b.top),Math.round(b.width),Math.round(b.height)]; })()`);
+    if (chartBox) {
+      const [bx, by, bw, bh] = chartBox;
+      const click = async (x, y) => {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+        await sleep(280);
+      };
+      await cdp.eval(`document.getElementById('drawLevel').click()`);
+      await sleep(250);
+      await click(bx + bw * 0.5, by + bh * 0.42);
+      await cdp.eval(`document.getElementById('drawTrend').click()`);
+      await sleep(250);
+      await click(bx + bw * 0.22, by + bh * 0.62);
+      await click(bx + bw * 0.74, by + bh * 0.28);
+      await sleep(1500);
+      const drawn = await cdp.eval(`document.querySelector('#drawHint')?.textContent || ''`);
+      check('桌面版·手绘线可画出并保存', /当前 [2-9] 条/.test(drawn), drawn.replace(/\s+/g, ' ').slice(0, 48));
+      await cdp.eval(`document.getElementById('drawVerify').click()`);
+      await sleep(4800);
+      const verdict = await cdp.eval(`document.getElementById('drawVerdict')?.innerText || ''`);
+      const findings = await cdp.eval(`document.querySelectorAll('#drawFindings .dv-f').length`);
+      check('桌面版·AI 复核给出一致度与逐条结论', /一致度/.test(await cdp.eval(`document.getElementById('drawScore')?.innerText || ''`)) && findings > 0, `结论 ${String(verdict).slice(0, 24)}… · ${findings} 条`);
+      const persisted = await cdp.eval(`(async () => (await (await fetch('/api/drawings?market=A&code=600519&period=day')).json()).drawings.length)()`);
+      check('桌面版·手绘线已落库', persisted >= 2, `${persisted} 条`);
+      await cleanDrawings('A', '600519', 'day'); // 巡检不留脏数据
+    } else check('桌面版·手绘线可画出并保存', false, '找不到图表画布');
 
     // 结构页回测卡片
     await sleep(2500);
