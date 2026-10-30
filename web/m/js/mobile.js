@@ -10,7 +10,7 @@
   const state = {
     tab: 'overview',
     market: 'A',
-    symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' },
+    symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' },
     period: 'day',
     hl: null,
     live: localStorage.getItem('chan-live') === '1',
@@ -25,7 +25,7 @@
   };
 
   const PNAME = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1时', '4h': '4时', day: '日线', week: '周线', month: '月线' };
-  const PERIODS = { A: ['day', 'week', '60m', '30m', '15m', '5m'], HK: ['day', 'week'], US: ['day', 'week'], CR: ['day', '4h', '60m', '15m', '5m'] };
+  const PERIODS = { A: ['day', 'week', '60m', '30m', '15m', '5m'], HK: ['day', 'week'], US: ['day', 'week'], CR: ['day', '4h', '60m', '15m', '5m'], CNF: ['day', 'week'], USF: ['day', 'week'] };
   /* 教学标注可选结构：与 web/js/highlight.js 的 HL_TITLE 保持一致（19 种全开） */
   const HL_CHOICES = [
     ['', '不标注'],
@@ -517,7 +517,7 @@
         // 每个市场支持的周期不同（港股/美股只有日线·周线）；不兼容就退回日线，
         // 否则会请求一个不存在的周期：图表空白 + 一直"加载中"+ 服务端 500
         if (!PERIODS[state.market].includes(state.period)) state.period = 'day';
-        if (!state.symbol[state.market]) state.symbol[state.market] = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' }[state.market];
+        if (!state.symbol[state.market]) state.symbol[state.market] = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' }[state.market];
         renderStructure();
       })
     );
@@ -745,7 +745,7 @@
       <div class="page-sub">代码 + 实时价 + 时辰起卦；娱乐向，不构成投资建议</div>
       <div class="card">
         <div class="form-row"><div class="hint" style="margin-bottom:6px">市场</div>
-          <div class="seg segmented" id="dMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq button ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
+          <div class="seg segmented" id="dMarket">${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
         </div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">标的代码</div><input class="input" id="dCode" value="${U.esc(d.code)}" placeholder="600519 / NVDA / BTCUSDT" autocomplete="off"></div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">起卦方式</div>
@@ -986,7 +986,7 @@
       const list = data[SK.market] || [];
       openSheet(
         '管理自选',
-        `<div class="seg segmented" id="wMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq button ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${data[m].length}</button>`).join('')}</div>
+        `<div class="seg segmented" id="wMarket">${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${(data[m] || []).length}</button>`).join('')}</div>
          <div class="form-row" style="margin-top:12px"><input class="input" id="wCode" placeholder="输入代码，如 600519 / NVDA / BTCUSDT"></div>
          <button class="btn button primary block" id="wAdd">添加</button>
          <div class="list" style="margin-top:12px">

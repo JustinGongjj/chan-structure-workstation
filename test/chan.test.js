@@ -121,3 +121,91 @@ test('价位序列：过滤非法 K 线（0 价、乱序）', () => {
   assert.ok(r.bars.every((x) => x.c > 0), '非法价格被过滤');
   for (let i = 1; i < r.bars.length; i++) assert.ok(r.bars[i].t >= r.bars[i - 1].t, '时间升序');
 });
+
+/* ---------------- 中枢结构：严格按缠论定义（进段 / 区间 / 离开段） ---------------- */
+test('中枢：每段都与区间相交，区间固定不被后续震荡拉长', () => {
+  const f = require('../server/lib/sources');
+  const c = require('../server/lib/chan');
+  // 用合成数据避免网络依赖
+  const bars = [];
+  let p = 100;
+  for (let i = 0; i < 400; i++) {
+    const w = Math.sin(i / 5) * 6 + Math.sin(i / 17) * 10;
+    const c0 = 100 + w;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 2, l: c0 - 2, c: c0 + 0.5, v: 1000 });
+  }
+  const a = c.analyze(bars);
+  for (const pv of a.pivots) {
+    assert.ok(pv.zg > pv.zd, '中枢区间必须有效');
+    assert.ok(pv.count >= 3, '中枢至少 3 段，实际 ' + pv.count);
+    for (let b = pv.startBi; b <= pv.endBi; b++) {
+      const bi = a.bis[b];
+      assert.ok(bi.h > pv.zd && bi.l < pv.zg, `第 ${b} 段必须与中枢区间相交`);
+    }
+    // 第 4 段起（延伸段）终点必须落在区间内
+    for (let b = pv.startBi + 3; b <= pv.endBi; b++) {
+      const bi = a.bis[b];
+      assert.ok(bi.p1 <= pv.zg + 1e-6 && bi.p1 >= pv.zd - 1e-6, `延伸段 ${b} 终点应在区间内`);
+    }
+    // 离开段必须真的离开（终点出界）
+    if (pv.leaveBi != null) {
+      const lb = a.bis[pv.leaveBi];
+      assert.ok(lb.p1 > pv.zg || lb.p1 < pv.zd, '离开段终点必须离开中枢区间');
+    }
+    // 进入段必须存在且与中枢首段反向
+    if (pv.enterBi != null) {
+      assert.notEqual(a.bis[pv.enterBi].dir, a.bis[pv.startBi].dir, '进入段与中枢首段应反向');
+    }
+  }
+});
+
+test('中枢：9 段及以上标记升级', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 500; i++) {
+    const c0 = 100 + Math.sin(i / 40) * 3 + Math.sin(i / 3) * 1.2;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1.5, l: c0 - 1.5, c: c0, v: 800 });
+  }
+  const a = c.analyze(bars);
+  for (const pv of a.pivots) {
+    assert.equal(pv.upgraded, pv.count >= 9, `段数 ${pv.count} 的升级标记应为 ${pv.count >= 9}`);
+  }
+});
+
+test('中枢：相邻中枢若区间高度重叠且紧邻，必须合并（否则图上一截一截首尾相接）', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 600; i++) {
+    // 长期在 100 附近来回，制造连续重叠的中枢
+    const c0 = 100 + Math.sin(i / 6) * 1.5 + Math.sin(i / 23) * 0.8;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 0.8, l: c0 - 0.8, c: c0 + 0.1, v: 500 });
+  }
+  const a = c.analyze(bars);
+  for (let i = 1; i < a.pivots.length; i++) {
+    const p = a.pivots[i - 1];
+    const q = a.pivots[i];
+    const lo = Math.max(p.zd, q.zd);
+    const hi = Math.min(p.zg, q.zg);
+    const overlap = hi > lo ? (hi - lo) / Math.min(p.zg - p.zd, q.zg - q.zd) : 0;
+    const gap = q.startBi - p.endBi;
+    if (overlap >= 0.5 && gap <= 2) {
+      assert.fail(`中枢 ${i - 1} 与 ${i} 重叠 ${(overlap * 100).toFixed(0)}% 且只隔 ${gap} 段，应合并`);
+    }
+  }
+});
+
+test('中枢：合并后仍保留进入段/离开段与段计数', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 500; i++) {
+    const c0 = 200 + Math.sin(i / 5) * 2 + Math.sin(i / 31) * 1.1;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1, l: c0 - 1, c: c0, v: 900 });
+  }
+  const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    assert.ok(p.count === p.endBi - p.startBi + 1, 'count 应等于段数');
+    if (p.enterBi != null) assert.ok(p.enter === null || typeof p.enter === 'object');
+    if (p.leaveBi != null) assert.ok(p.leave && typeof p.leave.dir === 'number');
+    assert.ok(p.zd < p.zg);
+  }
+});

@@ -58,6 +58,20 @@ const WATCHLIST = {
     { code: 'SOLUSDT', name: 'SOL/USDT' },
     { code: 'BNBUSDT', name: 'BNB/USDT' },
   ],
+  CNF: [
+    { code: 'RB0', name: '螺纹钢主连' },
+    { code: 'IF0', name: '沪深300主连' },
+    { code: 'AU0', name: '沪金主连' },
+    { code: 'CU0', name: '沪铜主连' },
+    { code: 'M0', name: '豆粕主连' },
+  ],
+  USF: [
+    { code: 'ES', name: '标普500期货' },
+    { code: 'NQ', name: '纳指100期货' },
+    { code: 'GC', name: '黄金期货' },
+    { code: 'CL', name: '原油期货' },
+    { code: 'ZN', name: '美债10Y期货' },
+  ],
 };
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -141,6 +155,12 @@ const INDEX_BOARD = [
   { market: 'US', code: 'usINX', name: '标普500' },
   { market: 'CR', code: 'BTCUSDT', name: 'BTC' },
   { market: 'CR', code: 'ETHUSDT', name: 'ETH' },
+  { market: 'CNF', code: 'IF0', name: '沪深300主连' },
+  { market: 'CNF', code: 'RB0', name: '螺纹钢主连' },
+  { market: 'CNF', code: 'AU0', name: '沪金主连' },
+  { market: 'USF', code: 'ES', name: '标普500期货' },
+  { market: 'USF', code: 'NQ', name: '纳指期货' },
+  { market: 'USF', code: 'GC', name: '黄金期货' },
 ];
 
 /* 区间套用的级别顺序（大 → 小） */
@@ -291,7 +311,8 @@ async function overview() {
   });
   const wl = loadWatchlist();
   const watchItems = [];
-  for (const m of ['A', 'HK', 'US', 'CR']) for (const it of wl[m] || []) watchItems.push({ market: m, ...it });
+  const ALL_MARKETS = ['A', 'HK', 'US', 'CR', 'CNF', 'USF'];
+  for (const m of ALL_MARKETS) for (const it of wl[m] || []) watchItems.push({ market: m, ...it });
   const wm = await getQuoteMap(watchItems);
   const watch = watchItems.map((it) => {
     const q = wm.get(it.market + ':' + S.normCode(it.market, it.code));
@@ -309,7 +330,7 @@ async function overview() {
     };
   });
   const pulse = {};
-  for (const m of ['A', 'HK', 'US', 'CR']) {
+  for (const m of ALL_MARKETS) {
     const rows = watch.filter((w) => w.market === m && Number.isFinite(w.pct));
     const avg = rows.length ? rows.reduce((a, b) => a + b.pct, 0) / rows.length : 0;
     pulse[m] = {

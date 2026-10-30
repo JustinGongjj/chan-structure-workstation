@@ -7,7 +7,7 @@
       period: 'day',
       hl: null, // 教学标注：理论 → 图上位置
       live: false, // 实时刷新
-      symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' },
+      symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' },
     },
     pages: {},
     go(page, opts) {

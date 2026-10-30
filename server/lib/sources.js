@@ -11,11 +11,17 @@
 
 const { request, getJSON, cached, sleep } = require('./http');
 
+/* 期货主力连续合约：国内用 RB0/AU0/IF0 这类，美期货用 ES/NQ/GC/CL 这类 */
+const CNF_LIST = ['RB0', 'AU0', 'AG0', 'CU0', 'IF0', 'IC0', 'IH0', 'IM0', 'TA0', 'MA0', 'M0', 'P0', 'Y0', 'SR0', 'CF0', 'SC0', 'FG0', 'RM0', 'OI0', 'SA0'];
+const USF_LIST = ['ES', 'NQ', 'YM', 'RTY', 'GC', 'SI', 'CL', 'NG', 'HG', 'ZC', 'ZS', 'ZW', '6E', '6J'];
+
 const MARKETS = {
   A: { key: 'A', name: 'A股', currency: 'CNY', tz: 8, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
   HK: { key: 'HK', name: '港股', currency: 'HKD', tz: 8, intraday: false, periods: ['day', 'week', 'month'] },
   US: { key: 'US', name: '美股', currency: 'USD', tz: -4, intraday: false, periods: ['day', 'week', 'month'] },
   CR: { key: 'CR', name: '加密', currency: 'USDT', tz: 0, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', '4h', 'day', 'week'] },
+  CNF: { key: 'CNF', name: '国内期货', currency: 'CNY', tz: 8, intraday: false, periods: ['day', 'week', 'month'] },
+  USF: { key: 'USF', name: '美期货', currency: 'USD', tz: -5, intraday: false, periods: ['day', 'week', 'month'] },
 };
 
 const PERIOD_NAME = {
@@ -41,6 +47,8 @@ function normCode(market, raw) {
     return c.replace(/\.HK$/, '').padStart(5, '0');
   }
   if (market === 'US') return c.replace(/^US\.?/, '').replace(/\.(OQ|N|US)$/, '');
+  if (market === 'CNF') return c.replace(/^CNF\.?/, '').replace(/[^A-Z0-9]/g, '');
+  if (market === 'USF') return c.replace(/^USF\.?/, '').replace(/[^A-Z0-9]/g, '');
   return c.replace(/[-/_]/g, '');
 }
 
@@ -55,6 +63,69 @@ function tcCode(market, code) {
   if (market === 'HK') return 'hk' + c;
   if (market === 'US') return 'us' + c;
   return null;
+}
+
+/* ---------------- 期货（新浪） ---------------- */
+function sinaFuturesUrl(market, code) {
+  return market === 'USF'
+    ? `https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=${code}&_=${Date.now()}`
+    : `https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/InnerFuturesNewService.getDailyKLine?symbol=${code}`;
+}
+
+async function sinaFuturesDaily(market, code) {
+  const txt = await request(sinaFuturesUrl(market, code), {
+    timeout: 9000,
+    referer: 'https://finance.sina.com.cn',
+  });
+  const body = (txt.match(/=(\([\s\S]*\))\s*;?\s*$/) || [])[1] || txt;
+  let arr;
+  try { arr = JSON.parse(body.replace(/^[\s(]+|[\s)]+$/g, '')); } catch (e) { throw new Error('期货K线解析失败'); }
+  if (!Array.isArray(arr) || !arr.length) throw new Error('期货K线为空');
+  const bars = arr
+    .map((k) => {
+      const t = Date.parse(((k.date || k.d) || '') + 'T00:00:00Z');
+      return { t, o: num(k.open ?? k.o), h: num(k.high ?? k.h), l: num(k.low ?? k.l), c: num(k.close ?? k.c), v: num(k.volume ?? k.v) };
+    })
+    .filter((b) => b.t && Number.isFinite(b.c) && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+  return { bars, source: 'sina-futures' };
+}
+
+/** 期货实时报价（国内期货的快照接口常年僵死，必须用 K 线兜底） */
+async function fetchFuturesQuotes(items) {
+  const map = new Map();
+  if (!items.length) return map;
+  const list = items.map((i) => (i.market === 'USF' ? 'hf_' + i.code : i.code));
+  const txt = await request('https://hq.sinajs.cn/list=' + list.join(','), {
+    encoding: 'gbk', timeout: 8000, referer: 'https://finance.sina.com.cn',
+  });
+  for (const line of txt.split('\n')) {
+    const m = line.match(/var hq_str_([^=]+)="([^"]*)"/);
+    if (!m) continue;
+    const key = m[1];
+    const f = m[2].split(',');
+    const it = items.find((i) => (i.market === 'USF' ? 'hf_' + i.code : i.code) === key);
+    if (!it) continue;
+    let price = 0, prevClose = 0, name = '';
+    if (it.market === 'USF') {
+      // hf_XXX: 0 最新价, 7 昨收? 新浪外盘期货字段: 0现价 2买价 3卖价 4最高 5最低 6时间 7昨结 8今开 ... 13名称
+      price = num(f[0]);
+      prevClose = num(f[7]) || num(f[8]) || price;
+      name = f[13] || it.code;
+    } else {
+      // 国内期货: 0名称 1时间 2开 3高 4低 5昨收 6买 7卖 8最新 9结算 10昨结 11买量 12卖量 13持仓 14成交量
+      name = f[0];
+      price = num(f[8]) || num(f[2]);
+      prevClose = num(f[5]) || num(f[10]) || price;
+    }
+    if (!price) continue;
+    const pct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+    map.set(it.market + ':' + it.code, {
+      market: it.market, code: it.code, name: name.trim() || it.code,
+      price, prevClose, pct: +pct.toFixed(2), source: 'sina-futures', staleSnapshot: it.market === 'CNF',
+    });
+  }
+  return map;
 }
 
 /** 币安交易对 */
@@ -183,15 +254,39 @@ async function quotes(items) {
   const key = 'quotes:' + uniq.map((i) => i.market + i.code).join(',');
   const res = await cached(key, 4000, async () => {
     const out = {};
-    const plain = uniq.filter((i) => i.market !== 'CR');
+    const plain = uniq.filter((i) => i.market !== 'CR' && i.market !== 'CNF' && i.market !== 'USF');
     const crypto = uniq.filter((i) => i.market === 'CR');
+    const futures = uniq.filter((i) => i.market === 'CNF' || i.market === 'USF');
     const jobs = [];
+    if (futures.length) jobs.push(fetchFuturesQuotes(futures));
     for (let i = 0; i < plain.length; i += 50) jobs.push(fetchTencentQuotes(plain.slice(i, i + 50)));
     jobs.push(fetchCryptoQuotes(crypto));
     const maps = await Promise.allSettled(jobs);
     for (const r of maps) {
       if (r.status === 'fulfilled') for (const [k, v] of r.value) out[k] = v;
     }
+    // 国内期货快照经常是几个月前的僵死值：统一用日线最新收盘重算
+    if (uniq.some((i) => i.market === 'CNF')) {
+      await Promise.allSettled(
+        uniq.filter((i) => i.market === 'CNF').map(async (i) => {
+          try {
+            const k = await klines({ market: 'CNF', code: i.code, period: 'day', limit: 3 });
+            const bars = k.bars;
+            if (bars.length) {
+              const last = bars[bars.length - 1];
+              const prev = bars.length > 1 ? bars[bars.length - 2] : last;
+              const pct = prev.c ? ((last.c - prev.c) / prev.c) * 100 : 0;
+              const had = out[i.market + ':' + i.code];
+              out[i.market + ':' + i.code] = {
+                market: 'CNF', code: i.code, name: (had && had.name) || i.code,
+                price: last.c, prevClose: prev.c, pct: +pct.toFixed(2), source: 'sina-futures+day',
+              };
+            }
+          } catch (e) { /* 保底用快照 */ }
+        })
+      );
+    }
+
     // 缺失项回退：东方财富单点补
     const missing = uniq.filter((i) => !out[i.market + ':' + i.code]);
     if (missing.length) {
@@ -450,6 +545,13 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
 
     if (m === 'CR') return tryEach([() => binanceKline(c, period, limit)]);
 
+    if (m === 'CNF' || m === 'USF') {
+      const daily = await tryEach([() => sinaFuturesDaily(m, c)]);
+      if (period === 'day') return { ...daily, bars: daily.bars.slice(-limit) };
+      const agg = period === 'week' ? aggBars(daily.bars, weekKey) : aggBars(daily.bars, monthKey);
+      return { bars: agg.slice(-limit), source: daily.source + '+agg' };
+    }
+
     if (period === 'day' || period === 'week' || period === 'month') {
       if (m === 'A') {
         try {
@@ -498,6 +600,34 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
 /* 搜索                                                                */
 /* ------------------------------------------------------------------ */
 
+const FUTURES_NAMES = {
+  ES: '标普500期货', NQ: '纳指100期货', YM: '道指期货', RTY: '罗素2000期货',
+  GC: '黄金期货', SI: '白银期货', CL: '原油期货', NG: '天然气期货', HG: '铜期货',
+  ZC: '玉米期货', ZS: '大豆期货', ZW: '小麦期货', '6E': '欧元期货', '6J': '日元期货',
+  RB0: '螺纹钢主力', AU0: '沪金主力', AG0: '沪银主力', CU0: '沪铜主力',
+  IF0: '沪深300期货', IC0: '中证500期货', IH0: '上证50期货', IM0: '中证1000期货',
+  TA0: 'PTA主力', MA0: '甲醇主力', M0: '豆粕主力', P0: '棕榈油主力', Y0: '豆油主力',
+  SR0: '白糖主力', CF0: '棉花主力', SC0: '原油主力', FG0: '玻璃主力', RM0: '菜粕主力',
+  OI0: '菜油主力', SA0: '纯碱主力',
+};
+
+function searchFutures(q) {
+  const kw = String(q || '').trim().toUpperCase();
+  if (!kw) return [];
+  const out = [];
+  for (const [code, name] of Object.entries(FUTURES_NAMES)) {
+    if (code.includes(kw) || name.includes(q) || name.toUpperCase().includes(kw)) {
+      out.push({
+        market: code.endsWith('0') ? 'CNF' : 'USF',
+        code,
+        name,
+        type: 'futures',
+      });
+    }
+  }
+  return out.slice(0, 8);
+}
+
 async function search(q) {
   const kw = String(q || '').trim();
   if (!kw) return [];
@@ -508,7 +638,7 @@ async function search(q) {
       referer: 'https://gu.qq.com/',
     });
     const body = unescapeUnicode((txt.match(/v_hint="([^"]*)"/) || [])[1] || '');
-    const items = [];
+    const items = searchFutures(kw); // 期货合约优先（腾讯搜索不含期货）
     for (const seg of body.split('^')) {
       const p = seg.split('~');
       if (p.length < 4) continue;

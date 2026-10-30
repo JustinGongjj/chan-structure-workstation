@@ -55,7 +55,7 @@ async function expectFail(name, path, status, opts = {}) {
   await hit('数据源探测', '/api/sources', j => need(Array.isArray(j.sources) && j.sources.length, '无数据源'));
   await hit('搜索', '/api/search?q=茅台', j => need(Array.isArray(j.items) && j.items.length, '搜索无结果'));
 
-  for (const [mk, code] of [['A', '600519'], ['HK', '00700'], ['US', 'NVDA'], ['CR', 'BTCUSDT']]) {
+  for (const [mk, code] of [['A', '600519'], ['HK', '00700'], ['US', 'NVDA'], ['CR', 'BTCUSDT'], ['CNF', 'RB0'], ['USF', 'ES']]) {
     await hit(`报价 ${mk}`, `/api/quote?list=${mk}:${code}`, j => need(j.quotes?.[0]?.price > 0, '报价为空'));
     await hit(`K线 ${mk}`, `/api/kline?market=${mk}&code=${code}&period=day&limit=120`, j => need(j.bars?.length > 50, 'K 线不足'));
     await hit(`缠论 ${mk}`, `/api/chan?market=${mk}&code=${code}&period=day&limit=400`, j =>

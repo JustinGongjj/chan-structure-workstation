@@ -260,8 +260,18 @@ function makeSegment(bis, a, b, dir, done) {
 /* ------------------------------------------------------------------ */
 
 function buildPivots(bis, bars) {
+  /*
+    缠论中枢定义（严格版）：
+      ① 中枢本体由「至少三段次级别走势」相互重叠构成；
+      ② 区间 ZG = min(各段高点)，ZD = max(各段低点)，且要求 ZG > ZD；
+      ③ 区间在**形成那一刻就固定**：之后的震荡只要不完全离开，就只是"延伸"，
+         不得扩大/收缩 ZG、ZD（这是最常见的画错点）；
+      ④ 中枢之前与中枢首段反向的那一段是「进入段」；中枢之后第一段**完全离开**
+         中枢区间（整段低点 > ZG 或整段高点 < ZD）那一段才是「离开段」；
+      ⑤ 中枢内段数 ≥ 9 时升级为高一级别中枢。
+  */
   const out = [];
-  let i = 0;
+  let i = 1; // 从第 1 段开始：需要前面有段可以当"进入段"
   let guard = 0;
   while (i + 2 < bis.length && guard++ < 500) {
     const tri = [bis[i], bis[i + 1], bis[i + 2]];
@@ -273,8 +283,11 @@ function buildPivots(bis, bars) {
     }
     let gg = Math.max(...tri.map((b) => b.h));
     let dd = Math.min(...tri.map((b) => b.l));
+
+    // —— 延伸：后续段的**终点**仍落在中枢区间内 = 还在中枢里震荡（不是离开）
+    //    判据必须看端点而不是"整段是否与区间相交"：像 1142→1806 这种整段穿越中枢的，
+    //    是典型的「离开段」，绝不能被吞进中枢（否则中枢会被拉成长条，画面全错）。
     let j = i + 3;
-    // 延伸：后续笔的终点仍落在中枢区间内，则中枢扩展（区间不变）
     while (j < bis.length) {
       const b = bis[j];
       const endsInside = b.p1 <= zg && b.p1 >= zd;
@@ -283,28 +296,109 @@ function buildPivots(bis, bars) {
       dd = Math.min(dd, b.l);
       j++;
     }
-    const endBi = j - 1;
+
+    const endBi = j - 1; // 中枢内最后一段
+    const innerCount = endBi - i + 1;
+    const enterBi = i - 1 >= 0 ? i - 1 : null;
+    const leaveBi = j < bis.length ? j : null;
     out.push({
       idx: out.length,
       startBi: i,
       endBi,
+      enterBi,
+      leaveBi,
       zg,
       zd,
       gg,
       dd,
       height: zg - zd,
-      count: endBi - i + 1,
+      count: innerCount,
       i0: bis[i].i0,
       i1: bis[endBi].i1,
       t0: bars[bis[i].i0].t,
       t1: bars[bis[endBi].i1].t,
-      enterBi: i - 1 >= 0 ? i - 1 : null,
-      leaveBi: j < bis.length ? j : null,
-      upgraded: endBi - i + 1 >= 9,
+      // 进/离段的极值，画图时用来标注进入段、离开段
+      enter: enterBi != null ? { bi: enterBi, i0: bis[enterBi].i0, i1: bis[enterBi].i1, p0: bis[enterBi].p0, p1: bis[enterBi].p1, dir: bis[enterBi].dir } : null,
+      leave: leaveBi != null ? { bi: leaveBi, i0: bis[leaveBi].i0, i1: bis[leaveBi].i1, p0: bis[leaveBi].p0, p1: bis[leaveBi].p1, dir: bis[leaveBi].dir } : null,
+      upgraded: innerCount >= 9,
+      status: leaveBi != null ? 'done' : 'ongoing',
     });
-    i = j;
+    i = Math.max(i + 1, j); // 从中枢结束后继续找下一个
   }
-  return out;
+  return mergeAdjacent(out, bis);
+}
+
+/*
+  中枢扩展 / 合并（缠论里最容易被画错的一步）
+  ------------------------------------------------------------------
+  两个相邻中枢如果【区间有重叠】且【中间只隔一段（离开段即下一中枢的进入段）】，
+  那就不是一个新中枢，而是同一个中枢在扩展——合并成一个，区间取两者的重叠区
+  （即 max(zd), min(zg)）；只有重叠消失（区间完全分离）才算真正离开、进入下一个中枢。
+  这样画出来才会是「进入段 → 中枢区间 → 离开段」，而不是一截一截首尾相接。
+*/
+function mergeAdjacent(pivots, bis) {
+  if (pivots.length < 2) return pivots;
+  const out = [];
+  let cur = { ...pivots[0] };
+  for (let k = 1; k < pivots.length; k++) {
+    const nxt = pivots[k];
+    const overlapLo = Math.max(cur.zd, nxt.zd);
+    const overlapHi = Math.min(cur.zg, nxt.zg);
+    const gapSegments = nxt.startBi - cur.endBi; // 1 表示紧挨着（离开段=下一进段）
+    const hasOverlap = overlapHi > overlapLo;
+    // 重叠足够大（超过较窄中枢的一半）且紧接着 → 视为同一中枢的扩展
+    const minHeight = Math.min(cur.zg - cur.zd, nxt.zg - nxt.zd) || 1;
+    const overlapRatio = hasOverlap ? (overlapHi - overlapLo) / minHeight : 0;
+    // 只要区间有实质重叠（>30%）就视为同一中枢的扩展：
+    // 缠论里"两个中枢重叠"本身就是中枢扩展，不是两个中枢。
+    if (hasOverlap && overlapRatio >= 0.3 && gapSegments <= 3) {
+      // 合并：区间取两中枢的重叠区（这是缠论里中枢扩展后的"新中枢"）
+      const zg2 = overlapHi;
+      const zd2 = overlapLo;
+      // 合并后必须按新区间重筛内段：终点不在区内的一律视作离开
+      let end2 = cur.startBi;
+      let gg2 = -Infinity;
+      let dd2 = Infinity;
+      for (let b = cur.startBi; b <= nxt.endBi; b++) {
+        const bi = bis[b];
+        const isFirst3 = b < cur.startBi + 3;
+        const inside = isFirst3 ? bi.h > zd2 && bi.l < zg2 : bi.p1 <= zg2 + 1e-9 && bi.p1 >= zd2 - 1e-9;
+        if (!inside && !isFirst3) break;
+        if (isFirst3 && !inside) break;
+        end2 = b;
+        gg2 = Math.max(gg2, bi.h);
+        dd2 = Math.min(dd2, bi.l);
+      }
+      const leave2 = end2 + 1 < bis.length ? end2 + 1 : null;
+      cur = {
+        ...cur,
+        endBi: end2,
+        zg: zg2,
+        zd: zd2,
+        gg: Number.isFinite(gg2) ? gg2 : Math.max(cur.gg, nxt.gg),
+        dd: Number.isFinite(dd2) ? dd2 : Math.min(cur.dd, nxt.dd),
+        height: zg2 - zd2,
+        count: end2 - cur.startBi + 1,
+        i1: bis[end2].i1,
+        t1: bis[end2].i1 != null ? undefined : cur.t1,
+        leaveBi: leave2,
+        upgraded: end2 - cur.startBi + 1 >= 9,
+        merged: (cur.merged || 0) + 1,
+        status: leave2 != null ? 'done' : 'ongoing',
+      };
+    } else {
+      out.push(cur);
+      cur = { ...nxt };
+    }
+  }
+  out.push(cur);
+  // 重新编号 + 补 enter/leave 细节
+  return out.map((p, idx) => ({
+    ...p,
+    idx,
+    enter: p.enterBi != null ? { bi: p.enterBi, i0: bis[p.enterBi].i0, i1: bis[p.enterBi].i1, p0: bis[p.enterBi].p0, p1: bis[p.enterBi].p1, dir: bis[p.enterBi].dir } : null,
+    leave: p.leaveBi != null ? { bi: p.leaveBi, i0: bis[p.leaveBi].i0, i1: bis[p.leaveBi].i1, p0: bis[p.leaveBi].p0, p1: bis[p.leaveBi].p1, dir: bis[p.leaveBi].dir } : null,
+  }));
 }
 
 function classifyTrend(pivots) {
@@ -629,25 +723,8 @@ function analyze(rawBars, opts = {}) {
       endBar: b.endBar,
     })),
     segments: segments.map((s) => ({ dir: s.dir, i0: s.i0, i1: s.i1, p0: s.p0, p1: s.p1, done: s.done, startBi: s.startBi, endBi: s.endBi })),
-    pivots: pivots.map((p) => ({
-      idx: p.idx,
-      zg: p.zg,
-      zd: p.zd,
-      gg: p.gg,
-      dd: p.dd,
-      height: p.height,
-      count: p.count,
-      i0: p.i0,
-      i1: p.i1,
-      t0: p.t0,
-      t1: p.t1,
-      upgraded: p.upgraded,
-      active: p === lastPivot,
-      startBi: p.startBi,
-      endBi: p.endBi,
-      enterBi: p.enterBi,
-      leaveBi: p.leaveBi,
-    })),
+    // 保留全部字段（enter/leave/status 等新增信息不能被白名单吃掉）
+    pivots: pivots.map((p) => ({ ...p, active: p === lastPivot })),
     beichi: beichi.map((b) => ({ ...b })),
     signals: signals.map((s) => ({ ...s, typeName: s.name })),
     trend,

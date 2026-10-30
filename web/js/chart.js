@@ -335,24 +335,123 @@
       // 中枢
       if (this.toggles.pivot) {
         ctx.font = '10px ui-monospace,Menlo,monospace';
+        const placed = []; // 已放置的标签矩形，用于避让（进/离段标签很密，不避让会糊成一团）
+        const collides = (r) => placed.some((q) => !(r.x2 < q.x1 || r.x1 > q.x2 || r.y2 < q.y1 || r.y1 > q.y2));
         for (const p of d.pivots || []) {
           const x0 = this.xOf(p.i0, g) - bw / 2;
           const x1 = this.xOf(p.i1, g) + bw / 2;
           if (x1 < g.padL || x0 > g.padL + g.plotW) continue;
           const yT = this.yOf(p.zg, g, r);
           const yB = this.yOf(p.zd, g, r);
+          const col = p.active ? C.gold : C.pivotLine;
+
+          // ① 中枢本体：ZG/ZD 之间的色带（区间固定，不随后续震荡变化）
           ctx.globalAlpha = p.active ? 0.95 : 0.85;
           ctx.fillStyle = C.pivotFill;
           ctx.fillRect(x0, yT, Math.max(2, x1 - x0), Math.max(1, yB - yT));
-          ctx.strokeStyle = p.active ? C.gold : C.pivotLine;
-          ctx.lineWidth = 1;
+
+          // ② 区间上下沿：实线贯穿中枢，并且延伸到离开段起点，体现"离开前一直有效"
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = p.active ? 1.6 : 1.2;
+          ctx.beginPath();
+          ctx.moveTo(x0, yT);
+          ctx.lineTo(x1, yT);
+          ctx.moveTo(x0, yB);
+          ctx.lineTo(x1, yB);
+          ctx.stroke();
+
+          // ③ 中枢左右边界（虚线）
           ctx.setLineDash([3, 3]);
-          ctx.strokeRect(x0, yT, Math.max(2, x1 - x0), Math.max(1, yB - yT));
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x0, yT);
+          ctx.lineTo(x0, yB);
+          ctx.moveTo(x1, yT);
+          ctx.lineTo(x1, yB);
+          ctx.stroke();
           ctx.setLineDash([]);
+
+          // ④ GG / DD：中枢内触及的最高/最低（缠论里中枢区间与波动区间是两回事）
+          if (p.gg != null && p.dd != null && this.toggles.beichi) {
+            ctx.globalAlpha = 0.5;
+            ctx.setLineDash([2, 4]);
+            ctx.beginPath();
+            ctx.moveTo(x0, this.yOf(p.gg, g, r));
+            ctx.lineTo(x1, this.yOf(p.gg, g, r));
+            ctx.moveTo(x0, this.yOf(p.dd, g, r));
+            ctx.lineTo(x1, this.yOf(p.dd, g, r));
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+          }
+
+          // ⑤ 进入段 / 离开段：从中枢边界画箭头到该段终点，并标注
+          const arrow = (x1b, y1b, x2b, y2b, color, label, labelSide) => {
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(x1b, y1b);
+            ctx.lineTo(x2b, y2b);
+            ctx.stroke();
+            const ang = Math.atan2(y2b - y1b, x2b - x1b);
+            const ah = 6;
+            ctx.beginPath();
+            ctx.moveTo(x2b, y2b);
+            ctx.lineTo(x2b - ah * Math.cos(ang - 0.4), y2b - ah * Math.sin(ang - 0.4));
+            ctx.lineTo(x2b - ah * Math.cos(ang + 0.4), y2b - ah * Math.sin(ang + 0.4));
+            ctx.closePath();
+            ctx.fill();
+            if (label) {
+              ctx.font = '9.5px ui-monospace,Menlo,monospace';
+              const tw = ctx.measureText(label).width + 8;
+              const lx = Math.max(g.padL + 2, Math.min(g.padL + g.plotW - tw - 2, x2b - tw / 2));
+              // 标签错位：进入段贴上方、离开段贴下方，避免相邻中枢的两个标签叠在一起
+              let ly = labelSide === 'above' ? y2b - 16 : labelSide === 'below' ? y2b + 16 : y2b + (y2b < y1b ? -14 : 10);
+              let rect = { x1: lx, y1: ly - 9, x2: lx + tw, y2: ly + 4 };
+              for (let k = 0; k < 6 && collides(rect); k++) {
+                ly += labelSide === 'above' ? -14 : 14;
+                rect = { x1: lx, y1: ly - 9, x2: lx + tw, y2: ly + 4 };
+              }
+              placed.push(rect);
+              ctx.globalAlpha = 0.92;
+              ctx.fillRect(lx, ly - 9, tw, 13);
+              ctx.fillStyle = C.goldInk;
+              ctx.fillText(label, lx + 4, ly + 1);
+              ctx.globalAlpha = 1;
+            }
+          };
+          if (p.enter && this.toggles.pivot) {
+            // 进入段：从中枢左边界往回画到进段起点（方向表示"如何进入中枢"）
+            const ex = this.xOf(p.enter.i0, g);
+            const ey = this.yOf(p.enter.p0, g, r);
+            const sx = x0;
+            const sy = this.yOf(p.enter.p1, g, r);
+            if (Math.abs(ex - sx) > 6) arrow(ex, ey, sx, sy, C.seg, '进入段', 'above');
+          }
+          if (p.leave) {
+            const lx2 = this.xOf(p.leave.i1, g);
+            const ly2 = this.yOf(p.leave.p1, g, r);
+            const sx2 = x1;
+            const sy2 = this.yOf(p.leave.p0, g, r);
+            if (Math.abs(lx2 - sx2) > 6) {
+              // 离开段颜色跟方向走（A 股习惯：涨红跌绿），并且标签压在下方避免与进入段重叠
+              const leaveColor = p.leave.dir > 0 ? C.up : C.down;
+              arrow(sx2, sy2, lx2, ly2, leaveColor, p.leave.dir > 0 ? '离开段↑' : '离开段↓', 'below');
+            }
+          }
+
+          // ⑥ 标注
           if (x1 - x0 > 30) {
-            ctx.fillStyle = p.active ? C.gold : C.pivotLine;
+            ctx.font = '10px ui-monospace,Menlo,monospace';
+            ctx.fillStyle = col;
             ctx.fillText(`ZG ${this.fmtPrice(p.zg)}`, x0 + 3, yT - 3);
             ctx.fillText(`ZD ${this.fmtPrice(p.zd)}`, x0 + 3, yB + 10);
+          }
+          if (p.upgraded && x1 - x0 > 60) {
+            ctx.fillStyle = C.gold;
+            ctx.fillText(`9段升级(${p.count})`, x0 + 3, (yT + yB) / 2 + 3);
           }
           ctx.globalAlpha = 1;
         }

@@ -26,7 +26,9 @@ const POOL = {
   A: ['600519', '300750', '000001', '601899', '002594', '688981', '600036', '601318', '000858', '002415'],
   HK: ['00700', '09988', '03690', '01810', '00981', '02318'],
   US: ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'AMZN', 'GOOGL', 'META'],
-  CR: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT']
+  CR: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT'],
+  CNF: ['RB0', 'AU0', 'IF0', 'CU0', 'M0', 'TA0', 'SR0', 'AG0'],
+  USF: ['ES', 'NQ', 'GC', 'CL', 'SI', 'HG', 'YM', 'NG']
 };
 
 const RANKS = [
@@ -88,7 +90,8 @@ function buildMap(K) {
 
 function levelPlan(no) {
   const seed = hash('level:' + no);
-  const markets = ['A', 'A', 'HK', 'US', 'CR'];
+  // 六个市场轮换：A股权重稍高（用户主要是国内），期货占 1/3
+  const markets = ['A', 'A', 'A', 'HK', 'US', 'US', 'CR', 'CNF', 'CNF', 'USF', 'USF'];
   const market = markets[parseInt(seed.slice(0, 2), 16) % markets.length];
   const code = pick(POOL[market], seed.slice(2));
   const rank = rankOf(no).key;

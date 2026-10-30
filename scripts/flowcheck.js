@@ -65,7 +65,10 @@ async function open({ url, w, h, ua, mobile }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-'));
   const proc = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--touch-events=enabled',
-    '--hide-scrollbars', `--remote-debugging-port=${PORT}`, `--user-data-dir=${dir}`,
+    '--hide-scrollbars', '--disable-extensions', '--disable-background-networking',
+    '--disable-features=Translate,BackForwardCache', '--js-flags=--max-old-space-size=256',
+    '--renderer-process-limit=1',
+    `--remote-debugging-port=${PORT}`, `--user-data-dir=${dir}`,
     `--user-agent=${ua}`, `--window-size=${w},${h}`, 'about:blank'
   ], { stdio: 'ignore', env: ENV });
   let list;
@@ -83,7 +86,15 @@ async function open({ url, w, h, ua, mobile }) {
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: !!mobile, maxTouchPoints: 5 });
   await cdp.send('Page.navigate', { url });
   await sleep(4200);
-  return { cdp, errors, close: () => { try { ws.close(); } catch {} proc.kill('SIGKILL'); } };
+  return {
+    cdp,
+    errors,
+    close: async () => {
+      try { ws.close(); } catch {}
+      try { proc.kill('SIGKILL'); } catch {}
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  };
 }
 
 const steps = [];
@@ -211,7 +222,7 @@ async function mobileFlows() {
     check('手机版·深链直达结构', /结构/.test(deep), deep);
 
     check('手机版·无 JS 报错', errors.length === 0, errors.slice(0, 2).join(' | '));
-  } finally { s.close(); }
+  } finally { await s.close(); }
 }
 
 async function cleanDrawings(market, code, period) {
@@ -327,7 +338,7 @@ async function desktopFlows() {
     check('桌面版·数据源页有探测结果', srcTxt > 0, `命中 ${srcTxt}`);
 
     check('桌面版·无 JS 报错', errors.length === 0, errors.slice(0, 2).join(' | '));
-  } finally { s.close(); }
+  } finally { await s.close(); }
 }
 
 /* 闯关小游戏：出一关 → 作答 → 判分 → 揭示 → 进度落本地 */
@@ -367,7 +378,7 @@ async function gameFlows() {
       check('闯关·进度已保存', saved >= 1, `已记录 ${saved} 关`);
     }
     check('闯关·无 JS 报错', errors.length === 0, errors.slice(0, 2).join(' | '));
-  } finally { s.close(); }
+  } finally { await s.close(); }
 }
 
 (async () => {
