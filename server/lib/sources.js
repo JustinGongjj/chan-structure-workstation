@@ -12,8 +12,30 @@
 const { request, getJSON, cached, sleep } = require('./http');
 
 /* 期货主力连续合约：国内用 RB0/AU0/IF0 这类，美期货用 ES/NQ/GC/CL 这类 */
-const CNF_LIST = ['RB0', 'AU0', 'AG0', 'CU0', 'IF0', 'IC0', 'IH0', 'IM0', 'TA0', 'MA0', 'M0', 'P0', 'Y0', 'SR0', 'CF0', 'SC0', 'FG0', 'RM0', 'OI0', 'SA0'];
-const USF_LIST = ['ES', 'NQ', 'YM', 'RTY', 'GC', 'SI', 'CL', 'NG', 'HG', 'ZC', 'ZS', 'ZW', '6E', '6J'];
+/* 国内期货主力连续（上期所/大商所/郑商所/中金所/能源中心） */
+const CNF_LIST = [
+  // 上期所
+  'CU0', 'AL0', 'ZN0', 'PB0', 'NI0', 'SN0', 'AU0', 'AG0', 'RB0', 'WR0', 'HC0', 'SS0', 'BU0', 'RU0', 'SP0', 'FU0',
+  // 能源中心
+  'SC0', 'LU0', 'NR0', 'BC0',
+  // 大商所
+  'M0', 'Y0', 'P0', 'A0', 'B0', 'C0', 'CS0', 'JD0', 'L0', 'V0', 'PP0', 'J0', 'JM0', 'I0', 'EG0', 'EB0', 'PG0', 'RR0', 'LH0', 'FB0', 'BB0',
+  // 郑商所
+  'SR0', 'CF0', 'CY0', 'TA0', 'MA0', 'FG0', 'RM0', 'OI0', 'SA0', 'UR0', 'SF0', 'SM0', 'AP0', 'CJ0', 'PK0', 'ZC0', 'PF0', 'SH0', 'PX0',
+  // 中金所
+  'IF0', 'IC0', 'IH0', 'IM0', 'TS0', 'TF0', 'T0', 'TL0'
+];
+/* 外盘期货（新浪 hf_*：指数/贵金属/能源/农产品/外汇） */
+/* 外盘期货：仅保留新浪 GlobalFutures 实际有数据的品种（2026-10-30 实测）
+   PL/PA/RB/ZC/ZS/ZW/ZM/ZL/6E/6J/6C/6S/HE 在該接口无数据，故不列入，
+   否则用户选中后只会看到空图。 */
+const USF_LIST = [
+  'ES', 'NQ', 'YM', 'RTY', 'NKD',
+  'GC', 'SI', 'HG',
+  'CL', 'NG', 'HO', 'QM', 'BZ',
+  'KC', 'CC', 'SB', 'CT', 'OJ',
+  'LE', 'GF'
+];
 
 const MARKETS = {
   A: { key: 'A', name: 'A股', currency: 'CNY', tz: 8, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
@@ -65,6 +87,29 @@ function tcCode(market, code) {
   return null;
 }
 
+/* ---------------- 贵金属现货（Gold-API，免费无 key） ----------------
+   用途：给贵金属期货（GC/SI/AU0/AG0）提供一个独立的现价参照，
+   当期货快照明显偏离现货（>3%）时打上 stale 标记，避免用户被僵死数据误导。 */
+const GOLD_API_SYMBOLS = { GC: 'XAU', SI: 'XAG', AU0: 'XAU', AG0: 'XAG' };
+
+async function goldApiSpot(symbol) {
+  const j = await getJSON('https://api.gold-api.com/price/' + symbol, { timeout: 8000 });
+  if (!j || !Number.isFinite(j.price)) throw new Error('gold-api 无数据');
+  return { symbol, price: j.price, currency: j.currency, updatedAt: j.updatedAt };
+}
+
+/** 批量取贵金属现货（按需、带缓存） */
+async function spotPrecious(codes) {
+  const need = [...new Set(codes.map((c) => GOLD_API_SYMBOLS[c]).filter(Boolean))];
+  if (!need.length) return {};
+  const res = await cached('spot:metals:' + need.join(','), 60000, async () => {
+    const out = {};
+    await Promise.allSettled(need.map(async (sym) => { out[sym] = await goldApiSpot(sym); }));
+    return out;
+  });
+  return res.value;
+}
+
 /* ---------------- 期货（新浪） ---------------- */
 function sinaFuturesUrl(market, code) {
   return market === 'USF'
@@ -88,6 +133,14 @@ async function sinaFuturesDaily(market, code) {
     })
     .filter((b) => b.t && Number.isFinite(b.c) && b.c > 0)
     .sort((a, b) => a.t - b.t);
+
+  // 新鲜度校验：新浪部分外盘品种只留了 2019 年的十几根残档，
+  // 不校验的话用户会看到一张"13 根 K 线"的空图还以为系统坏了。
+  const last = bars[bars.length - 1];
+  const ageDays = last ? (Date.now() - last.t) / 86400000 : Infinity;
+  if (bars.length < 60 || ageDays > 90) {
+    throw new Error(`该品种数据陈旧（${bars.length} 根，最后一根在 ${last ? new Date(last.t).toISOString().slice(0, 10) : '—'}）`);
+  }
   return { bars, source: 'sina-futures' };
 }
 
@@ -265,6 +318,28 @@ async function quotes(items) {
     for (const r of maps) {
       if (r.status === 'fulfilled') for (const [k, v] of r.value) out[k] = v;
     }
+    // 贵金属：用 Gold-API 现货交叉校验（期货与现货偏离过大时标记 stale）
+    const metals = uniq.filter((i) => ['GC', 'SI', 'AU0', 'AG0'].includes(i.code));
+    if (metals.length) {
+      try {
+        const spots = await spotPrecious(metals.map((m) => m.code));
+        for (const it of metals) {
+          const spot = spots[GOLD_API_SYMBOLS[it.code]];
+          const q = out[it.market + ':' + it.code];
+          if (!q || !spot) continue;
+          // 沪金以人民币计价，不能直接比；只对美元计价的外盘品种做偏离检查
+          if (it.market === 'USF') {
+            const dev = Math.abs(q.price - spot.price) / spot.price;
+            if (dev > 0.03) {
+              out[it.market + ':' + it.code] = { ...q, stale: true, spotPrice: spot.price, note: `与现货偏离 ${(dev * 100).toFixed(1)}%` };
+            } else {
+              out[it.market + ':' + it.code] = { ...q, spotPrice: spot.price };
+            }
+          }
+        }
+      } catch (e) { /* 现货源异常不影响主流程 */ }
+    }
+
     // 国内期货快照经常是几个月前的僵死值：统一用日线最新收盘重算
     if (uniq.some((i) => i.market === 'CNF')) {
       await Promise.allSettled(
@@ -601,31 +676,198 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
 /* ------------------------------------------------------------------ */
 
 const FUTURES_NAMES = {
-  ES: '标普500期货', NQ: '纳指100期货', YM: '道指期货', RTY: '罗素2000期货',
-  GC: '黄金期货', SI: '白银期货', CL: '原油期货', NG: '天然气期货', HG: '铜期货',
-  ZC: '玉米期货', ZS: '大豆期货', ZW: '小麦期货', '6E': '欧元期货', '6J': '日元期货',
-  RB0: '螺纹钢主力', AU0: '沪金主力', AG0: '沪银主力', CU0: '沪铜主力',
-  IF0: '沪深300期货', IC0: '中证500期货', IH0: '上证50期货', IM0: '中证1000期货',
-  TA0: 'PTA主力', MA0: '甲醇主力', M0: '豆粕主力', P0: '棕榈油主力', Y0: '豆油主力',
-  SR0: '白糖主力', CF0: '棉花主力', SC0: '原油主力', FG0: '玻璃主力', RM0: '菜粕主力',
-  OI0: '菜油主力', SA0: '纯碱主力',
+  // 外盘
+  ES: '标普500期货', NQ: '纳指100期货', YM: '道指期货', RTY: '罗素2000期货', NKD: '日经225期货',
+  GC: '黄金期货', SI: '白银期货', HG: '铜期货', PA: '钯金期货',
+  CL: '原油期货', NG: '天然气期货', HO: '取暖油期货', QM: '迷你原油期货', BZ: '布伦特原油期货',
+  ZL: '豆油期货',
+  CC: '可可期货', KC: '咖啡期货', SB: '原糖期货', CT: '棉花期货', OJ: '橙汁期货',
+'6A': '澳元期货', '6S': '瑞郎期货',
+LE: '活牛期货', GF: '育肥牛期货',
+  // 国内 · 上期所
+  CU0: '沪铜主力', AL0: '沪铝主力', ZN0: '沪锌主力', PB0: '沪铅主力', NI0: '沪镍主力', SN0: '沪锡主力',
+  AU0: '沪金主力', AG0: '沪银主力', RB0: '螺纹钢主力', WR0: '线材主力', HC0: '热卷主力',
+  SS0: '不锈钢主力', BU0: '沥青主力', RU0: '橡胶主力', SP0: '纸浆主力', FU0: '燃油主力',
+  // 国内 · 能源中心
+  SC0: '原油主力(INE)', LU0: '低硫燃油主力', NR0: '20号胶主力', BC0: '国际铜主力',
+  // 国内 · 大商所
+  M0: '豆粕主力', Y0: '豆油主力', P0: '棕榈油主力', A0: '豆一主力', B0: '豆二主力',
+  C0: '玉米主力', CS0: '淀粉主力', JD0: '鸡蛋主力', L0: '塑料主力', V0: 'PVC主力',
+  PP0: '聚丙烯主力', J0: '焦炭主力', JM0: '焦煤主力', I0: '铁矿石主力', EG0: '乙二醇主力',
+  EB0: '苯乙烯主力', PG0: 'LPG主力', RR0: '粳米主力', LH0: '生猪主力', FB0: '纤维板主力', BB0: '胶合板主力',
+  // 国内 · 郑商所
+  SR0: '白糖主力', CF0: '棉花主力', CY0: '棉纱主力', TA0: 'PTA主力', MA0: '甲醇主力',
+  FG0: '玻璃主力', RM0: '菜粕主力', OI0: '菜油主力', SA0: '纯碱主力', UR0: '尿素主力',
+  SF0: '硅铁主力', SM0: '锰硅主力', AP0: '苹果主力', CJ0: '红枣主力', PK0: '花生主力',
+  ZC0: '动力煤主力', PF0: '短纤主力', SH0: '烧碱主力', PX0: '对二甲苯主力',
+  // 国内 · 中金所
+  IF0: '沪深300股指主力', IC0: '中证500股指主力', IH0: '上证50股指主力', IM0: '中证1000股指主力',
+  TS0: '2年期国债主力', TF0: '5年期国债主力', T0: '10年期国债主力', TL0: '30年期国债主力',
+};
+
+/* 加密货币中文别名（用户搜"以太坊""狗狗币"要能命中） */
+const COIN_ALIAS = {
+  比特币: 'BTC', 大饼: 'BTC',
+  以太坊: 'ETH', 以太: 'ETH',
+  币安币: 'BNB',
+  索拉纳: 'SOL', solana: 'SOL',
+  瑞波: 'XRP', 瑞波币: 'XRP',
+  狗狗币: 'DOGE', 狗币: 'DOGE',
+  艾达: 'ADA', ada: 'ADA',
+  波卡: 'DOT',
+  柴犬: 'SHIB',
+  莱特币: 'LTC',
+  波场: 'TRX',
+  雪崩: 'AVAX',
+  链接: 'LINK', chainlink: 'LINK',
+  马蹄: 'MATIC', polygon: 'MATIC',
+  柚子: 'EOS',
+  比特现金: 'BCH',
+  恒星: 'XLM',
+  门罗: 'XMR',
+  洋葱: 'ATOM', cosmos: 'ATOM',
+  文件币: 'FIL',
+  唯链: 'VET',
+  算法: 'ALGO',
+  以太经典: 'ETC',
+  渲染: 'RNDR',
+  仲裁: 'ARB',
+  苏伊: 'SUI',
+  aptos: 'APT',
+  佩佩: 'PEPE',
+  near: 'NEAR',
+  inj: 'INJ',
+  ton: 'TON',
+  世界币: 'WLD',
+};
+
+let COIN_CACHE = null;
+async function binanceSymbols() {
+  if (COIN_CACHE && Date.now() - COIN_CACHE.at < 30 * 60 * 1000) return COIN_CACHE.list;
+  const j = await getJSON('https://data-api.binance.vision/api/v3/exchangeInfo', { timeout: 9000 });
+  const list = (j.symbols || [])
+    .filter((x) => x.quoteAsset === 'USDT' && x.status === 'TRADING')
+    .map((x) => ({ symbol: x.symbol, base: x.baseAsset, quote: x.quoteAsset }));
+  COIN_CACHE = { at: Date.now(), list };
+  return list;
+}
+
+/* 搜索加密货币：代码 / 中文别名 / 模糊都命中 */
+async function searchCrypto(q) {
+  const raw = String(q || '').trim();
+  if (!raw) return [];
+  const kw = raw.toUpperCase();
+  const out = [];
+  const seen = new Set();
+  const push = (sym, name) => {
+    if (seen.has(sym)) return;
+    seen.add(sym);
+    out.push({ market: 'CR', code: sym, name: name || sym, type: 'crypto' });
+  };
+  // ① 中文别名
+  for (const [alias, base] of Object.entries(COIN_ALIAS)) {
+    if (raw.includes(alias) || alias.includes(raw) || kw === base) push(base + 'USDT', alias + ' (' + base + ')');
+  }
+  // ② Binance 全量交易对
+  try {
+    const list = await binanceSymbols();
+    for (const it of list) {
+      if (it.base === kw || it.symbol === kw || it.base.startsWith(kw) || (kw.length >= 2 && it.symbol.includes(kw))) {
+        push(it.symbol, it.base + '/USDT');
+        if (out.length >= 12) break;
+      }
+    }
+  } catch (e) { /* 网络异常时只返回别名命中 */ }
+  return out.slice(0, 10);
+}
+
+/* 商品关键词别名：用户搜"黄金"要能同时命中 沪金(AU0) 与 纽约金(GC) */
+const COMMODITY_ALIAS = {
+  黄金: ['GC', 'AU0', 'SI'],
+  金: ['GC', 'AU0'],
+  白银: ['SI', 'AG0'],
+  银: ['SI', 'AG0'],
+  铜: ['HG', 'CU0', 'BC0'],
+  铝: ['AL0'],
+  锌: ['ZN0'],
+  镍: ['NI0'],
+  锡: ['SN0'],
+  铅: ['PB0'],
+  原油: ['CL', 'SC0', 'BZ', 'QM'],
+  石油: ['CL', 'SC0'],
+  天然气: ['NG'],
+  螺纹: ['RB0'],
+  螺纹钢: ['RB0'],
+  热卷: ['HC0'],
+  铁矿: ['I0'],
+  铁矿石: ['I0'],
+  焦炭: ['J0'],
+  焦煤: ['JM0'],
+  动力煤: ['ZC0'],
+  豆粕: ['M0'],
+  豆油: ['Y0'],
+  大豆: ['A0', 'B0'],
+  棕榈: ['P0'],
+  棕榈油: ['P0'],
+  玉米: ['C0'],
+  白糖: ['SR0', 'SB'],
+  棉花: ['CF0', 'CT'],
+  苹果: ['AP0'],
+  红枣: ['CJ0'],
+  花生: ['PK0'],
+  鸡蛋: ['JD0'],
+  生猪: ['LH0'],
+  菜粕: ['RM0'],
+  菜油: ['OI0'],
+  纯碱: ['SA0'],
+  玻璃: ['FG0'],
+  甲醇: ['MA0'],
+  尿素: ['UR0'],
+  塑料: ['L0'],
+  聚丙烯: ['PP0'],
+  乙二醇: ['EG0'],
+  沥青: ['BU0'],
+  橡胶: ['RU0', 'NR0'],
+  纸浆: ['SP0'],
+  股指: ['IF0', 'IC0', 'IH0', 'IM0'],
+  沪深300: ['IF0'],
+  中证500: ['IC0'],
+  上证50: ['IH0'],
+  中证1000: ['IM0'],
+  国债: ['T0', 'TF0', 'TS0', 'TL0'],
+  标普: ['ES'],
+  纳指: ['NQ'],
+  道指: ['YM'],
+  日经: ['NKD'],
+  美元: ['DX'],
+
+
+
+  可可: ['CC'],
+  咖啡: ['KC'],
+  橙汁: ['OJ'],
 };
 
 function searchFutures(q) {
-  const kw = String(q || '').trim().toUpperCase();
+  const raw = String(q || '').trim();
+  const kw = raw.toUpperCase();
   if (!kw) return [];
   const out = [];
-  for (const [code, name] of Object.entries(FUTURES_NAMES)) {
-    if (code.includes(kw) || name.includes(q) || name.toUpperCase().includes(kw)) {
-      out.push({
-        market: code.endsWith('0') ? 'CNF' : 'USF',
-        code,
-        name,
-        type: 'futures',
-      });
-    }
+  const seen = new Set();
+  const push = (code) => {
+    if (seen.has(code) || !FUTURES_NAMES[code]) return;
+    seen.add(code);
+    out.push({ market: code.endsWith('0') ? 'CNF' : 'USF', code, name: FUTURES_NAMES[code], type: 'futures' });
+  };
+  // ① 关键词别名优先（黄金 → GC / AU0 / SI）
+  for (const [alias, codes] of Object.entries(COMMODITY_ALIAS)) {
+    if (raw.includes(alias) || alias.includes(raw)) codes.forEach(push);
   }
-  return out.slice(0, 8);
+  // ② 代码 / 中文名直接匹配
+  for (const [code, name] of Object.entries(FUTURES_NAMES)) {
+    if (code.includes(kw) || name.includes(raw) || name.toUpperCase().includes(kw)) push(code);
+  }
+  return out.slice(0, 10);
 }
 
 async function search(q) {
@@ -638,7 +880,9 @@ async function search(q) {
       referer: 'https://gu.qq.com/',
     });
     const body = unescapeUnicode((txt.match(/v_hint="([^"]*)"/) || [])[1] || '');
-    const items = searchFutures(kw); // 期货合约优先（腾讯搜索不含期货）
+    const items = [];
+    items.push(...searchFutures(kw)); // 期货合约优先（腾讯搜索不含期货）
+    try { items.push(...(await searchCrypto(kw))); } catch (e) {} // 加密货币
     for (const seg of body.split('^')) {
       const p = seg.split('~');
       if (p.length < 4) continue;
@@ -651,7 +895,7 @@ async function search(q) {
       if (!market) continue;
       items.push({ market, code, name, pinyin: py, kind: p[4] || '' });
     }
-    return items.slice(0, 12);
+    return items.slice(0, 16);
   });
   return res.value;
 }

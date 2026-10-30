@@ -57,7 +57,8 @@
     );
   }
 
-  async function refresh() {
+  async function refresh(opts) {
+    bindPickerOnce();
     const market = App.state.market;
     const code = App.state.symbol[market];
     const period = App.state.period;
@@ -349,6 +350,86 @@
     }
   }
 
+  /* ---------------- 标的选择器 ---------------- */
+  const HOT = [
+    ['A', '热门 A 股', [['600519', '贵州茅台'], ['300750', '宁德时代'], ['000001', '平安银行'], ['601899', '紫金矿业'], ['002594', '比亚迪']]],
+    ['CNF', '国内期货', [['IF0', '沪深300主连'], ['RB0', '螺纹钢主连'], ['AU0', '沪金主连'], ['CU0', '沪铜主连'], ['M0', '豆粕主连'], ['SC0', '原油主连']]],
+    ['USF', '美期货', [['ES', '标普500'], ['NQ', '纳指100'], ['GC', '黄金'], ['CL', '原油'], ['SI', '白银']]],
+    ['CR', '加密', [['BTCUSDT', 'BTC'], ['ETHUSDT', 'ETH'], ['SOLUSDT', 'SOL'], ['BNBUSDT', 'BNB'], ['XRPUSDT', 'XRP'], ['DOGEUSDT', 'DOGE']]],
+    ['US', '热门美股', [['NVDA', '英伟达'], ['AAPL', '苹果'], ['TSLA', '特斯拉'], ['MSFT', '微软']]],
+    ['HK', '热门港股', [['00700', '腾讯控股'], ['09988', '阿里巴巴'], ['03690', '美团']]]
+  ];
+
+  let pickerBound = false;
+
+  function renderPicker() {
+    const box = U.$('#pickerHot');
+    if (!box) return;
+    box.innerHTML = HOT.map(
+      ([mk, title, items]) => `<div class="picker-group">
+        <div class="pg-title">${title}</div>
+        <div class="picker-chips">${items
+          .map(([code, name]) => `<button class="picker-chip" data-m="${mk}" data-c="${code}">${U.esc(name)}<span class="mk">${U.MK[mk]}</span></button>`)
+          .join('')}</div>
+      </div>`
+    ).join('');
+    U.$$('#pickerHot .picker-chip').forEach((b) =>
+      b.addEventListener('click', () => {
+        App.state.market = b.dataset.m;
+        App.state.symbol[b.dataset.m] = b.dataset.c;
+        hidePicker();
+        refresh();
+      })
+    );
+  }
+
+  function hidePicker() {
+    const p = U.$('#symbolPicker');
+    if (p) p.style.display = 'none';
+  }
+
+  function showPicker() {
+    const p = U.$('#symbolPicker');
+    if (p) p.style.display = '';
+  }
+
+  function bindPickerOnce() {
+    if (pickerBound) return;
+    pickerBound = true;
+    renderPicker();
+    const inp = U.$('#pickerSearch');
+    const box = U.$('#pickerResults');
+    if (!inp || !box) return;
+    const run = U.debounce(async () => {
+      const q = inp.value.trim();
+      if (q.length < 1) { box.style.display = 'none'; return; }
+      try {
+        const res = await API.search(q);
+        box.innerHTML = res.items.length
+          ? res.items.map((it) => `<div class="list-item" data-m="${it.market}" data-c="${it.code}">
+              <span class="chip">${U.MK[it.market] || it.market}</span>
+              <div class="mid"><div class="nm">${U.esc(it.name)}</div><div class="cd">${U.esc(it.code)}</div></div>
+            </div>`).join('')
+          : '<div class="list-item">没有匹配的标的</div>';
+        box.style.display = '';
+        U.$$('.list-item[data-c]', box).forEach((el) =>
+          el.addEventListener('click', () => {
+            App.state.market = el.dataset.m;
+            App.state.symbol[el.dataset.m] = el.dataset.c;
+            box.style.display = 'none';
+            inp.value = '';
+            hidePicker();
+            refresh();
+          })
+        );
+      } catch (e) {
+        box.innerHTML = '<div class="list-item">搜索失败：' + U.esc(e.message) + '</div>';
+        box.style.display = '';
+      }
+    }, 260);
+    inp.addEventListener('input', run);
+  }
+
   /* ---------------- 手绘线 ---------------- */
   let drawingKey = '';
   let drawingList = [];
@@ -537,5 +618,20 @@
     window.addEventListener('resize', U.debounce(() => chart && chart.draw(), 120));
   });
 
-  window.PageStructure = { render: refresh, tick, getChart: () => chart };
+  function renderPage() {
+    bindPickerOnce();
+    // 从 URL / 搜索 / 雷达带进来的标的：直接出图；裸进菜单：先让用户选
+    const explicit = !!(App.state.pickedSymbol);
+    if (explicit) hidePicker();
+    else showPicker();
+    return refresh();
+  }
+
+  window.PageStructure = {
+    render: renderPage,
+    tick,
+    getChart: () => chart,
+    showPicker,
+    hidePicker,
+  };
 })();

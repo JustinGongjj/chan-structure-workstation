@@ -8,6 +8,7 @@
       hl: null, // 教学标注：理论 → 图上位置
       live: false, // 实时刷新
       symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' },
+      pickedSymbol: false,
     },
     pages: {},
     go(page, opts) {
@@ -30,6 +31,7 @@
     openStructure(market, code, period, opts) {
       this.state.market = market || this.state.market;
       this.state.symbol[this.state.market] = code || this.state.symbol[this.state.market];
+      if (code) this.state.pickedSymbol = true;
       if (period) this.state.period = period;
       // 只有显式带上 hl 才保留标注；从雷达/总览点进来默认清空
       this.state.hl = (opts && opts.hl) || null;
@@ -240,8 +242,12 @@
     }
     // 深链：?m=HK&c=00700&p=week#structure
     const q = new URLSearchParams(location.search);
-    if (q.get('m') && ['A', 'HK', 'US', 'CR'].includes(q.get('m').toUpperCase())) App.state.market = q.get('m').toUpperCase();
-    if (q.get('c')) App.state.symbol[App.state.market] = q.get('c');
+    if (q.get('m') && ['A', 'HK', 'US', 'CR', 'CNF', 'USF'].includes(q.get('m').toUpperCase())) App.state.market = q.get('m').toUpperCase();
+    if (q.get('c')) {
+      App.state.symbol[App.state.market] = q.get('c');
+      App.state.hl = q.get('hl') || null; // 带标的进入 = 显式指定
+      App.state.pickedSymbol = true;
+    }
     if (q.get('p')) App.state.period = q.get('p');
     if (q.get('hl')) App.state.hl = q.get('hl');
     U.$$('#marketTabs .mtab').forEach((b) => b.classList.toggle('active', b.dataset.market === App.state.market));

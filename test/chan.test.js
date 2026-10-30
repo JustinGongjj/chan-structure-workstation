@@ -209,3 +209,14 @@ test('中枢：合并后仍保留进入段/离开段与段计数', () => {
     assert.ok(p.zd < p.zg);
   }
 });
+
+/* ---------------- 数据新鲜度 ---------------- */
+test('期货数据陈旧时明确报错，而不是返回空图', async () => {
+  const S = require('../server/lib/sources');
+  // 6A/DX 在新浪只有 2019 年的十几根残档，必须被新鲜度校验拦下
+  await assert.rejects(
+    () => S.klines({ market: 'USF', code: '6A', period: 'day', limit: 10 }),
+    /陈旧|数据不足/,
+    '陈旧数据应被拒绝'
+  );
+});

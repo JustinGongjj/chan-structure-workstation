@@ -460,7 +460,7 @@
       <div class="page-sub">${U.MK[market]} · ${U.esc(code)} · ${PNAME[state.period]}</div>
       <div class="section">
         <div class="seg segmented" id="sMarket">
-          ${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq button ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
+          ${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
           <button class="sq button" id="sSearch">搜索</button>
         </div>
       </div>
@@ -931,7 +931,7 @@
   async function openSearch() {
     openSheet(
       '切换标的',
-      `<div class="form-row"><input class="input" id="qInput" placeholder="代码 / 名称：茅台、NVDA、00700、BTC" autocomplete="off"></div>
+      `<div class="form-row"><input class="input" id="qInput" placeholder="代码 / 名称：黄金、螺纹、以太坊、600519、NVDA、ES" autocomplete="off"></div>
        <div id="qList" class="list"><div class="empty">输入关键字开始搜索</div></div>`,
       () => {
         const inp = $('#qInput');

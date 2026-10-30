@@ -42,7 +42,7 @@
     <header class="topbar">
       <div class="search-wrap">
         <span class="search-ico">⌕</span>
-        <input id="globalSearch" placeholder="搜索代码 / 名称（茅台、NVDA、BTC…）" autocomplete="off">
+        <input id="globalSearch" placeholder="搜索：黄金 / 螺纹 / 以太坊 / 600519 / NVDA / ES" autocomplete="off">
         <div class="search-pop" id="searchPop"></div>
       </div>
       <div class="market-tabs" id="marketTabs">
@@ -99,6 +99,15 @@
 
     <!-- ================= 结构分析 ================= -->
     <section class="page" id="page-structure">
+      <div class="card picker-card" id="symbolPicker">
+        <div class="card-head">
+          <h3>先选一个标的</h3>
+          <span class="hint">选完才出图，图上再画线 · 也可以直接搜代码/名称</span>
+        </div>
+        <div class="form-row"><input class="input" id="pickerSearch" placeholder="搜：黄金 / 螺纹 / 以太坊 / 600519 / NVDA / ES" autocomplete="off"></div>
+        <div class="picker-groups" id="pickerHot"></div>
+        <div class="list" id="pickerResults" style="display:none"></div>
+      </div>
       <div class="page-head">
         <div>
           <h1 class="page-title">结构分析 <span class="tag-live" id="structTitle">—</span> <span class="live-stamp" id="liveStampStruct"></span></h1>

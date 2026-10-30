@@ -43,7 +43,8 @@
     "check:sheet": "node scripts/sheetcheck.js",
     "check:css": "node scripts/cssaudit.js",
     "check:perf": "node scripts/perfcheck.js",
-    "check:pivot": "node scripts/pivotviz.js"
+    "check:pivot": "node scripts/pivotviz.js",
+    "check:matrix": "node scripts/matrixcheck.js"
   },
   "engines": {
     "node": ">=18"

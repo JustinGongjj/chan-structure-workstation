@@ -767,3 +767,17 @@ button{font-family:inherit}
 .draw-foot .btn{flex:0 0 auto;margin-left:auto}
 .modal-btn.close{color:var(--text)}
 .modal-btn.close svg{display:block;width:17px;height:17px;stroke-width:2.4}
+
+/* ---------- 标的选择器 ---------- */
+.picker-card{margin-bottom:12px}
+.picker-groups{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.picker-group .pg-title{font-size:11.5px;color:var(--faint);margin-bottom:6px;letter-spacing:.4px}
+.picker-chips{display:flex;flex-wrap:wrap;gap:6px}
+.picker-chip{
+  padding:6px 11px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);
+  color:var(--text);font-size:12.5px;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.picker-chip:hover{border-color:var(--gold);color:var(--gold)}
+.picker-chip .mk{font-size:10px;color:var(--faint);margin-left:5px}
+.symbol-current{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.symbol-current b{color:var(--text);font-size:14px}
