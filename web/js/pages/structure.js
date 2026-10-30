@@ -383,14 +383,22 @@
     );
   }
 
+  function setBodyVisible(show) {
+    // 选择器与图表互斥：没选标的时只显示选择器，不渲染图
+    const body = U.$('#structBody');
+    if (body) body.style.display = show ? '' : 'none';
+  }
+
   function hidePicker() {
     const p = U.$('#symbolPicker');
     if (p) p.style.display = 'none';
+    setBodyVisible(true);
   }
 
   function showPicker() {
     const p = U.$('#symbolPicker');
     if (p) p.style.display = '';
+    setBodyVisible(false);
   }
 
   function bindPickerOnce() {
@@ -620,10 +628,10 @@
 
   function renderPage() {
     bindPickerOnce();
-    // 从 URL / 搜索 / 雷达带进来的标的：直接出图；裸进菜单：先让用户选
+    // 从 URL / 搜索 / 雷达带进来的标的：直接出图；裸进菜单：先让用户选（此时不建图）
     const explicit = !!(App.state.pickedSymbol);
-    if (explicit) hidePicker();
-    else showPicker();
+    if (!explicit) { showPicker(); return Promise.resolve(); }
+    hidePicker();
     return refresh();
   }
 
