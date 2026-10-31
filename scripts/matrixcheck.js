@@ -65,6 +65,16 @@ async function j(url) {
     }
   }
 
+  console.log('\n=== 2b. 期货分钟线 ===');
+  for (const [m, code, p2] of [['CNF', 'RB0', '5m'], ['CNF', 'RB0', '30m'], ['CNF', 'IF0', '15m'], ['USF', 'GC', '15m'], ['USF', 'ES', '60m']]) {
+    const tag = `${m}:${code}/${p2}`;
+    try {
+      const k = await j(`${BASE}/api/kline?market=${m}&code=${code}&period=${p2}&limit=300`);
+      ok((k.bars || []).length >= 5, `${tag} 分钟K线`, `只有 ${(k.bars || []).length} 根`);
+      console.log(`  ${(k.bars || []).length >= 5 ? '✓' : '✗'} ${tag.padEnd(20)} bars=${(k.bars || []).length} 源=${k.source}${k.intradayOnly ? ' (仅当日)' : ''}`);
+    } catch (e) { ok(false, `${tag} 分钟K线`, e.message); console.log(`  ✗ ${tag.padEnd(20)} ${e.message}`); }
+  }
+
   console.log('\n=== 3. 报价（含贵金属现货交叉校验） ===');
   try {
     const q = await j(`${BASE}/api/quote?list=USF:GC,USF:SI,CNF:AU0,CNF:RB0`);

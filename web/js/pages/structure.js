@@ -5,8 +5,8 @@
     HK: ['day', 'week', 'month'],
     US: ['day', 'week', 'month'],
     CR: ['day', 'week', '4h', '60m', '15m', '5m', '1m'],
-    CNF: ['day', 'week', 'month'],
-    USF: ['day', 'week', 'month'],
+    CNF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
+    USF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
   };
   const PNAME = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1时', '4h': '4时', day: '日线', week: '周线', month: '月线' };
   let chart = null;

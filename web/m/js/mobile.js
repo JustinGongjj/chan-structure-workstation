@@ -25,7 +25,7 @@
   };
 
   const PNAME = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1时', '4h': '4时', day: '日线', week: '周线', month: '月线' };
-  const PERIODS = { A: ['day', 'week', '60m', '30m', '15m', '5m'], HK: ['day', 'week'], US: ['day', 'week'], CR: ['day', '4h', '60m', '15m', '5m'], CNF: ['day', 'week'], USF: ['day', 'week'] };
+  const PERIODS = { A: ['day', 'week', '60m', '30m', '15m', '5m'], HK: ['day', 'week'], US: ['day', 'week'], CR: ['day', '4h', '60m', '15m', '5m'], CNF: ['day', 'week', '60m', '30m', '15m', '5m'], USF: ['day', 'week', '60m', '30m', '15m', '5m'] };
   /* 教学标注可选结构：与 web/js/highlight.js 的 HL_TITLE 保持一致（19 种全开） */
   const HL_CHOICES = [
     ['', '不标注'],

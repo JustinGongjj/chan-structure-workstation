@@ -220,3 +220,21 @@ test('期货数据陈旧时明确报错，而不是返回空图', async () => {
     '陈旧数据应被拒绝'
   );
 });
+
+/* ---------------- 期货分钟线 ---------------- */
+test('国内期货分钟线可用且时间递增', async () => {
+  const S = require('../server/lib/sources');
+  const k = await S.klines({ market: 'CNF', code: 'RB0', period: '30m', limit: 80 });
+  assert.ok(k.bars.length >= 20, '国内期货 30 分钟线应有足够数据，实际 ' + k.bars.length);
+  for (let i = 1; i < k.bars.length; i++) {
+    assert.ok(k.bars[i].t > k.bars[i - 1].t, '分钟线时间必须严格递增');
+  }
+  assert.ok(k.bars.every((b) => b.h >= b.l && b.c > 0), 'OHLC 合法性');
+});
+
+test('外盘期货分钟线标注为「仅当日」', async () => {
+  const S = require('../server/lib/sources');
+  const k = await S.klines({ market: 'USF', code: 'GC', period: '15m', limit: 200 });
+  assert.ok(k.bars.length >= 5, '外盘 15 分钟线应有数据');
+  assert.equal(k.intradayOnly, true, '外盘分钟线只有当日分时，必须打标');
+});

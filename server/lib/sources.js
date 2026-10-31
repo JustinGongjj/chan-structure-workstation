@@ -42,8 +42,8 @@ const MARKETS = {
   HK: { key: 'HK', name: '港股', currency: 'HKD', tz: 8, intraday: false, periods: ['day', 'week', 'month'] },
   US: { key: 'US', name: '美股', currency: 'USD', tz: -4, intraday: false, periods: ['day', 'week', 'month'] },
   CR: { key: 'CR', name: '加密', currency: 'USDT', tz: 0, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', '4h', 'day', 'week'] },
-  CNF: { key: 'CNF', name: '国内期货', currency: 'CNY', tz: 8, intraday: false, periods: ['day', 'week', 'month'] },
-  USF: { key: 'USF', name: '美期货', currency: 'USD', tz: -5, intraday: false, periods: ['day', 'week', 'month'] },
+  CNF: { key: 'CNF', name: '国内期货', currency: 'CNY', tz: 8, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
+  USF: { key: 'USF', name: '美期货', currency: 'USD', tz: -5, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
 };
 
 const PERIOD_NAME = {
@@ -85,6 +85,28 @@ function tcCode(market, code) {
   if (market === 'HK') return 'hk' + c;
   if (market === 'US') return 'us' + c;
   return null;
+}
+
+/* ---------------- Alpha Vantage（备用源，可选 key） ----------------
+   用途：美股/全球股票的独立第三方兜底。没有 key 时用 demo（仅极少量品种），
+   配置环境变量 ALPHAVANTAGE_KEY 后自动启用完整能力（免费档 25 次/日）。 */
+const AV_KEY = process.env.ALPHAVANTAGE_KEY || 'demo';
+
+async function alphaVantageDaily(code) {
+  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(code)}&outputsize=compact&apikey=${AV_KEY}`;
+  const j = await getJSON(url, { timeout: 10000 });
+  if (j.Information || j.Note) throw new Error('AlphaVantage 限流或需正式 key');
+  const ts = j['Time Series (Daily)'];
+  if (!ts) throw new Error('AlphaVantage 无数据');
+  const bars = Object.entries(ts)
+    .map(([d, v]) => ({
+      t: Date.parse(d + 'T00:00:00Z'),
+      o: num(v['1. open']), h: num(v['2. high']), l: num(v['3. low']), c: num(v['4. close']), v: num(v['5. volume']),
+    }))
+    .filter((b) => b.t && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+  if (bars.length < 20) throw new Error('AlphaVantage 数据不足');
+  return { bars, source: 'alphavantage' };
 }
 
 /* ---------------- 贵金属现货（Gold-API，免费无 key） ----------------
@@ -142,6 +164,62 @@ async function sinaFuturesDaily(market, code) {
     throw new Error(`该品种数据陈旧（${bars.length} 根，最后一根在 ${last ? new Date(last.t).toISOString().slice(0, 10) : '—'}）`);
   }
   return { bars, source: 'sina-futures' };
+}
+
+/* 期货分钟线（新浪）：国内给 OHLCV；外盘分时只有价格，用相邻价合成 O/H/L/C */
+const FUT_MIN_TYPE = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '60m': 60 };
+
+async function sinaFuturesMinute(market, code, period, limit) {
+  const type = FUT_MIN_TYPE[period];
+  if (!type) throw new Error('期货不支持该周期: ' + period);
+  if (market === 'CNF') {
+    const txt = await request(
+      `https://stock2.finance.sina.com.cn/futures/api/openapi.php/InnerFuturesNewService.getFewMinLine?symbol=${code}&type=${type}`,
+      { timeout: 9000, referer: 'https://finance.sina.com.cn' }
+    );
+    const j = JSON.parse(txt);
+    const arr = j?.result?.data;
+    if (!Array.isArray(arr) || !arr.length) throw new Error('国内期货分钟线为空');
+    const bars = arr
+      .map((k) => ({
+        t: Date.parse(String(k.d).replace(' ', 'T') + '+08:00'),
+        o: num(k.o), h: num(k.h), l: num(k.l), c: num(k.c), v: num(k.v),
+      }))
+      .filter((b) => b.t && b.c > 0)
+      .sort((a, b) => a.t - b.t);
+    return { bars: bars.slice(-limit), source: 'sina-futures-min' };
+  }
+  // 外盘：分时序列 [时间, 价格, ...]，聚合到目标周期
+  const txt = await request(
+    `https://stock2.finance.sina.com.cn/futures/api/openapi.php/GlobalFuturesService.getGlobalFuturesMinLine?symbol=${code}`,
+    { timeout: 9000, referer: 'https://finance.sina.com.cn' }
+  );
+  const j = JSON.parse(txt);
+  const raw = j?.result?.data?.minLine_1d;
+  if (!Array.isArray(raw) || raw.length < 5) throw new Error('外盘期货分时为空');
+  // 行格式：[时间, 价格, ...]，最后一项是完整时间戳（跨夜交易会跨日，必须用它）
+  const pts = [];
+  for (const row of raw) {
+    const full = row.find((x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(x));
+    const px = num(row[1]);
+    if (!full || !px) continue;
+    const t = Date.parse(full.replace(' ', 'T') + '+08:00');
+    if (Number.isFinite(t)) pts.push({ t, p: px });
+  }
+  // 按 type 分钟聚合成 OHLC
+  const bucket = type * 60000;
+  const map = new Map();
+  for (const pt of pts) {
+    const k = Math.floor(pt.t / bucket) * bucket;
+    const cur = map.get(k);
+    if (!cur) map.set(k, { t: k, o: pt.p, h: pt.p, l: pt.p, c: pt.p, v: 0 });
+    else { cur.h = Math.max(cur.h, pt.p); cur.l = Math.min(cur.l, pt.p); cur.c = pt.p; }
+  }
+  const bars = [...map.values()].sort((a, b) => a.t - b.t);
+  if (bars.length < 5) throw new Error('外盘期货分时聚合后数据不足');
+  // 新浪外盘只给当日分时（约 1380 个 1 分钟点），所以分钟级最多覆盖一个交易日，
+  // 这里如实标注，前端会据此提示"外盘分钟线仅当日"。
+  return { bars: bars.slice(-limit), source: 'sina-global-min', intradayOnly: true };
 }
 
 /** 期货实时报价（国内期货的快照接口常年僵死，必须用 K 线兜底） */
@@ -621,6 +699,9 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
     if (m === 'CR') return tryEach([() => binanceKline(c, period, limit)]);
 
     if (m === 'CNF' || m === 'USF') {
+      if (period !== 'day' && period !== 'week' && period !== 'month') {
+        return tryEach([() => sinaFuturesMinute(m, c, period, limit)]);
+      }
       const daily = await tryEach([() => sinaFuturesDaily(m, c)]);
       if (period === 'day') return { ...daily, bars: daily.bars.slice(-limit) };
       const agg = period === 'week' ? aggBars(daily.bars, weekKey) : aggBars(daily.bars, monthKey);
@@ -640,7 +721,12 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
         }
       }
       if (m === 'US') {
-        const daily = await tryEach([() => nasdaqDaily(c, Math.min(limit * 2 + 60, 1200)), () => sinaUsDaily(c), () => emKline(m, c, 'day', limit * 2)]);
+        const daily = await tryEach([
+          () => nasdaqDaily(c, Math.min(limit * 2 + 60, 1200)),
+          () => sinaUsDaily(c),
+          () => alphaVantageDaily(c),
+          () => emKline(m, c, 'day', limit * 2),
+        ]);
         if (period === 'day') return { ...daily, bars: daily.bars.slice(-limit) };
         const agg = period === 'week' ? aggBars(daily.bars, weekKey) : aggBars(daily.bars, monthKey);
         return { bars: agg.slice(-limit), source: daily.source + '+agg' };
@@ -667,6 +753,7 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
     periodName: PERIOD_NAME[period],
     source: out.source,
     stale: !!res.stale,
+    intradayOnly: !!out.intradayOnly,
     bars: out.bars,
   };
 }
