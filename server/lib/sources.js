@@ -1123,11 +1123,16 @@ async function search(q) {
 
 const PROBES = [
   { id: 'tencent-quote', name: '腾讯行情（A/港/美 实时）', url: 'https://qt.gtimg.cn/q=sh000001', encoding: 'gbk', markets: ['A', 'HK', 'US'] },
-  { id: 'tencent-kline', name: '腾讯K线（A/港股 日周月）', url: 'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', markets: ['A', 'HK'] },
+  // A 股 fqkline 已被腾讯 WAF 拦成 501；港股走 hkfqkline 另一条路径，仍然可用
+  { id: 'tencent-kline-hk', name: '腾讯K线·港股（hkfqkline）', url: 'https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get?param=hk00700,day,,,5,qfq', markets: ['HK'] },
+  { id: 'sina-daily', name: '新浪A股日线（当前主力）', url: 'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh600519&scale=240&ma=no&datalen=5', markets: ['A'] },
   { id: 'sina-minute', name: '新浪分钟线（A股 1/5/15/30/60）', url: 'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh600519&scale=5&ma=no&datalen=5', markets: ['A'] },
-  { id: 'nasdaq', name: '纳斯达克官方（美股日线）', url: 'https://api.nasdaq.com/api/quote/AAPL/historical?assetclass=stocks&fromdate=2026-09-01&todate=2026-10-26&limit=5', markets: ['US'] },
+  { id: 'sina-futures', name: '新浪期货（国内主连日线）', url: 'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/InnerFuturesNewService.getDailyKLine?symbol=RB0', markets: ['CNF'] },
+  { id: 'nasdaq', name: '纳斯达克官方（美股日线）', url: 'https://api.nasdaq.com/api/quote/AAPL/historical?assetclass=stocks&fromdate=2026-09-01&todate=2026-10-30&limit=5', markets: ['US'] },
+  { id: 'stockanalysis', name: 'StockAnalysis（美股兜底）', url: 'https://stockanalysis.com/api/symbol/s/aapl/history', markets: ['US'] },
   { id: 'binance', name: '币安公共行情（加密 现货）', url: 'https://data-api.binance.vision/api/v3/ticker/price?symbol=BTCUSDT', markets: ['CR'] },
-  { id: 'eastmoney', name: '东方财富（通用兜底）', url: 'https://push2.eastmoney.com/api/qt/stock/get?secid=1.600519&fields=f43,f58', markets: ['A', 'HK', 'US'] },
+  { id: 'gold-api', name: 'Gold-API（贵金属现货）', url: 'https://api.gold-api.com/price/XAU', markets: ['USF'] },
+  { id: 'fred', name: 'FRED（美债/VIX）', url: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10', markets: ['MACRO'] },
 ];
 
 async function probe() {
