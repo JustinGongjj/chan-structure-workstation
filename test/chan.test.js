@@ -290,17 +290,34 @@ test('板块目录里的每个品种都必须真的能取到日线（防止死�
   const S = require('../server/lib/sources');
   const CAT = require('../server/lib/sectors');
   const dead = [];
-  // 只抽外盘（国内 68 个已单独全量验证过，这里避免测试太慢）
-  const usf = CAT.catalog()
-    .flatMap((s) => s.items)
-    .filter((i) => i.market === 'USF');
-  for (const it of usf) {
+  // 外盘全测；国内抽 20 个代表（全量 68 个太慢，另有 matrixcheck 覆盖）
+  const all = CAT.catalog().flatMap((s) => s.items);
+  const usf = all.filter((i) => i.market === 'USF');
+  const cnf = all.filter((i) => i.market === 'CNF').slice(0, 20);
+  for (const it of usf.concat(cnf)) {
     try {
-      const k = await S.klines({ market: 'USF', code: it.code, period: 'day', limit: 30 });
+      const k = await S.klines({ market: it.market, code: it.code, period: 'day', limit: 30 });
       if (!k.bars || !k.bars.length) dead.push(it.code);
     } catch (e) {
       dead.push(it.code + '(' + e.message.slice(0, 20) + ')');
     }
   }
-  assert.deepEqual(dead, [], '这些外盘品种在目录里但取不到数据：' + dead.join('、'));
+  assert.deepEqual(dead, [], '这些品种在目录里但取不到数据：' + dead.join('、'));
+});
+
+/* ---------------- 离开段语义（复审 MAJOR） ---------------- */
+test('中枢：离开段判据是"终点出界"，且必须紧跟中枢末笔', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 600; i++) {
+    const c0 = 100 + Math.sin(i / 7) * 4 + Math.sin(i / 29) * 2;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1.2, l: c0 - 1.2, c: c0, v: 700 });
+  }
+  const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    if (p.leaveBi == null) continue;
+    const lb = a.bis[p.leaveBi];
+    assert.ok(lb.p1 > p.zg || lb.p1 < p.zd, '离开段终点必须离开中枢区间');
+    assert.equal(p.leaveBi, p.endBi + 1, '离开段必须紧跟中枢末笔');
+  }
 });

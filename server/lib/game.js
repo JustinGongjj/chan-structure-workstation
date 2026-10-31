@@ -309,15 +309,21 @@ async function gradeLevel(K, { no, token, attemptId, answer }) {
         // 价格：重叠 / 较大者
         const pInter = Math.max(0, Math.min(hi, target.zg) - Math.max(lo, target.zd));
         const pScore = Math.min(1, pInter / Math.max(1e-9, pCap - TOL_PX * 2));
-        // 越界惩罚：框比标准范围大出很多时才扣
-        const tOver = Math.max(0, (i1 - i0) - tCap) / tCap;
-        const pOver = Math.max(0, (hi - lo) - pCap) / pCap;
-        const overPenalty = Math.min(0.35, (tOver + pOver) * 0.12);
-        const raw = 0.5 * tScore + 0.5 * pScore;
-        score = Math.round(Math.max(0, raw - overPenalty) * 100);
+        /*
+          只惩罚「框窄」，不惩罚「框宽」：
+          缠论里中枢区间是前三笔的重叠区，把整个震荡区（含延伸段）一起框住
+          本身就是正确读法，不该扣分；框窄了才会漏掉重叠区。
+        */
+        const tCover = Math.min(1, (i1 - i0) / Math.max(1, tCap)); // 标准时间跨度被覆盖的比例
+        const pCover = Math.min(1, (hi - lo) / Math.max(1e-9, pCap));
+        const underPenalty = (1 - tCover) * 0.5 + (1 - pCover) * 0.5; // 框窄才扣
+        const raw = 0.5 * tScore + 0.5 * pScore - underPenalty * 0.0;
+        // 判定：标准区间被完全框住（时间与价格都覆盖）即满分
+        const fullyCovered = tCover >= 1 && pCover >= 1 && tScore >= 0.75 && pScore >= 0.75;
+        score = fullyCovered ? 100 : Math.round(Math.max(0, raw - (1 - tCover) * 0.1 - (1 - pCover) * 0.1) * 100);
         verdict = score >= 85 ? '框得很准' : score >= 60 ? '大致框住了' : score > 0 ? '偏离较多' : '没框到中枢';
         explain.push(`标准中枢：第 ${target.i0}~${target.i1} 根，价格 ${target.zd.toFixed(2)}~${target.zg.toFixed(2)}（${target.count} 笔）。`);
-        explain.push(`你的框：第 ${i0}~${i1} 根，${lo.toFixed(2)}~${hi.toFixed(2)}。时间吻合 ${(tScore * 100).toFixed(0)}%、价格吻合 ${(pScore * 100).toFixed(0)}%${overPenalty > 0 ? `，框过大扣 ${(overPenalty * 100).toFixed(0)} 分` : ''}。`);
+        explain.push(`你的框：第 ${i0}~${i1} 根，${lo.toFixed(2)}~${hi.toFixed(2)}。时间吻合 ${(tScore * 100).toFixed(0)}%、价格吻合 ${(pScore * 100).toFixed(0)}%${tCover >= 1 && pCover >= 1 ? '（完整覆盖标准中枢）' : '（没有完全框住，把范围放大一点）'}。`);
         explain.push('对照要点：中枢区间是前三笔的重叠区，后续笔只要还在区间附近震荡就算中枢延伸——框住整个震荡区也是对的。');
       }
     }

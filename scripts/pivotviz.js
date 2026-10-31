@@ -72,7 +72,10 @@ function asciiViz(a) {
     }
     if (p.leaveBi != null) {
       const lb = a.bis[p.leaveBi];
+      // 离开段判据：终点离开区间（起点必然贴着边界，不能要求整段在外）
       ok(lb.p1 > p.zg || lb.p1 < p.zd, `#${i} 离开段 ${p.leaveBi} 终点未出界`);
+      // 离开段必须紧跟中枢末笔（不能跳段），这是结构连续性要求
+      ok(p.leaveBi === p.endBi + 1, `#${i} 离开段 ${p.leaveBi} 未紧跟中枢末笔 ${p.endBi}`);
     }
     if (p.enterBi != null) ok(a.bis[p.enterBi].dir !== a.bis[p.startBi].dir, `#${i} 进入段方向未反向`);
     // t1 必须与末笔 i1 对应的 K 线时间一致（合并逻辑曾把 t1 写成 undefined）

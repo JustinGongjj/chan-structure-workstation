@@ -15,13 +15,13 @@ const { request, getJSON, cached, sleep } = require('./http');
 /* 国内期货主力连续（上期所/大商所/郑商所/中金所/能源中心） */
 const CNF_LIST = [
   // 上期所
-  'CU0', 'AL0', 'ZN0', 'PB0', 'NI0', 'SN0', 'AU0', 'AG0', 'RB0', 'WR0', 'HC0', 'SS0', 'BU0', 'RU0', 'SP0', 'FU0',
+  'CU0', 'AL0', 'ZN0', 'PB0', 'NI0', 'SN0', 'AU0', 'AG0', 'RB0', 'HC0', 'SS0', 'BU0', 'RU0', 'SP0', 'FU0',
   // 能源中心
   'SC0', 'LU0', 'NR0', 'BC0',
   // 大商所
   'M0', 'Y0', 'P0', 'A0', 'B0', 'C0', 'CS0', 'JD0', 'L0', 'V0', 'PP0', 'J0', 'JM0', 'I0', 'EG0', 'EB0', 'PG0', 'RR0', 'LH0', 'FB0', 'BB0',
   // 郑商所
-  'SR0', 'CF0', 'CY0', 'TA0', 'MA0', 'FG0', 'RM0', 'OI0', 'SA0', 'UR0', 'SF0', 'SM0', 'AP0', 'CJ0', 'PK0', 'ZC0', 'PF0', 'SH0', 'PX0',
+  'SR0', 'CF0', 'CY0', 'TA0', 'MA0', 'FG0', 'RM0', 'OI0', 'SA0', 'UR0', 'SF0', 'SM0', 'AP0', 'CJ0', 'PK0', 'PF0', 'SH0', 'PX0',
   // 中金所
   'IF0', 'IC0', 'IH0', 'IM0', 'TS0', 'TF0', 'T0', 'TL0'
 ];
@@ -160,7 +160,8 @@ async function sinaFuturesDaily(market, code) {
   // 不校验的话用户会看到一张"13 根 K 线"的空图还以为系统坏了。
   const last = bars[bars.length - 1];
   const ageDays = last ? (Date.now() - last.t) / 86400000 : Infinity;
-  if (bars.length < 60 || ageDays > 90) {
+  // 45 天：既容纳长假（最长约 10 天）又拦住"停更两个月还以为有数据"的品种
+  if (bars.length < 60 || ageDays > 45) {
     throw new Error(`该品种数据陈旧（${bars.length} 根，最后一根在 ${last ? new Date(last.t).toISOString().slice(0, 10) : '—'}）`);
   }
   return { bars, source: 'sina-futures' };
@@ -521,7 +522,9 @@ function parseTencentDate(s) {
 async function tencentFq(market, code, period, limit) {
   const tc = tcCode(market, code);
   const n = Math.min(Math.max(limit, 60), 800);
-  const hosts = ['https://ifzq.gtimg.cn/appstock/app/fqkline/get', 'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get'];
+  // 主域名 ifzq.gtimg.cn 从 2026-10 起被腾讯 WAF 拦成 501，proxy 域名仍可用：
+  // 把可用的放前面，少一次无效请求
+  const hosts = ['https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get', 'https://ifzq.gtimg.cn/appstock/app/fqkline/get'];
   const errs = [];
   for (const host of hosts) {
     try {
@@ -794,7 +797,7 @@ LE: '活牛期货', GF: '育肥牛期货',
   SR0: '白糖主力', CF0: '棉花主力', CY0: '棉纱主力', TA0: 'PTA主力', MA0: '甲醇主力',
   FG0: '玻璃主力', RM0: '菜粕主力', OI0: '菜油主力', SA0: '纯碱主力', UR0: '尿素主力',
   SF0: '硅铁主力', SM0: '锰硅主力', AP0: '苹果主力', CJ0: '红枣主力', PK0: '花生主力',
-  ZC0: '动力煤主力', PF0: '短纤主力', SH0: '烧碱主力', PX0: '对二甲苯主力',
+PF0: '短纤主力', SH0: '烧碱主力', PX0: '对二甲苯主力',
   // 国内 · 中金所
   IF0: '沪深300股指主力', IC0: '中证500股指主力', IH0: '上证50股指主力', IM0: '中证1000股指主力',
   TS0: '2年期国债主力', TF0: '5年期国债主力', T0: '10年期国债主力', TL0: '30年期国债主力',
@@ -859,13 +862,15 @@ async function searchCrypto(q) {
     seen.add(sym);
     out.push({ market: 'CR', code: sym, name: name || sym, type: 'crypto' });
   };
-  // ① 中文别名
+  const short = raw.length < 2;
+  // ① 中文别名（单字只允许别名精确相等）
   for (const [alias, base] of Object.entries(COIN_ALIAS)) {
-    if (raw.includes(alias) || alias.includes(raw) || kw === base) push(base + 'USDT', alias + ' (' + base + ')');
+    const hit = short ? alias === raw : (raw.includes(alias) || alias.includes(raw));
+    if (hit || kw === base) push(base + 'USDT', alias + ' (' + base + ')');
   }
-  // ② Binance 全量交易对
+  // ② Binance 全量交易对（单字不做前缀扫，否则 A→ADA/ATOM/ALGO 一排）
   try {
-    const list = await binanceSymbols();
+    const list = short ? [] : await binanceSymbols();
     for (const it of list) {
       if (it.base === kw || it.symbol === kw || it.base.startsWith(kw) || (kw.length >= 2 && it.symbol.includes(kw))) {
         push(it.symbol, it.base + '/USDT');
@@ -898,7 +903,7 @@ const COMMODITY_ALIAS = {
   铁矿石: ['I0'],
   焦炭: ['J0'],
   焦煤: ['JM0'],
-  动力煤: ['ZC0'],
+
   豆粕: ['M0'],
   豆油: ['Y0'],
   大豆: ['A0', 'B0'],
@@ -950,19 +955,27 @@ function searchFutures(q) {
   const out = [];
   const seen = new Set();
   const push = (code) => {
+    // 只返回当前品种池里真实可用的（避免"搜得到却打不开"）
     if (seen.has(code) || !FUTURES_NAMES[code]) return;
+    if (!CNF_LIST.includes(code) && !USF_LIST.includes(code)) return;
     seen.add(code);
     out.push({ market: code.endsWith('0') ? 'CNF' : 'USF', code, name: FUTURES_NAMES[code], type: 'futures' });
   };
-  // ① 关键词别名优先（黄金 → GC / AU0 / SI）
+  const short = raw.length < 2; // 单字查询
+  // ① 关键词别名优先（黄金 → GC / AU0 / SI）。
+  //    单字时只允许"别名等于查询字"，否则「金」会命中所有带金的品种、「A」会命中一堆代码。
   for (const [alias, codes] of Object.entries(COMMODITY_ALIAS)) {
-    if (raw.includes(alias) || alias.includes(raw)) codes.forEach(push);
+    const hit = short ? alias === raw : (raw.includes(alias) || alias.includes(raw));
+    if (hit) codes.forEach(push);
   }
-  // ② 代码 / 中文名直接匹配
+  // ② 代码 / 中文名直接匹配：单字只比中文名，不比代码（否则 A→AL0/AU0/A0/AG0… 全中）
   for (const [code, name] of Object.entries(FUTURES_NAMES)) {
-    if (code.includes(kw) || name.includes(raw) || name.toUpperCase().includes(kw)) push(code);
+    const hit = short
+      ? name === raw || name.startsWith(raw)
+      : (code.includes(kw) || name.includes(raw) || name.toUpperCase().includes(kw));
+    if (hit) push(code);
   }
-  return out.slice(0, 10);
+  return out.slice(0, short ? 4 : 10);
 }
 
 async function search(q) {

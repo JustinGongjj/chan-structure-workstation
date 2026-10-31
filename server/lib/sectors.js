@@ -19,7 +19,6 @@ const FUTURES_META = {
   AU0: { name: '沪金', ex: 'SHFE', sector: 'precious' },
   AG0: { name: '沪银', ex: 'SHFE', sector: 'precious' },
   RB0: { name: '螺纹钢', ex: 'SHFE', sector: 'ferrous' },
-  WR0: { name: '线材', ex: 'SHFE', sector: 'ferrous' },
   HC0: { name: '热卷', ex: 'SHFE', sector: 'ferrous' },
   SS0: { name: '不锈钢', ex: 'SHFE', sector: 'ferrous' },
   BU0: { name: '沥青', ex: 'SHFE', sector: 'energy' },
@@ -75,7 +74,6 @@ const FUTURES_META = {
   PX0: { name: '对二甲苯', ex: 'CZCE', sector: 'energy' },
   SF0: { name: '硅铁', ex: 'CZCE', sector: 'ferrous' },
   SM0: { name: '锰硅', ex: 'CZCE', sector: 'ferrous' },
-  ZC0: { name: '动力煤', ex: 'CZCE', sector: 'ferrous' },
 
   // ===== 中金所 CFFEX =====
   IF0: { name: '沪深300', ex: 'CFFEX', sector: 'fin' },

@@ -289,7 +289,7 @@
     if (stale('overview')) return;
     view.innerHTML = `
       <h1 class="page-title">总览 <span id="ovStamp">${stampHtml()}</span></h1>
-      <div class="page-sub">四市场自选池 · 点击任意标的进入结构分析</div>
+      <div class="page-sub">六市场自选池 · 点击任意标的进入结构分析</div>
       <div class="section"><button class="btn button block" id="openSectors">▦ 商品板块 · 有色/黑色/能化/农产品/贵金属</button></div>
       <div class="pulse-grid section">${pulseCards}</div>
       <div class="section">

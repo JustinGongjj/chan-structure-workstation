@@ -14,7 +14,8 @@
 const SOURCES = [
   // —— 已接入 ——
   { id: 'tencent-quote', name: '腾讯行情', url: 'https://qt.gtimg.cn/q=sh000001', used: true, markets: ['A', 'HK', 'US'] },
-  { id: 'tencent-kline', name: '腾讯K线', url: 'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', used: true, markets: ['A', 'HK'] },
+  { id: 'tencent-kline', name: '腾讯K线(proxy)', url: 'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', used: true, markets: ['A', 'HK'] },
+  { id: 'tencent-kline-waf', name: '腾讯K线(主域,已被WAF拦)', url: 'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', markets: ['A', 'HK'], note: '501 页面 → 应用已自动降级到 proxy 域名' },
   { id: 'sina-quote', name: '新浪行情', url: 'https://hq.sinajs.cn/list=sh600519', used: true, markets: ['A', 'USF', 'CNF'] },
   { id: 'sina-minute', name: '新浪A股分钟', url: 'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh600519&scale=5&datalen=5', used: true, markets: ['A'] },
   { id: 'sina-fut-daily', name: '新浪期货日线', url: 'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/InnerFuturesNewService.getDailyKLine?symbol=RB0', used: true, markets: ['CNF'] },
@@ -59,15 +60,28 @@ async function probe(src) {
     const to = setTimeout(() => ctl.abort(), TIMEOUT);
     const r = await fetch(src.url, {
       signal: ctl.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/125', Referer: 'https://finance.sina.com.cn' }
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        // 腾讯/新浪的行情接口都校验 Referer，不带会被 WAF 拦成 501 页面
+        Referer: src.url.includes('gtimg') ? 'https://gu.qq.com/' : 'https://finance.sina.com.cn',
+        Accept: '*/*',
+      }
     });
     clearTimeout(to);
     status = r.status;
     const text = (await r.text()).slice(0, 1200);
-    // 已接入的源必须返回"看起来是行情数据"的内容，避免 200 但内容是错误 JSON / 首页 HTML
-    if (src.used && /^\s*\{/.test(text) && /"error"|"Error Message"|"Information"/i.test(text)) {
-      guarded = false;
-      status = 599; // 伪装成失败：200 但内容是错误
+    // 响应体校验：200 不等于可用。以下都判为不可用：
+    //   ① 错误 JSON（含 error / Error Message / Information）
+    //   ② 响应体过短（<16 字节，往往是空壳）
+    //   ③ 通用首页 HTML（既不是行情 JSON 也不是 CSV）
+    const looksJson = /^\s*[\[{]/.test(text);
+    const looksCsv = /^\s*\S+,\S+/m.test(text);
+    const badBody =
+      (looksJson && /"error"|"Error Message"|"Information"|"Note"/i.test(text)) ||
+      text.trim().length < 16 ||
+      (!looksJson && !looksCsv && /<html|<\/body>|<!DOCTYPE/i.test(text) && !/<script[^>]*>[^<]*hq_str|var _x=|\{"result"/.test(text));
+    if (badBody) {
+      status = 599; // 记作"200 但内容不可用"
     }
     // 反爬特征：JS 挑战 / 验证页
     if (/requires JavaScript to verify|__verify|Are you a robot|cf-challenge|_waf_|__jsl_|challenge-platform/i.test(text)) guarded = true;

@@ -69,7 +69,7 @@
       <div class="page-head">
         <div>
           <h1 class="page-title">总览 <span class="tag-live">多市场 · 缠论视角</span></h1>
-          <p class="page-desc">四市场脉动、指数、自选池与今日结构信号；右侧干支卡为「算卦择时」入口。</p>
+          <p class="page-desc">六市场脉动（A股/港股/美股/加密/国内期货/美期货）、指数、自选池与今日结构信号；右侧干支卡为「算卦择时」入口。</p>
         </div>
         <div class="head-actions">
           <span class="live-stamp" id="liveStampOverview"></span>
@@ -103,7 +103,8 @@
       <div class="card picker-card" id="symbolPicker">
         <div class="card-head">
           <h3>先选一个标的</h3>
-          <span class="hint">选完才出图，图上再画线 · 也可以直接搜代码/名称</span>
+          <span class="hint">点一个标的即可切换 · 也可以直接搜代码/名称</span>
+          <button class="btn ghost sm" id="pickerClose">收起</button>
         </div>
         <div class="form-row"><input class="input" id="pickerSearch" placeholder="搜：黄金 / 螺纹 / 以太坊 / 600519 / NVDA / ES" autocomplete="off"></div>
         <div class="picker-groups" id="pickerHot"></div>
@@ -112,7 +113,7 @@
       <div id="structBody">
       <div class="page-head">
         <div>
-          <h1 class="page-title">结构分析 <span class="tag-live" id="structTitle">—</span> <span class="live-stamp" id="liveStampStruct"></span></h1>
+          <h1 class="page-title">结构分析 <span class="tag-live" id="structTitle">—</span> <span class="live-stamp" id="liveStampStruct"></span> <button class="btn ghost sm" id="switchSymbol" title="换一个标的">换标的</button></h1>
           <p class="page-desc">包含处理 → 分型 → 笔 → 线段 → 中枢 → 背驰 → 买卖点，全部由服务端实时计算。</p>
         </div>
         <div class="head-actions">

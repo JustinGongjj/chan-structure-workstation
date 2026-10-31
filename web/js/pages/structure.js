@@ -106,7 +106,7 @@
     const rows = [
       ['现价', `<span class="${U.cls(q.pct)}">${U.fmt(st.price)}（${U.pct(q.pct)}）</span>`],
       ['趋势类型', `${res.trend.type}<span class="hint">（${res.trend.sub}）</span>`],
-      ['当前中枢', pv ? `[${U.fmt(pv.zd)}, ${U.fmt(pv.zg)}] · ${pv.count} 笔${pv.upgraded ? ' · 九笔升级' : ''}` : '尚未形成'],
+      ['当前中枢', pv ? `[${U.fmt(pv.zd)}, ${U.fmt(pv.zg)}] · ${pv.count} 笔${pv.upgraded ? ' · 九笔升级' : ''}${pv.overlapPrev ? ' · 与前一中枢重叠（扩展形态）' : ''}` : '尚未形成'],
       ['现价位置', U.POS_TXT[st.position] || '—'],
       ['最后一笔', res.bis.length ? `${res.bis[res.bis.length - 1].dir > 0 ? '向上' : '向下'} ${U.fmt(res.bis[res.bis.length - 1].p0)} → ${U.fmt(res.bis[res.bis.length - 1].p1)}` : '—'],
       ['结构', res.structure.replace(/（.*?）/, '')],
@@ -385,28 +385,42 @@
     );
   }
 
-  function setBodyVisible(show) {
-    // 选择器与图表互斥：没选标的时只显示选择器，不渲染图
-    const body = U.$('#structBody');
-    if (body) body.style.display = show ? '' : 'none';
-  }
-
+  /*
+    设计要点（复审核出过一次 BLOCKER）：结构页**永远出图**。
+    标的选择器是"换标的"的辅助面板，默认折叠；只有首次访问（本次会话还没选过任何标的）
+    才默认展开，并且给一个"直接用默认标的"的出口——绝不能因为没选标的就让图不出现。
+  */
   function hidePicker() {
     const p = U.$('#symbolPicker');
     if (p) p.style.display = 'none';
-    setBodyVisible(true);
   }
 
   function showPicker() {
     const p = U.$('#symbolPicker');
     if (p) p.style.display = '';
-    setBodyVisible(false);
+  }
+
+  function pickExplicit(code) {
+    App.state.symbol[App.state.market] = code;
+    App.state.pickedSymbol = true;
+    App.syncURL();
+    hidePicker();
+    return refresh();
   }
 
   function bindPickerOnce() {
     if (pickerBound) return;
     pickerBound = true;
     renderPicker();
+    const close = U.$('#pickerClose');
+    if (close) close.addEventListener('click', () => hidePicker());
+    const sw = U.$('#switchSymbol');
+    if (sw) sw.addEventListener('click', () => {
+      const p = U.$('#symbolPicker');
+      if (!p) return;
+      if (p.style.display === 'none') { showPicker(); p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      else hidePicker();
+    });
     const inp = U.$('#pickerSearch');
     const box = U.$('#pickerResults');
     if (!inp || !box) return;
@@ -632,10 +646,9 @@
 
   function renderPage() {
     bindPickerOnce();
-    // 从 URL / 搜索 / 雷达带进来的标的：直接出图；裸进菜单：先让用户选（此时不建图）
-    const explicit = !!(App.state.pickedSymbol);
-    if (!explicit) { showPicker(); return Promise.resolve(); }
-    hidePicker();
+    // 永远出图。首次访问（没有显式选择过标的）时把选择器展开做引导，但不阻塞图表。
+    if (App.state.pickedSymbol) hidePicker();
+    else showPicker();
     return refresh();
   }
 

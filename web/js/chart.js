@@ -414,6 +414,12 @@
                 ly += labelSide === 'above' ? -14 : 14;
                 rect = { x1: lx, y1: ly - 9, x2: lx + tw, y2: ly + 4 };
               }
+              // 纵向夹紧：标签不能被推出价格区（中枢变多时避让会把标签顶到画布外）
+              const yMin = g.priceTop + 12;
+              const yMax = g.priceTop + g.priceH - 4;
+              if (ly < yMin) ly = yMin;
+              if (ly > yMax) ly = yMax;
+              rect = { x1: lx, y1: ly - 9, x2: lx + tw, y2: ly + 4 };
               placed.push(rect);
               ctx.globalAlpha = 0.92;
               ctx.fillRect(lx, ly - 9, tw, 13);
@@ -452,6 +458,21 @@
           if (p.upgraded && x1 - x0 > 60) {
             ctx.fillStyle = C.gold;
             ctx.fillText(`9段升级(${p.count})`, x0 + 3, (yT + yB) / 2 + 3);
+          }
+          // ⑦ 与上一个中枢区间重叠 → 标注"扩展"，但几何保持独立（不合并）
+          if (p.overlapPrev) {
+            ctx.font = '9.5px ui-monospace,Menlo,monospace';
+            const tag = '扩展';
+            const tw = ctx.measureText(tag).width + 8;
+            if (x1 - x0 > tw + 6) {
+              ctx.globalAlpha = 0.85;
+              ctx.fillStyle = C.accent;
+              roundRect(ctx, x1 - tw - 2, yT - 14, tw, 12, 3);
+              ctx.fill();
+              ctx.fillStyle = C.goldInk;
+              ctx.fillText(tag, x1 - tw + 2, yT - 5);
+              ctx.globalAlpha = 1;
+            }
           }
           ctx.globalAlpha = 1;
         }

@@ -13,7 +13,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+/* 浏览器路径：优先平台内置 chromium（DSH_BROWSER_EXECUTABLE_PATH 或 /opt/dsh-browser/chromium），
+   其次回落到旧的 headless_shell。之前只写死后者，环境一变就 EBADF 挂掉。 */
 const CHROME = process.env.CHROME_BIN ||
+  process.env.DSH_BROWSER_EXECUTABLE_PATH ||
+  (fs.existsSync('/opt/dsh-browser/chromium') ? '/opt/dsh-browser/chromium' : null) ||
   '/home/node/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell';
 const ENV = {
   ...process.env,
@@ -72,10 +76,15 @@ async function open({ url, w, h, ua, mobile }) {
     `--user-agent=${ua}`, `--window-size=${w},${h}`, 'about:blank'
   ], { stdio: 'ignore', env: ENV });
   let list;
-  for (let i = 0; i < 120; i++) {
-    try { list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json(); break; } catch { await sleep(100); }
+  for (let i = 0; i < 300; i++) {
+    try { list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json(); if (list.length) break; } catch { await sleep(100); }
   }
-  const ws = new WebSocket(list.find(t => t.type === 'page').webSocketDebuggerUrl);
+  const page = (list || []).find(t => t.type === 'page');
+  if (!page) {
+    try { proc.kill('SIGKILL'); } catch {}
+    throw new Error('浏览器启动失败（' + CHROME + '），端口 ' + PORT + ' 未就绪');
+  }
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej); });
   const cdp = new CDP(ws);
   const errors = [];
@@ -241,6 +250,9 @@ async function desktopFlows() {
     // 结构分析页
     await cdp.eval(`document.querySelector('[data-page="structure"]').click()`);
     await sleep(6500);
+    // 首次进入会展开"换标的"面板，把图表推到视口外；点击画线前先收起
+    await cdp.eval(`document.getElementById('pickerClose')?.click()`);
+    await sleep(600);
     const chart = await cdp.eval(`!!document.querySelector('canvas')`);
     const label = await cdp.eval(`document.body.innerText.includes('中枢') || document.body.innerText.includes('笔')`);
     check('桌面版·结构页图表+标注', chart && label, `canvas=${chart}`);
