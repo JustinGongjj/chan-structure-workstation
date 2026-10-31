@@ -334,3 +334,15 @@ display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
 .dv-f.ok{color:var(--down-text)}
 .dv-f.warn{color:var(--ink-gold)}
 .dv-f.fail{color:var(--up-text)}
+
+/* ---------- 商品板块弹层 ---------- */
+/* 板块标签按内容宽度排列并横向滚动；不能沿用 .segmented 的 flex:1 等分（会压叠文字） */
+#secTabs{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+#secTabs::-webkit-scrollbar{display:none}
+#secTabs .sq{
+  flex:0 0 auto;
+  min-width:max-content;
+  padding:7px 12px;
+  font-size:12.5px;
+  white-space:nowrap;
+}

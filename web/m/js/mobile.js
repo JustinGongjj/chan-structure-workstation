@@ -251,6 +251,11 @@
       })
       .join('');
 
+    setTimeout(() => {
+      const b = $('#openSectors');
+      if (b) b.addEventListener('click', openSectors);
+    }, 0);
+
     const idx = ov.indices
       .map(
         (r) => `<div class="idx-chip" data-m="${r.market}" data-c="${r.code}">
@@ -285,6 +290,7 @@
     view.innerHTML = `
       <h1 class="page-title">总览 <span id="ovStamp">${stampHtml()}</span></h1>
       <div class="page-sub">四市场自选池 · 点击任意标的进入结构分析</div>
+      <div class="section"><button class="btn button block" id="openSectors">▦ 商品板块 · 有色/黑色/能化/农产品/贵金属</button></div>
       <div class="pulse-grid section">${pulseCards}</div>
       <div class="section">
         <div class="section-head"><h3>指数</h3><span class="hint">左右滑动</span></div>
@@ -371,6 +377,65 @@
   }
 
   /* ---------------- 雷达 ---------------- */
+  /* ---------- 商品板块（底部弹层） ---------- */
+  async function openSectors() {
+    let catalog = [];
+    try {
+      const r = await API.get('/api/sectors');
+      catalog = r.sectors || [];
+    } catch (e) { toast('板块目录加载失败'); return; }
+    if (!catalog.length) { toast('暂无板块'); return; }
+
+    const tabsHtml = catalog
+      .map((s, i) => `<button class="button sq ${i === 0 ? 'active' : ''}" data-sid="${s.id}">${U.esc(s.name)} ${s.count}</button>`)
+      .join('');
+
+    openSheet(
+      '商品板块',
+      `<div class="seg segmented" id="secTabs" style="overflow-x:auto;flex-wrap:nowrap">${tabsHtml}</div>
+       <div id="secList" class="list"><div class="empty">加载中…</div></div>`,
+      () => {
+        let seq = 0;
+        const load = async (sid) => {
+          const my = ++seq;
+          const list = $('#secList');
+          list.innerHTML = '<div class="empty">加载中…</div>';
+          try {
+            const r = await API.get('/api/sector?id=' + encodeURIComponent(sid));
+            if (my !== seq) return;
+            list.innerHTML = (r.items || []).map((it) => {
+              const cls = it.pct > 0 ? 'up-c' : it.pct < 0 ? 'down-c' : '';
+              const pct = it.pct == null ? '—' : (it.pct > 0 ? '+' : '') + it.pct.toFixed(2) + '%';
+              const px = it.price == null ? '—' : (it.price >= 1000 ? it.price.toFixed(1) : it.price.toFixed(2));
+              return `<div class="list-item" data-m="${it.market}" data-c="${it.code}">
+                <div class="mid"><div class="nm">${U.esc(it.name)}</div><div class="cd">${U.esc(it.code)} · ${U.esc(it.ex)}</div></div>
+                <div style="text-align:right"><div class="nm ${cls}">${px}</div><div class="cd ${cls}">${pct}</div></div>
+              </div>`;
+            }).join('') || '<div class="empty">该板块暂无品种</div>';
+            U.$$('#secList .list-item[data-c]').forEach((el) =>
+              el.addEventListener('click', () => {
+                closeSheet();
+                state.market = el.dataset.m;
+                state.symbol[el.dataset.m] = el.dataset.c;
+                state.period = 'day';
+                go('structure');
+              })
+            );
+          } catch (e) {
+            if (my === seq) list.innerHTML = '<div class="empty">加载失败：' + U.esc(e.message) + '</div>';
+          }
+        };
+        U.$$('#secTabs .sq').forEach((b) =>
+          b.addEventListener('click', () => {
+            U.$$('#secTabs .sq').forEach((x) => x.classList.toggle('active', x === b));
+            load(b.dataset.sid);
+          })
+        );
+        load(catalog[0].id);
+      }
+    );
+  }
+
   async function renderRadar() {
     if (stale('radar')) return;
     view.innerHTML = `
