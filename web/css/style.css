@@ -808,3 +808,20 @@ button{font-family:inherit}
 .sector-card .chg{font-size:12.5px;font-weight:500;margin-top:2px;font-variant-numeric:tabular-nums}
 .sector-card .ex{position:absolute;right:10px;bottom:9px;font-size:9.5px;color:var(--faint);letter-spacing:.4px}
 .up-c{color:var(--up)} .down-c{color:var(--down)} .flat-c{color:var(--muted)}
+
+/* ---------- 宏观参照卡 ---------- */
+#sideMacro .macro-row{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;font-size:12px}
+#sideMacro .macro-row span{color:var(--muted)}
+#sideMacro .macro-row b{font-variant-numeric:tabular-nums;color:var(--text);font-weight:600}
+#sideMacro .macro-note{margin-top:6px;font-size:10px;color:var(--faint)}
+
+/* ---------- 增强数据源（可选 key） ---------- */
+.key-list{display:flex;flex-direction:column;gap:8px}
+.key-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
+.key-row .kdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.key-row .kdot.on{background:var(--up)}
+.key-row .kdot.off{background:var(--faint)}
+.key-row .kmain{flex:1;min-width:0}
+.key-row .kname{font-size:13px;color:var(--text);font-weight:500}
+.key-row .kmeta{font-size:11px;color:var(--faint);margin-top:2px}
+.key-row a{font-size:11.5px;color:var(--gold);white-space:nowrap}

@@ -51,5 +51,26 @@
     // 页面按钮在 app.js 中统一绑定
   });
 
-  window.PageSources = { render };
+  /* 增强数据源：只显示"是否已配置"，key 本身永远不下发到前端 */
+  async function renderKeys() {
+    const box = U.$('#keyList');
+    if (!box) return;
+    try {
+      const r = await API.get('/api/keys');
+      box.innerHTML = (r.providers || []).map((p) => `
+        <div class="key-row">
+          <span class="kdot ${p.configured ? 'on' : 'off'}"></span>
+          <div class="kmain">
+            <div class="kname">${U.esc(p.name)} <span class="hint">${U.esc(p.env)}</span></div>
+            <div class="kmeta">${p.configured ? '已配置 · 已生效' : '未配置'} · ${U.esc(p.quota)} · 可获得：${U.esc(p.gains.join('、'))}${p.note ? ' · ' + U.esc(p.note) : ''}</div>
+          </div>
+          ${p.configured ? '' : `<a href="${U.esc(p.signup)}" target="_blank" rel="noopener">去申请 →</a>`}
+        </div>`).join('') +
+        `<div class="hint" style="margin-top:4px">填法：在项目根目录建 <code>.env.local</code>，写入 <code>FINNHUB_KEY=你的key</code>，重启服务即生效。</div>`;
+    } catch (e) {
+      box.innerHTML = '<div class="empty">状态读取失败</div>';
+    }
+  }
+
+  window.PageSources = { render: async () => { await render(); renderKeys(); } };
 })();

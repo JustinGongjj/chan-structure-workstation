@@ -33,6 +33,13 @@
       <div class="side-date">—</div>
       <div class="side-pillars">—</div>
     </div>
+    <div class="side-card" id="sideMacro">
+      <div class="side-card-t">宏观参照</div>
+      <div class="macro-row" id="macroDGS10"><span>美债10Y</span><b>—</b></div>
+      <div class="macro-row" id="macroDGS2"><span>美债2Y</span><b>—</b></div>
+      <div class="macro-row" id="macroVIXCLS"><span>VIX</span><b>—</b></div>
+      <div class="macro-note">FRED · 免 key · 日频</div>
+    </div>
     <div class="side-foot">
       <span class="dot" id="apiDot"></span><span id="apiText">连接中…</span>
     </div>
@@ -349,6 +356,10 @@
       </div>
       <div class="card"><div id="sourceList" class="src-list"></div></div>
       <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h3>增强数据源（可选 key）</h3><span class="hint">填进 .env.local 后重启即生效，key 只在服务端使用</span></div>
+          <div id="keyList" class="key-list"></div>
+        </div>
         <div class="card"><div class="card-head"><h3>市场 × 级别覆盖</h3></div><div id="covTbl" class="tbl-wrap"></div></div>
         <div class="card"><div class="card-head"><h3>运行信息</h3></div><div id="sysInfo" class="kv"></div></div>
       </div>

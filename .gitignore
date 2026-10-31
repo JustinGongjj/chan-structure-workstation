@@ -15,3 +15,9 @@ scripts/restart.sh
 web/downloads/*.zip
 web/downloads/*.bundle
 web/downloads/*.part
+
+# 本地密钥（不要提交）
+.env.local
+.env
+*.key
+

@@ -87,13 +87,94 @@ function tcCode(market, code) {
   return null;
 }
 
+/* ---------------- Finnhub（可选 key：美股实时报价 + 新闻） ---------------- */
+async function finnhubQuote(code) {
+  const key = KEYS.get('FINNHUB_KEY');
+  if (!key) throw new Error('未配置 FINNHUB_KEY');
+  const sym = String(code).toUpperCase();
+  const j = await getJSON(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${key}`, { timeout: 8000 });
+  if (!j || !Number.isFinite(j.c) || j.c <= 0) throw new Error('finnhub 无报价');
+  return {
+    market: 'US', code: sym, name: sym,
+    price: j.c, prevClose: j.pc, change: +(j.c - j.pc).toFixed(4),
+    pct: j.pc ? +(((j.c - j.pc) / j.pc) * 100).toFixed(2) : 0,
+    high: j.h, low: j.l, open: j.o,
+    timeText: j.t ? new Date(j.t * 1000).toISOString().slice(0, 16).replace('T', ' ') : '',
+    source: 'finnhub',
+  };
+}
+
+/* ---------------- Twelve Data（可选 key：多市场 K 线） ---------------- */
+async function twelveDataDaily(code, market) {
+  const key = KEYS.get('TWELVEDATA_KEY');
+  if (!key) throw new Error('未配置 TWELVEDATA_KEY');
+  // 映射：A→.SS/.SZ 后缀不易猜，这里只覆盖 美股/港股/外汇
+  const sym = market === 'HK' ? String(code).padStart(4, '0') + '.HK' : String(code).toUpperCase();
+  const j = await getJSON(
+    `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=1day&outputsize=200&apikey=${key}`,
+    { timeout: 10000 }
+  );
+  if (!j || j.status === 'error' || !Array.isArray(j.values)) throw new Error('twelvedata: ' + ((j && j.message) || '无数据'));
+  const bars = j.values
+    .map((r) => ({
+      t: Date.parse(r.datetime + 'T00:00:00Z'),
+      o: num(r.open), h: num(r.high), l: num(r.low), c: num(r.close), v: num(r.volume),
+    }))
+    .filter((b) => b.t && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+  if (bars.length < 20) throw new Error('twelvedata 数据不足');
+  return { bars, source: 'twelvedata' };
+}
+
+/* ---------------- StockAnalysis（美股，免 key） ----------------
+   字段：{t,o,h,l,c,v,a,...}，一次给约 128 根日线。
+   作为美股在 纳斯达克/新浪/AlphaVantage 全挂时的独立兜底。 */
+async function stockAnalysisDaily(code) {
+  const sym = String(code).toLowerCase().replace(/[^a-z0-9.-]/g, '');
+  const j = await getJSON(`https://stockanalysis.com/api/symbol/s/${sym}/history`, {
+    timeout: 10000,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/125', Accept: '*/*' },
+  });
+  const rows = (j && j.data && j.data.data) || [];
+  if (!Array.isArray(rows) || rows.length < 20) throw new Error('stockanalysis 数据不足');
+  const bars = rows
+    .map((r) => ({
+      t: Date.parse(String(r.t).slice(0, 10) + 'T00:00:00Z'),
+      o: num(r.o), h: num(r.h), l: num(r.l), c: num(r.c), v: num(r.v),
+    }))
+    .filter((b) => b.t && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+  if (bars.length < 20) throw new Error('stockanalysis 数据不足');
+  return { bars, source: 'stockanalysis' };
+}
+
+/* ---------------- FRED 宏观（免 key CSV） ----------------
+   用途：美债收益率等宏观序列，给"择时"模块做风险偏好参照。 */
+const FRED_SERIES = { DGS10: '美债10年期收益率', DGS2: '美债2年期收益率', DFF: '联邦基金利率', VIXCLS: 'VIX 恐慌指数' };
+
+async function fredSeries(id) {
+  if (!FRED_SERIES[id]) throw new Error('不支持的 FRED 序列: ' + id);
+  const txt = await request(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`, { timeout: 10000 });
+  const rows = txt.trim().split('\n').slice(1);
+  const bars = [];
+  for (const line of rows) {
+    const [d, v] = line.split(',');
+    const p = num(v);
+    if (!d || !Number.isFinite(p)) continue;
+    bars.push({ t: Date.parse(d + 'T00:00:00Z'), c: p });
+  }
+  if (!bars.length) throw new Error('FRED 无数据');
+  return { id, name: FRED_SERIES[id], bars: bars.slice(-400), source: 'fred' };
+}
+
 /* ---------------- Alpha Vantage（备用源，可选 key） ----------------
    用途：美股/全球股票的独立第三方兜底。没有 key 时用 demo（仅极少量品种），
    配置环境变量 ALPHAVANTAGE_KEY 后自动启用完整能力（免费档 25 次/日）。 */
-const AV_KEY = process.env.ALPHAVANTAGE_KEY || 'demo';
+const KEYS = require('./keys');
+const avKey = () => KEYS.get('ALPHAVANTAGE_KEY') || 'demo';
 
 async function alphaVantageDaily(code) {
-  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(code)}&outputsize=compact&apikey=${AV_KEY}`;
+  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(code)}&outputsize=compact&apikey=${avKey()}`;
   const j = await getJSON(url, { timeout: 10000 });
   if (j.Information || j.Note) throw new Error('AlphaVantage 限流或需正式 key');
   const ts = j['Time Series (Daily)'];
@@ -745,6 +826,8 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
         const daily = await tryEach([
           () => nasdaqDaily(c, Math.min(limit * 2 + 60, 1200)),
           () => sinaUsDaily(c),
+          () => stockAnalysisDaily(c),
+          () => twelveDataDaily(c, m),
           () => alphaVantageDaily(c),
           () => emKline(m, c, 'day', limit * 2),
         ]);
@@ -1064,6 +1147,11 @@ async function probe() {
 
 module.exports = {
   MARKETS,
+  finnhubQuote,
+  twelveDataDaily,
+  fredSeries,
+  FRED_SERIES,
+  stockAnalysisDaily,
   PERIOD_NAME,
   PERIOD_MINUTES,
   normCode,

@@ -562,6 +562,25 @@ const routes = {
     suite: SUITE_PERIODS,
   }),
   '/api/overview': async () => overview(),
+  // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景
+  '/api/macro': async () => {
+    const out = { asof: Date.now(), series: {} };
+    for (const id of ['DGS10', 'DGS2', 'VIXCLS']) {
+      try {
+        const r = await S.fredSeries(id);
+        const last = r.bars[r.bars.length - 1];
+        const prev = r.bars[r.bars.length - 2] || last;
+        out.series[id] = {
+          name: r.name,
+          value: last.c,
+          change: +(last.c - prev.c).toFixed(3),
+          date: new Date(last.t).toISOString().slice(0, 10),
+          points: r.bars.length,
+        };
+      } catch (e) { out.series[id] = { name: S.FRED_SERIES[id], error: String(e.message || e) }; }
+    }
+    return out;
+  },
   // 商品板块目录（有色金属/贵金属/黑色系/能源化工/农产品/金融期货/外盘指数）
   '/api/sectors': async () => ({ sectors: SECTORS.catalog(), total: SECTORS.catalog().reduce((n, s) => n + s.count, 0) }),
   // 板块实时快照：一次返回某板块所有品种的报价
@@ -588,6 +607,8 @@ const routes = {
     };
   },
   '/api/watchlist': async () => ({ list: loadWatchlist(), defaults: WATCHLIST }),
+  // 可选增强源的配置状态（只返回是否已配置，绝不返回 key 本身）
+  '/api/keys': async () => ({ providers: require('./lib/keys').status(), envFile: '.env.local' }),
   '/api/sources': async () => ({ probedAt: Date.now(), sources: await cached('probe', 60000, () => S.probe()).then((r) => r.value) }),
   '/api/search': async (u) => ({ q: u.searchParams.get('q') || '', items: await S.search(u.searchParams.get('q') || '') }),
   '/api/quote': async (u) => {

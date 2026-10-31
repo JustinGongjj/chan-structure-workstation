@@ -331,6 +331,26 @@ API：`GET /api/sectors`（目录）、`GET /api/sector?id=precious`（板块快
 3. **贵金属交叉校验**：接入 [Gold-API](https://gold-api.com)（免费无 key）取 XAU/XAG 现货，
    与 `GC/SI` 期货价对比，偏离 >3% 标记 `stale`。
 
+### 可选 API Key（增强源）
+
+本站**默认零账号可用**。若想再加一层保险，可申请免费 key 填进 `.env.local`：
+
+```bash
+echo 'TWELVEDATA_KEY=你的key' >> .env.local    # 重启服务生效
+```
+
+完整指南（含申请难度、额度、直达链接）：**[docs/API-KEYS.md](docs/API-KEYS.md)**
+
+| 源 | 免费额度 | 换来什么 | 申请难度 |
+|---|---|---|---|
+| Alpha Vantage | 25 次/日 | 美股日线增强 | ⭐ 秒发 key |
+| Twelve Data | 800 次/日 | 美股/港股/外汇 K 线 | ⭐⭐ 最推荐 |
+| Tiingo | 1000 次/日 | 美股 EOD | ⭐⭐ |
+| Finnhub | 60 次/分 | 美股实时报价 | ⭐⭐⭐ 需 reCAPTCHA |
+
+key 只在服务端使用，`/api/keys` 只返回"是否已配置"，**永不把 key 下发到前端**。
+「数据源」页有可视化的配置状态（圆点变绿 = 已生效）。
+
 ### 数据源可达性巡检
 
 ```bash
@@ -443,6 +463,7 @@ space/                Hugging Face Space (Docker SDK)
 | 2026-10-27 | v1.1 | **弹层两层框架冲突**：`.view{z-index:5000}` 把页面压到弹层之上（文字叠在一起）；元素级 `button{width:100%}` 把弹层标题挤成 0 宽。同时修 toast 被 `.ios/.md .toast` 顶出屏幕、`.btn` 被 F7 的 `--f7-button-height` 裁字 | `npm run check:sheet`（48 组断言：背景/层级/零宽/超宽） |
 | 2026-10-27 | v1.1 | **服务端加固**：自选池原子写（tmp+rename）、空表不再回退默认、垃圾代码被拒（先取行情校验）、60 个上限、并发重复二次校验、写接口去掉 `Access-Control-Allow-Origin:*` | `npm run check:api`（含"去重被正确拒绝"与"垃圾代码被拒"） |
 | 2026-10-27 | v1.1 | **交互健壮性**：切 Tab 清掉算卦 12s 跟随定时器、异步渲染加防串页守卫、雷达轮询改原地更新（不再把手指下的行换掉）、返回键先关弹层再回上页、未捕获异常给可见提示、chart 支持 `destroy()` 修监听泄漏、滚轮默认交还页面滚动（Ctrl/⌘+滚轮才缩放） | `npm run check:flow`（17 步） |
+| 2026-11-01 | v2.1 | **免 key 数据源再扩**：接入 **FRED**（美债 10Y/2Y + VIX，已进总览侧栏宏观卡，`/api/macro`）、**StockAnalysis**（美股日线独立兜底）、**Gate.io**（加密备用）；新增可选 key 注册表 `server/lib/keys.js` 与 Finnhub/Twelve Data 适配器（有 key 即启用，无 key 静默跳过）；`/api/keys` 只暴露配置状态；数据源页可视化配置状态；新增 `docs/API-KEYS.md` 申请指南；`.env.local` 已加入 gitignore | `check:sources` |
 | 2026-10-31 | v2.0 | **根治"中枢首尾相接"**：下一轮扫描起点从 `j` 改为 `j+1`——原来离开段被当成下一中枢的区间首笔，这正是用户最早指出的问题；新增三条不变量（进入段紧邻首笔 / 不早于上一离开段 / 首笔晚于上一离开段）+ 回归测试；六市场段数分布回归正常（3–6 段，均值 3.2–4.7） | `check:pivot` 六市场全绿、`npm test` 70、`check:api` 65、`check:matrix` 208 |
 | 2026-10-31 | v1.9 | **二次复审第二轮**：修离开段语义（判据改为"终点出界"，注释与断言统一，官方 12/12 不再自相矛盾）、框中枢判分改为**只罚框窄不罚框宽**（框住整个震荡区 = 100 分）、`overlapPrev` 真正画到图上（"扩展"角标 + 结构状态说明）、`srcaudit` 加响应体校验（IBKR/门户页判为不可用）、腾讯 K 线主域被 WAF 拦后把 proxy 域名提到首位、新鲜度 90→45 天（剔除 WR0/ZC0/RTY/NKD/BZ/SB）、标签避让纵向夹紧 | `npm test` 69、`check:api` 64、`check:flow` 32、`check:matrix` 208；报告归档 `docs/reviews/data-sources.md` |
 | 2026-10-31 | v1.8 | **二次复审核出的问题全部修复**：撤销中枢合并（取交集导致区间变窄/内段越界，2 条 BLOCKER）、修 `t1` 恒 undefined、区间套补 CNF/USF 五级别、自选池 `normalize` 漏 4 市场导致期货被丢 + 旧存档迁移、CNF 报价补回 high/low、框中枢判分改分维度（框住整个震荡区 22→72 分）、剔除 4 个 2019 残档外盘品种、`srcaudit` 加响应体校验 | `npm test` 68、`check:api` 64、`check:matrix` 208 |

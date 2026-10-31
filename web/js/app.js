@@ -216,6 +216,23 @@
   tick();
   setInterval(tick, 1000);
 
+  /* 宏观参照：FRED 免 key，日频，失败就保持 "—" 不打扰用户 */
+  async function loadMacro() {
+    try {
+      const m = await API.get('/api/macro');
+      const rows = [['DGS10', 'macroDGS10'], ['DGS2', 'macroDGS2'], ['VIXCLS', 'macroVIXCLS']];
+      for (const [id, elId] of rows) {
+        const el = U.$('#' + elId);
+        const v = m.series && m.series[id];
+        if (!el || !v || v.value == null) continue;
+        const cls = v.change > 0 ? 'up-c' : v.change < 0 ? 'down-c' : '';
+        const label = id === 'VIXCLS' ? 'VIX 恐慌' : id === 'DGS10' ? '美债 10Y' : '美债 2Y';
+        el.innerHTML = `<span>${label}</span><b class="${cls}">${v.value.toFixed(2)}</b>`;
+        el.title = `${v.name} · ${v.date} · 较前值 ${v.change > 0 ? '+' : ''}${v.change}`;
+      }
+    } catch (e) { /* 宏观取不到不影响主流程 */ }
+  }
+
   async function loadDaily() {
     try {
       const d = await API.daily();
@@ -255,6 +272,7 @@
     if (q.get('hl')) App.state.hl = q.get('hl');
     U.$$('#marketTabs .mtab').forEach((b) => b.classList.toggle('active', b.dataset.market === App.state.market));
     loadDaily();
+    loadMacro();
     const h = location.hash.replace('#', '');
     App.go(h || 'overview', { silent: true });
   }
