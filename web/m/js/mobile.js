@@ -290,7 +290,10 @@
     view.innerHTML = `
       <h1 class="page-title">总览 <span id="ovStamp">${stampHtml()}</span></h1>
       <div class="page-sub">六市场自选池 · 点击任意标的进入结构分析</div>
-      <div class="section"><button class="btn button block" id="openSectors">▦ 商品板块 · 有色/黑色/能化/农产品/贵金属</button></div>
+      <div class="section" style="display:flex;gap:8px">
+        <button class="btn button" id="openSectors" style="flex:1">▦ 商品板块</button>
+        <a class="btn button" id="openGame" href="/game/" style="flex:1;text-align:center">◈ 缠关 108</a>
+      </div>
       <div class="pulse-grid section">${pulseCards}</div>
       <div class="section">
         <div class="section-head"><h3>指数</h3><span class="hint">左右滑动</span></div>

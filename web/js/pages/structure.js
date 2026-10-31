@@ -242,6 +242,9 @@
     const cardEl = U.$('#teachCard');
     cardEl.style.display = '';
     const foot = U.$('#teachFoot');
+    // 先清掉上一次的步骤条：insertAdjacentHTML 只是插入，不清会越叠越多（复现：切 9 次概念叠出 9 条）
+    const oldBar = U.$('#teachStepBar');
+    if (oldBar) oldBar.remove();
     if (foot && spec.steps.length > 1) {
       foot.insertAdjacentHTML(
         'afterend',

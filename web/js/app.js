@@ -13,7 +13,7 @@
     },
     pages: {},
     go(page, opts) {
-      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'sectors', 'sources'].includes(page)) page = 'overview';
+      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'sectors', 'game', 'sources'].includes(page)) page = 'overview';
       this.state.page = page;
       U.$$('.page').forEach((el) => el.classList.toggle('active', el.id === 'page-' + page));
       U.$$('#nav .nav-item').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
@@ -48,6 +48,11 @@
         else if (page === 'theory') PageTheory.render();
         else if (page === 'divination') await PageDivination.render();
         else if (page === 'sectors') await PageSectors.render();
+        else if (page === 'game') {
+          // 延迟加载：只有真正进来才给 iframe 设 src，别拖慢首页
+          const f = U.$('#gameFrame');
+          if (f && f.getAttribute('src') !== '/game/') f.setAttribute('src', '/game/');
+        }
         else if (page === 'sources') await PageSources.render();
       } catch (e) {
         U.toast('加载失败：' + e.message);

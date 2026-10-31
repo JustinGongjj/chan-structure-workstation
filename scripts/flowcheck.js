@@ -128,7 +128,8 @@ async function mobileFlows() {
     check('手机版·搜索弹层打开', hasInput);
     await cdp.eval(`(() => { const i = document.querySelector('#sheet input'); i.value='BTC'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); })()`);
     await sleep(2600);
-    const results = await cdp.eval(`document.querySelectorAll('#sheet .list-item, #sheet [data-c]').length`);
+    // 搜索结果的容器是弹层内部自己的 #qList（不是给所有 .list-item 一刀切）
+    const results = await cdp.eval(`document.querySelectorAll('#qList .list-item[data-c]').length`);
     check('手机版·搜索有结果', results > 0, `结果 ${results} 条`);
     if (results > 0) {
       await cdp.eval(`document.querySelector('#sheet [data-c], #sheet .list-item').click()`);
@@ -316,6 +317,27 @@ async function desktopFlows() {
 
       await cleanDrawings('A', '600519', 'day'); // 巡检不留脏数据
     } else check('桌面版·手绘线可画出并保存', false, '找不到图表画布');
+
+    // 教学标注：反复切换概念后，步骤条必须只有一条（曾经 insertAdjacentHTML 不清旧节点，切 9 次叠 9 条）
+    await cdp.eval(`document.querySelector('[data-page="structure"]').click()`);
+    await sleep(2500);
+    const teachVals = await cdp.eval(`[...document.querySelectorAll('#teachSelect option')].map(o=>o.value).filter(Boolean)`);
+    if (Array.isArray(teachVals) && teachVals.length) {
+      for (const v of teachVals.slice(0, 8)) {
+        await cdp.eval(`(() => { const s=document.getElementById('teachSelect'); if(!s) return; s.value=${JSON.stringify(v)}; s.dispatchEvent(new Event('change')); })()`);
+        await sleep(320);
+      }
+      const barCount = await cdp.eval(`document.querySelectorAll('#teachStepBar').length`);
+      check('桌面版·教学步骤条不重复堆叠', barCount <= 1, `切换 8 次后步骤条 ${barCount} 条`);
+    }
+
+    // 闯关页在工作站内可打开
+    await cdp.eval(`document.querySelector('[data-page="game"]').click()`);
+    await sleep(5000);
+    const gm = await cdp.eval(`(() => { const f=document.getElementById('gameFrame'); if(!f) return {ok:false}; const d=f.contentDocument; return {ok:true, src:f.getAttribute('src'), map: !!(d && d.querySelector('.lv')), len: d ? d.body.innerText.length : 0}; })()`);
+    check('桌面版·闯关已嵌入工作站', gm && gm.ok && /\/game\//.test(gm.src || '') && gm.map && gm.len > 200, JSON.stringify(gm));
+    await cdp.eval(`document.querySelector('[data-page="structure"]').click()`);
+    await sleep(2200);
 
     // 结构页回测卡片
     await sleep(2500);
