@@ -12,6 +12,7 @@ const zlib = require('zlib');
 const { URL } = require('url');
 
 const S = require('./lib/sources');
+const SECTORS = require('./lib/sectors');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -541,6 +542,31 @@ const routes = {
     suite: SUITE_PERIODS,
   }),
   '/api/overview': async () => overview(),
+  // 商品板块目录（有色金属/贵金属/黑色系/能源化工/农产品/金融期货/外盘指数）
+  '/api/sectors': async () => ({ sectors: SECTORS.catalog(), total: SECTORS.catalog().reduce((n, s) => n + s.count, 0) }),
+  // 板块实时快照：一次返回某板块所有品种的报价
+  '/api/sector': async (u) => {
+    const id = String(u.searchParams.get('id') || '').toLowerCase();
+    const sec = SECTORS.catalog().find((s) => s.id === id);
+    if (!sec) throw new Error('未知板块: ' + id);
+    const items = sec.items;
+    const qm = await getQuoteMap(items.map((i) => ({ market: i.market, code: i.code })));
+    return {
+      id: sec.id,
+      name: sec.name,
+      desc: sec.desc,
+      items: items.map((it) => {
+        const q = qm.get(it.market + ':' + S.normCode(it.market, it.code));
+        return {
+          ...it,
+          price: q ? q.price : null,
+          pct: q ? q.pct : null,
+          change: q ? q.change : null,
+          timeText: q ? q.timeText : '',
+        };
+      }),
+    };
+  },
   '/api/watchlist': async () => ({ list: loadWatchlist(), defaults: WATCHLIST }),
   '/api/sources': async () => ({ probedAt: Date.now(), sources: await cached('probe', 60000, () => S.probe()).then((r) => r.value) }),
   '/api/search': async (u) => ({ q: u.searchParams.get('q') || '', items: await S.search(u.searchParams.get('q') || '') }),
@@ -818,8 +844,10 @@ const server = http.createServer(async (req, res) => {
     const data = await handler(u);
     sendJSON(res, 200, { ok: true, ...data });
   } catch (e) {
-    console.error('[api]', u.pathname, String(e.message || e));
-    sendJSON(res, 500, { ok: false, error: String(e.message || e), path: u.pathname });
+    // e.status 由 handler 自己给出（比如参数非法 = 400）；没给就是真故障 = 500
+    const code = Number(e && e.status) || (/未知|不支持|非法|无效|参数/.test(String(e.message || '')) ? 400 : 500);
+    if (code >= 500) console.error('[api]', u.pathname, String(e.message || e));
+    sendJSON(res, code, { ok: false, error: String(e.message || e), path: u.pathname });
   } finally {
     if (process.env.LOG !== '0') console.log(`${req.method} ${u.pathname} ${Date.now() - started}ms`);
   }

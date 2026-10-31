@@ -238,3 +238,34 @@ test('外盘期货分钟线标注为「仅当日」', async () => {
   assert.ok(k.bars.length >= 5, '外盘 15 分钟线应有数据');
   assert.equal(k.intradayOnly, true, '外盘分钟线只有当日分时，必须打标');
 });
+
+/* ---------------- 商品板块目录 ---------------- */
+test('板块目录：分组完整、代码与市场一致、无重复', () => {
+  const S = require('../server/lib/sectors');
+  const cat = S.catalog();
+  assert.ok(cat.length >= 6, '至少 6 个板块，实际 ' + cat.length);
+  const seen = new Set();
+  let total = 0;
+  for (const sec of cat) {
+    assert.ok(sec.count === sec.items.length, `${sec.name} 计数与条目数不符`);
+    for (const it of sec.items) {
+      total++;
+      assert.ok(!seen.has(it.code), `品种重复: ${it.code}`);
+      seen.add(it.code);
+      // 国内代码以 0 结尾，外盘不是 —— 市场归属必须与之一致
+      const want = it.code.endsWith('0') ? 'CNF' : 'USF';
+      assert.equal(it.market, want, `${it.code} 市场归属错误`);
+      assert.ok(it.name && it.ex, `${it.code} 缺中文名或交易所`);
+    }
+  }
+  assert.ok(total >= 80, '品种总数应 >= 80，实际 ' + total);
+});
+
+test('板块目录：贵金属同时含国内与外盘，金属板块含铜', () => {
+  const S = require('../server/lib/sectors');
+  const pre = S.catalog().find((s) => s.id === 'precious');
+  const codes = pre.items.map((i) => i.code);
+  assert.ok(codes.includes('AU0') && codes.includes('GC'), '贵金属应含沪金与纽约金');
+  const base = S.catalog().find((s) => s.id === 'base');
+  assert.ok(base.items.some((i) => i.code === 'CU0'), '有色金属应含沪铜');
+});

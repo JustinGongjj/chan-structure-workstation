@@ -238,7 +238,7 @@
     const daily = await API.daily().catch(() => null);
     const p = ov.pulse;
     const pulseCards = [
-      ['A', 'A股'], ['HK', '港股'], ['US', '美股'], ['CR', '加密'],
+      ['A', 'A股'], ['HK', '港股'], ['US', '美股'], ['CR', '加密'], ['CNF', '国内期货'], ['USF', '美期货'],
     ]
       .map(([m, name]) => {
         const x = p[m] || { avgPct: 0, up: 0, down: 0, heat: 50 };

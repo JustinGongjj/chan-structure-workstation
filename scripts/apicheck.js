@@ -74,6 +74,11 @@ async function expectFail(name, path, status, opts = {}) {
   await hit('手绘线保存', '/api/drawings', j => need(j.count === 1 && j.drawings[0].type === 'hline', '保存失败'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [{ type: 'hline', x1: 10, y1: 1355.9 }] } });
   await hit('手绘线校验', '/api/drawings/verify', j => need(typeof j.score === 'number' && Array.isArray(j.lines) && j.verdict, '缺 score/lines/verdict'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [{ type: 'hline', x1: 10, y1: 1355.9 }, { type: 'trend', x1: 2, y1: 1362, x2: 32, y2: 1486 }] } });
   await hit('手绘线清空', '/api/drawings', j => need(j.count === 0, '清空失败'), { method: 'POST', body: { market: 'A', code: '600519', period: 'day', drawings: [] } });
+  await hit('商品板块目录', '/api/sectors', j => need(j.total >= 80 && j.sectors.length >= 6, `板块 ${j.sectors.length} / 品种 ${j.total}`));
+  for (const sid of ['base', 'precious', 'ferrous', 'energy', 'agri', 'fin']) {
+    await hit(`板块快照 ${sid}`, '/api/sector?id=' + sid, j => need(j.items.length > 0 && j.items.every(i => 'price' in i), '板块为空或缺 price 字段'));
+  }
+  await expectFail('未知板块应报错', '/api/sector?id=nope', 400);
   await hit('闯关地图', '/api/game/map', j => need(j.total === 108 && j.chapters.length >= 10, '关卡总数/章节不对'));
   const lv = await hit('闯关出题', '/api/game/level?no=7', j => need(j.visibleBars?.length > 80 && j.token && j.attemptId && j.question, '缺 K 线/token/attemptId/题目'));
   if (lv) {

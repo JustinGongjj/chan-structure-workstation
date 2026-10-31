@@ -25,6 +25,7 @@
       <a class="nav-item" data-page="radar"><span class="ico">◎</span><span>买卖点雷达</span><em>Signals</em></a>
       <a class="nav-item" data-page="theory"><span class="ico">▤</span><span>缠论理论</span><em>Theory</em></a>
       <a class="nav-item" data-page="divination"><span class="ico">☯</span><span>算卦择时</span><em>I Ching</em></a>
+      <a class="nav-item" data-page="sectors"><span class="ico">▦</span><span>商品板块</span><em>Sectors</em></a>
       <a class="nav-item" data-page="sources"><span class="ico">⇄</span><span>数据源</span><em>Sources</em></a>
     </nav>
     <div class="side-card" id="sideDaily">
@@ -323,6 +324,20 @@
     </section>
 
     <!-- ================= 数据源 ================= -->
+    <!-- ================= 商品板块 ================= -->
+    <section class="page" id="page-sectors">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">商品板块 <span class="tag-live">有色金属 · 黑色 · 能化 · 农产品 · 贵金属</span></h1>
+          <p class="page-desc">按产业链分组浏览期货品种，点任一品种直达结构分析并可在图上画线。</p>
+        </div>
+        <div class="head-actions"><button class="btn sm" data-action="refresh-sectors">刷新行情</button></div>
+      </div>
+      <div class="sector-tabs" id="sectorTabs"></div>
+      <div class="sector-head" id="sectorHead"></div>
+      <div class="sector-grid" id="sectorGrid"></div>
+    </section>
+
     <section class="page" id="page-sources">
       <div class="page-head">
         <div>
@@ -418,6 +433,7 @@
 <script src="/js/pages/radar.js?v=__ASSET_V__"></script>
 <script src="/js/pages/theory.js?v=__ASSET_V__"></script>
 <script src="/js/pages/divination.js?v=__ASSET_V__"></script>
+<script src="/js/pages/sectors.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sources.js?v=__ASSET_V__"></script>
 <script src="/js/app.js?v=__ASSET_V__"></script>
 </body>

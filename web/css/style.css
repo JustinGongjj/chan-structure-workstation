@@ -781,3 +781,30 @@ button{font-family:inherit}
 .picker-chip .mk{font-size:10px;color:var(--faint);margin-left:5px}
 .symbol-current{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
 .symbol-current b{color:var(--text);font-size:14px}
+
+/* ---------- 商品板块 ---------- */
+.sector-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.sector-tab{
+  display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;
+  border:1px solid var(--line2);background:var(--panel2);color:var(--text);
+  font-size:13px;cursor:pointer;transition:.15s;
+}
+.sector-tab:hover{border-color:var(--line2);background:var(--panel3)}
+.sector-tab.active{border-color:var(--gold);color:var(--gold);background:var(--goldSoft)}
+.sector-tab .dot{width:7px;height:7px;border-radius:50%}
+.sector-tab .n{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.sector-tab.active .n{color:var(--gold)}
+.sector-head{margin:0 0 12px;font-size:12.5px;color:var(--muted)}
+.sector-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.sector-card{
+  border:1px solid var(--line2);border-radius:11px;padding:12px 13px;background:var(--panel2);
+  cursor:pointer;transition:.15s;position:relative;overflow:hidden;
+}
+.sector-card:hover{border-color:var(--gold);transform:translateY(-1px)}
+.sector-card .top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.sector-card .nm{font-size:14px;font-weight:600;color:var(--text)}
+.sector-card .cd{font-size:11px;color:var(--faint);font-family:ui-monospace,Menlo,monospace}
+.sector-card .px{font-size:19px;font-weight:600;margin-top:7px;font-variant-numeric:tabular-nums}
+.sector-card .chg{font-size:12.5px;font-weight:500;margin-top:2px;font-variant-numeric:tabular-nums}
+.sector-card .ex{position:absolute;right:10px;bottom:9px;font-size:9.5px;color:var(--faint);letter-spacing:.4px}
+.up-c{color:var(--up)} .down-c{color:var(--down)} .flat-c{color:var(--muted)}

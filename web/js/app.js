@@ -12,7 +12,7 @@
     },
     pages: {},
     go(page, opts) {
-      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'sources'].includes(page)) page = 'overview';
+      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'sectors', 'sources'].includes(page)) page = 'overview';
       this.state.page = page;
       U.$$('.page').forEach((el) => el.classList.toggle('active', el.id === 'page-' + page));
       U.$$('#nav .nav-item').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
@@ -46,6 +46,7 @@
         else if (page === 'radar') await PageRadar.render();
         else if (page === 'theory') PageTheory.render();
         else if (page === 'divination') await PageDivination.render();
+        else if (page === 'sectors') await PageSectors.render();
         else if (page === 'sources') await PageSources.render();
       } catch (e) {
         U.toast('加载失败：' + e.message);
@@ -155,6 +156,7 @@
     if (!btn) return;
     const a = btn.dataset.action;
     if (a === 'refresh-overview' || a === 'radar' || a === 'probe') App.render();
+    if (a === 'refresh-sectors') App.render();
   });
 
   /* ---------- 搜索 ---------- */
