@@ -376,6 +376,9 @@ npm run check:sources        # 30 个渠道实测，按可用性分级
 
 **🔑 需 key / 账号（7 个）**：Yahoo Finance（403）、Stooq（403，且有 JS 反爬挑战，不绕过）、Finnhub、Polygon、Twelve Data、Marketstack、FMP（均 401 需 key）。
 
+**⬜ 评估过但未接入**：BaoStock（TCP 10030 不通）、AKShare（Python 库，上游已直连）、Stooq（JS 人机校验，不绕过）。
+详见 **[docs/REJECTED-SOURCES.md](docs/REJECTED-SOURCES.md)**（含复跑命令与替代方案）。
+
 **⛔ 域名层不可达（6 个）**：
 
 | 源 | 现象 | 说明 |
@@ -463,6 +466,8 @@ space/                Hugging Face Space (Docker SDK)
 | 2026-10-27 | v1.1 | **弹层两层框架冲突**：`.view{z-index:5000}` 把页面压到弹层之上（文字叠在一起）；元素级 `button{width:100%}` 把弹层标题挤成 0 宽。同时修 toast 被 `.ios/.md .toast` 顶出屏幕、`.btn` 被 F7 的 `--f7-button-height` 裁字 | `npm run check:sheet`（48 组断言：背景/层级/零宽/超宽） |
 | 2026-10-27 | v1.1 | **服务端加固**：自选池原子写（tmp+rename）、空表不再回退默认、垃圾代码被拒（先取行情校验）、60 个上限、并发重复二次校验、写接口去掉 `Access-Control-Allow-Origin:*` | `npm run check:api`（含"去重被正确拒绝"与"垃圾代码被拒"） |
 | 2026-10-27 | v1.1 | **交互健壮性**：切 Tab 清掉算卦 12s 跟随定时器、异步渲染加防串页守卫、雷达轮询改原地更新（不再把手指下的行换掉）、返回键先关弹层再回上页、未捕获异常给可见提示、chart 支持 `destroy()` 修监听泄漏、滚轮默认交还页面滚动（Ctrl/⌘+滚轮才缩放） | `npm run check:flow`（17 步） |
+| 2026-11-01 | v2.3 | **三个常见源逐个实测定性**：BaoStock（自建 TCP 10030，本运行时该端口不通＋依赖 pandas）、AKShare（Python 库，上游即东财/新浪/巨潮，本仓已直连故无增量）、Stooq（SHA-256 JS 人机校验，不绕过）；结论写入 `docs/REJECTED-SOURCES.md` 并加进 `check:sources` 长期登记 | `check:sources` |
+| 2026-11-01 | v2.2 | **修两个体验缺陷**：①教学标注步骤条重复堆叠——`insertAdjacentHTML` 未先清旧节点，切一次概念就多一条（截图里叠出 9 条）；②**闯关·108 收进工作站**——之前只做成独立 `/game/` 页面，站内没有任何入口；现在左侧导航「缠关 · 108」直接内嵌，手机端总览也有入口 | `check:flow` 新增「教学步骤条不重复堆叠」「闯关已嵌入工作站」两条断言，34/34 |
 | 2026-11-01 | v2.1 | **免 key 数据源再扩**：接入 **FRED**（美债 10Y/2Y + VIX，已进总览侧栏宏观卡，`/api/macro`）、**StockAnalysis**（美股日线独立兜底）、**Gate.io**（加密备用）；新增可选 key 注册表 `server/lib/keys.js` 与 Finnhub/Twelve Data 适配器（有 key 即启用，无 key 静默跳过）；`/api/keys` 只暴露配置状态；数据源页可视化配置状态；新增 `docs/API-KEYS.md` 申请指南；`.env.local` 已加入 gitignore | `check:sources` |
 | 2026-10-31 | v2.0 | **根治"中枢首尾相接"**：下一轮扫描起点从 `j` 改为 `j+1`——原来离开段被当成下一中枢的区间首笔，这正是用户最早指出的问题；新增三条不变量（进入段紧邻首笔 / 不早于上一离开段 / 首笔晚于上一离开段）+ 回归测试；六市场段数分布回归正常（3–6 段，均值 3.2–4.7） | `check:pivot` 六市场全绿、`npm test` 70、`check:api` 65、`check:matrix` 208 |
 | 2026-10-31 | v1.9 | **二次复审第二轮**：修离开段语义（判据改为"终点出界"，注释与断言统一，官方 12/12 不再自相矛盾）、框中枢判分改为**只罚框窄不罚框宽**（框住整个震荡区 = 100 分）、`overlapPrev` 真正画到图上（"扩展"角标 + 结构状态说明）、`srcaudit` 加响应体校验（IBKR/门户页判为不可用）、腾讯 K 线主域被 WAF 拦后把 proxy 域名提到首位、新鲜度 90→45 天（剔除 WR0/ZC0/RTY/NKD/BZ/SB）、标签避让纵向夹紧 | `npm test` 69、`check:api` 64、`check:flow` 32、`check:matrix` 208；报告归档 `docs/reviews/data-sources.md` |

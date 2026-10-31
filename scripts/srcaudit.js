@@ -45,7 +45,6 @@ const SOURCES = [
   { id: 'tradingview-data', name: 'TradingView 数据域', url: 'https://data.tradingview.com/' },
   { id: 'tradingview-scanner', name: 'TradingView Scanner', url: 'https://scanner.tradingview.com/symbol?symbol=NASDAQ%3AAAPL' },
   { id: 'yahoo', name: 'Yahoo Finance', url: 'https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=5d' },
-  { id: 'stooq', name: 'Stooq', url: 'https://stooq.com/q/d/l/?s=aapl.us&i=d' },
   { id: 'alphavantage', name: 'Alpha Vantage', url: 'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=IBM&apikey=demo', note: 'demo key 可用于报价；K 线需正式 key（免费申请）' },
   { id: 'finnhub', name: 'Finnhub', url: 'https://finnhub.io/api/v1/quote?symbol=AAPL', note: '免费档 60 次/分' },
   { id: 'polygon', name: 'Polygon.io', url: 'https://api.polygon.io/v1/open-close/AAPL/2024-01-01' },
@@ -55,6 +54,10 @@ const SOURCES = [
   { id: 'longport', name: '长桥 LongPort OpenAPI', url: 'https://openapi.longportapp.com', note: '需账户 + IP 白名单' },
   { id: 'ibkr', name: 'IBKR API', url: 'https://api.ibkr.com', note: '需 IB Gateway 常驻 + 盈透账户' },
   { id: 'eastmoney-push2', name: '东财 push2', url: 'https://push2.eastmoney.com/api/qt/stock/get?secid=1.600519&fields=f43,f58' },
+  // —— 用户点名过的 Python 数据源（此处只做可达性登记，便于复查）——
+  { id: 'baostock-web', name: 'BaoStock 官网', url: 'https://baostock.com', markets: ['A'], note: 'Python 库，走自建 TCP 10030；本环境该端口不通 → 无法接入' },
+  { id: 'akshare-doc', name: 'AKShare 文档站', url: 'https://akshare.akfamily.xyz', markets: ['A'], note: 'Python 库，上游即东财/新浪/巨潮 → 本仓已直连上游，无增量' },
+  { id: 'stooq', name: 'Stooq', url: 'https://stooq.com/q/d/l/?s=aapl.us&i=d', note: 'JS/SHA-256 人机校验拦截 → 不绕过的原则' },
   { id: 'eastmoney-kline', name: '东财 K线', url: 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600519&klt=101&lmt=5&fields1=f1&fields2=f51,f52' }
 ];
 
