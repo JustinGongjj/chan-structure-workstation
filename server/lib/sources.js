@@ -518,13 +518,23 @@ function parseTencentDate(s) {
   return Date.parse(s);
 }
 
-/** 腾讯 fqkline：A/港股 日周月（A股前复权）。web 前缀的域名有风控 501，故走 ifzq / proxy 两个入口 */
+/**
+ * 腾讯 fqkline：A/港股 日周月（前复权）
+ *
+ * 2026-10-31 实测事实（三个域名两条路径，行为完全不同）：
+ *   · A 股  ifzq.gtimg.cn/.../fqkline/get          → 501（WAF HTML 页）
+ *   · A 股  proxy.finance.qq.com/.../fqkline/get   → 501（同上）
+ *   · 港股  web.ifzq.gtimg.cn/.../hkfqkline/get    → 200 可用 ← 港股走这条
+ *   · 港股  proxy.finance.qq.com/.../hkfqkline/get → 501
+ * 结论：**不能假设"A 股能用港股就能用"**，必须按市场分别给候选域名。
+ * A 股目前靠 sinaDaily 兜底（source=sina-daily），港股靠上面的 web 域名。
+ */
 async function tencentFq(market, code, period, limit) {
   const tc = tcCode(market, code);
   const n = Math.min(Math.max(limit, 60), 800);
-  // 主域名 ifzq.gtimg.cn 从 2026-10 起被腾讯 WAF 拦成 501，proxy 域名仍可用：
-  // 把可用的放前面，少一次无效请求
-  const hosts = ['https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get', 'https://ifzq.gtimg.cn/appstock/app/fqkline/get'];
+  const hosts = market === 'HK'
+    ? ['https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get', 'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/hkfqkline/get']
+    : ['https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get', 'https://ifzq.gtimg.cn/appstock/app/fqkline/get'];
   const errs = [];
   for (const host of hosts) {
     try {
@@ -722,7 +732,7 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
     if (period === 'day' || period === 'week' || period === 'month') {
       if (m === 'A') {
         try {
-          return await tryEach([() => tencentFq(m, c, period, limit), () => emKline(m, c, period, limit)]);
+          return await tryEach([() => tencentFq(m, c, period, limit), () => sinaDaily(m, c, Math.min(limit * 2, 1023)), () => emKline(m, c, period, limit)]);
         } catch (e) {
           // 兜底：新浪日线（scale=240）+ 周月聚合
           const daily = await tryEach([() => sinaDaily(m, c, Math.min(limit * 2, 1023))]);
@@ -757,6 +767,20 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
   });
 
   const out = res.value;
+  /*
+    统一新鲜度检查（不只期货）：
+    复审核出 A:399137 搜得到、K 线停在 2013-03-01，图上照常画并显示"刚刚更新"——
+    对指数/ETF 这类长期停更或退市的代码，必须明确告诉用户"这是旧数据"。
+    这里不抛错（有些老指数确实需要看历史），而是打 dataAgeDays / staleData 标记，
+    由前端提示。
+  */
+  const bars = out.bars || [];
+  const lastT = bars.length ? bars[bars.length - 1].t : 0;
+  const dataAgeDays = lastT ? Math.round((Date.now() - lastT) / 86400000) : null;
+  // 日线：>10 天没更新基本就是停更/节假日；分钟线：>3 天
+  const staleLimit = period === 'day' || period === 'week' || period === 'month' ? 10 : 3;
+  const staleData = dataAgeDays != null && dataAgeDays > staleLimit;
+
   return {
     market: m,
     code: c,
@@ -765,7 +789,9 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
     source: out.source,
     stale: !!res.stale,
     intradayOnly: !!out.intradayOnly,
-    bars: out.bars,
+    dataAgeDays,
+    staleData,
+    bars,
   };
 }
 

@@ -344,3 +344,17 @@ test('中枢：下一中枢必须从离开段之后开始，不得把离开段�
     }
   }
 });
+
+/* ---------------- 陈旧数据标记 ---------------- */
+test('K 线返回统一带新鲜度标记（不只有期货）', async () => {
+  const S = require('../server/lib/sources');
+  const fresh = await S.klines({ market: 'A', code: '600519', period: 'day', limit: 30 });
+  assert.equal(typeof fresh.dataAgeDays, 'number', '必须返回 dataAgeDays');
+  assert.equal(fresh.staleData, false, '贵州茅台日线不应判为陈旧');
+  // 399137 是早已停更的老指数，必须被标出来
+  const old = await S.klines({ market: 'A', code: '399137', period: 'day', limit: 30 }).catch(() => null);
+  if (old && old.bars.length) {
+    assert.equal(old.staleData, true, '2013 年停更的指数必须标记为陈旧');
+    assert.ok(old.dataAgeDays > 1000, 'dataAgeDays 应反映真实天数');
+  }
+});

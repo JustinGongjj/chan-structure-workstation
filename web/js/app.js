@@ -9,6 +9,7 @@
       live: false, // 实时刷新
       symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' },
       pickedSymbol: false,
+      pickerShown: false,
     },
     pages: {},
     go(page, opts) {

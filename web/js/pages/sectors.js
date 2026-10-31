@@ -38,7 +38,12 @@
       grid.innerHTML = '<div class="empty">暂无板块数据</div>';
       return;
     }
-    if (!curId || !catalog.some((s) => s.id === curId)) curId = catalog[0].id;
+    // 优先回到用户上次看过的板块；没有就用第一个（不硬编码 id，跨部署不会漂）
+    let saved = null;
+    try { saved = localStorage.getItem('chan-sector'); } catch (e) {}
+    if (!curId || !catalog.some((s) => s.id === curId)) {
+      curId = saved && catalog.some((s) => s.id === saved) ? saved : catalog[0].id;
+    }
 
     tabs.innerHTML = catalog
       .map(
@@ -50,6 +55,7 @@
     U.$$('.sector-tab', tabs).forEach((b) =>
       b.addEventListener('click', () => {
         curId = b.dataset.sid;
+        try { localStorage.setItem('chan-sector', curId); } catch (e) {}
         render();
       })
     );
@@ -90,6 +96,11 @@
       }
     } catch (e) {
       if (my !== seq) return;
+      // 不能停在"加载中…"：明确标成"暂无报价"，卡片仍可点进结构分析
+      for (const it of sec.items) {
+        const chg = grid.querySelector(`[data-chg="${it.code}"]`);
+        if (chg) { chg.textContent = '暂无报价'; chg.className = 'chg flat-c'; }
+      }
       head.innerHTML = U.esc(sec.desc) + ' · 实时行情拉取失败（' + U.esc(e.message) + '），可点卡片直接看图';
     }
   }

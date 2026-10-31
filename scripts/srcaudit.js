@@ -14,9 +14,14 @@
 const SOURCES = [
   // —— 已接入 ——
   { id: 'tencent-quote', name: '腾讯行情', url: 'https://qt.gtimg.cn/q=sh000001', used: true, markets: ['A', 'HK', 'US'] },
-  { id: 'tencent-kline', name: '腾讯K线(proxy)', url: 'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', used: true, markets: ['A', 'HK'] },
+  // 腾讯 K 线 2026-10 起主域与 proxy 域都被 WAF 拦成 501 页面；
+  // 保留为"探测项"（不标 used），应用已自动降级到新浪日线，不影响业务
+  // 实测：A 股的 ifzq / proxy 两个域名都是 501；港股要走 web.ifzq 的 hkfqkline 路径
+  { id: 'tencent-kline-a', name: '腾讯K线(A股,代理域)', url: 'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', markets: ['A'], note: '501 → A 股已降级到 sina-daily' },
+  { id: 'tencent-kline-hk', name: '腾讯K线(港股,web域)', url: 'https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get?param=hk00700,day,,,5,qfq', used: true, markets: ['HK'], note: '港股专用路径，实测可用' },
   { id: 'tencent-kline-waf', name: '腾讯K线(主域,已被WAF拦)', url: 'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', markets: ['A', 'HK'], note: '501 页面 → 应用已自动降级到 proxy 域名' },
   { id: 'sina-quote', name: '新浪行情', url: 'https://hq.sinajs.cn/list=sh600519', used: true, markets: ['A', 'USF', 'CNF'] },
+  { id: 'sina-daily', name: '新浪A股日线(primary)', url: 'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh600519&scale=240&ma=no&datalen=5', used: true, markets: ['A'] },
   { id: 'sina-minute', name: '新浪A股分钟', url: 'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh600519&scale=5&datalen=5', used: true, markets: ['A'] },
   { id: 'sina-fut-daily', name: '新浪期货日线', url: 'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/InnerFuturesNewService.getDailyKLine?symbol=RB0', used: true, markets: ['CNF'] },
   { id: 'sina-fut-min', name: '新浪期货分钟', url: 'https://stock2.finance.sina.com.cn/futures/api/openapi.php/InnerFuturesNewService.getFewMinLine?symbol=RB0&type=5', used: false, markets: ['CNF'] },

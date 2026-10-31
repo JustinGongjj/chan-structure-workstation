@@ -286,6 +286,13 @@
       renderNarrative(res);
       applyHighlight(res, true);
       U.stamp('liveStampStruct');
+      // 陈旧数据明确提示，避免把 2013 年的图当成今天的行情
+      const stampEl = U.$('#liveStampStruct');
+      if (stampEl) {
+        if (res.staleData) {
+          stampEl.innerHTML = `<span style="color:var(--warn,#e0a33e)">⚠ 数据陈旧 ${res.dataAgeDays} 天未更新（最后 ${new Date(res.bars[res.bars.length - 1].t).toISOString().slice(0, 10)}）</span>`;
+        }
+      }
       if (++liveN % 3 === 0) loadSuite(market, code);
     } catch (e) {
       /* 静默 */
@@ -646,9 +653,13 @@
 
   function renderPage() {
     bindPickerOnce();
-    // 永远出图。首次访问（没有显式选择过标的）时把选择器展开做引导，但不阻塞图表。
-    if (App.state.pickedSymbol) hidePicker();
-    else showPicker();
+    /*
+      永远出图；选择器只在**本次会话第一次**进结构页时展开做引导。
+      复审核出：原来每次 render（切市场 tab / 点导航 / 实时 tick）都会 showPicker()，
+      用户手动收起后又被重新拉开。用 pickerShown 记住"已经引导过一次"。
+    */
+    if (App.state.pickedSymbol || App.state.pickerShown) hidePicker();
+    else { showPicker(); App.state.pickerShown = true; }
     return refresh();
   }
 

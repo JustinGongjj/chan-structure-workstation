@@ -17,8 +17,15 @@ const crypto = require('crypto');
 const S = require('./sources');
 const C = require('./chan');
 
-const SECRET = process.env.GAME_SECRET || crypto.randomBytes(16).toString('hex');
-if (!process.env.GAME_SECRET) console.warn('[game] GAME_SECRET 未设置，已随机生成（重启后旧关卡会失效，属预期）');
+let SECRET = process.env.GAME_SECRET || null;
+function secret() {
+  if (!SECRET) {
+    // 惰性生成：避免 require 阶段就产生副作用（单测/脚本 require 时会刷警告）
+    SECRET = crypto.randomBytes(16).toString('hex');
+    console.warn('[game] GAME_SECRET 未设置，已随机生成（重启后旧关卡会失效，属预期）');
+  }
+  return SECRET;
+}
 const HIDDEN = 12; // 每关隐藏 12 根 K 线等着玩家判断
 
 /* 题库素材：四市场轮换，保证"最新行情"覆盖各市场 */
@@ -152,7 +159,7 @@ function computeAnswer(plan, bars, offset) {
 }
 
 function tokenFor(no, market, code, cutoff) {
-  return crypto.createHmac('sha256', SECRET).update(`${no}|${market}|${code}|${cutoff}`).digest('hex').slice(0, 24);
+  return crypto.createHmac('sha256', secret()).update(`${no}|${market}|${code}|${cutoff}`).digest('hex').slice(0, 24);
 }
 
 /**
@@ -301,29 +308,32 @@ async function gradeLevel(K, { no, token, attemptId, answer }) {
         const lo = Math.min(box.y1, box.y2), hi = Math.max(box.y1, box.y2);
         const tCap = Math.max(1, target.i1 - target.i0);
         const pCap = Math.max(1e-9, target.zg - target.zd);
-        const TOL_BAR = 2;
-        const TOL_PX = pCap * 0.25;
-        // 时间：重叠长度 / 较大者（不惩罚"框得稍宽"）
-        const tInter = Math.max(0, Math.min(i1, target.i1) - Math.max(i0, target.i0));
-        const tScore = Math.min(1, tInter / Math.max(1, tCap - TOL_BAR * 2));
-        // 价格：重叠 / 较大者
-        const pInter = Math.max(0, Math.min(hi, target.zg) - Math.max(lo, target.zd));
-        const pScore = Math.min(1, pInter / Math.max(1e-9, pCap - TOL_PX * 2));
+
         /*
-          只惩罚「框窄」，不惩罚「框宽」：
-          缠论里中枢区间是前三笔的重叠区，把整个震荡区（含延伸段）一起框住
-          本身就是正确读法，不该扣分；框窄了才会漏掉重叠区。
+          覆盖度模型（复审核出过"框一半得 95 分"的非单调问题，这里按定义重写）：
+            coverage = 标准区间被你的框盖住的比例（时间、价格各算再取平均）→ 决定得分
+            over     = 你的框超出标准区间的相对量 → 只做扣分项（不给基础分）
+            score    = 100 × coverage × (1 - 0.3×min(over,1))
+          性质（单调）：
+            · 精确框 → coverage=1, over=0 → 100
+            · 框得更大但完整覆盖 → coverage=1, over 小 → 90 左右
+            · 价格只框住下半 50% → coverage≈0.5 → 50 左右
+            · 时间只框一半 → ≈50
+            · 乱框（不相交）→ coverage=0 → 0
         */
-        const tCover = Math.min(1, (i1 - i0) / Math.max(1, tCap)); // 标准时间跨度被覆盖的比例
-        const pCover = Math.min(1, (hi - lo) / Math.max(1e-9, pCap));
-        const underPenalty = (1 - tCover) * 0.5 + (1 - pCover) * 0.5; // 框窄才扣
-        const raw = 0.5 * tScore + 0.5 * pScore - underPenalty * 0.0;
-        // 判定：标准区间被完全框住（时间与价格都覆盖）即满分
-        const fullyCovered = tCover >= 1 && pCover >= 1 && tScore >= 0.75 && pScore >= 0.75;
-        score = fullyCovered ? 100 : Math.round(Math.max(0, raw - (1 - tCover) * 0.1 - (1 - pCover) * 0.1) * 100);
+        const tInter = Math.max(0, Math.min(i1, target.i1) - Math.max(i0, target.i0));
+        const pInter = Math.max(0, Math.min(hi, target.zg) - Math.max(lo, target.zd));
+        const tCover = tInter / tCap;         // 时间覆盖率 0..1
+        const pCover = pInter / pCap;         // 价格覆盖率 0..1
+        const coverage = Math.max(0, Math.min(1, (tCover + pCover) / 2));
+        // 超出量：框比标准大多少（相对于标准自身尺寸）
+        const tOver = Math.max(0, (i1 - i0) - tCap) / tCap;
+        const pOver = Math.max(0, (hi - lo) - pCap) / pCap;
+        const over = Math.min(1, (tOver + pOver) / 2);
+        score = Math.round(100 * coverage * (1 - 0.3 * over));
         verdict = score >= 85 ? '框得很准' : score >= 60 ? '大致框住了' : score > 0 ? '偏离较多' : '没框到中枢';
         explain.push(`标准中枢：第 ${target.i0}~${target.i1} 根，价格 ${target.zd.toFixed(2)}~${target.zg.toFixed(2)}（${target.count} 笔）。`);
-        explain.push(`你的框：第 ${i0}~${i1} 根，${lo.toFixed(2)}~${hi.toFixed(2)}。时间吻合 ${(tScore * 100).toFixed(0)}%、价格吻合 ${(pScore * 100).toFixed(0)}%${tCover >= 1 && pCover >= 1 ? '（完整覆盖标准中枢）' : '（没有完全框住，把范围放大一点）'}。`);
+        explain.push(`你的框：第 ${i0}~${i1} 根，${lo.toFixed(2)}~${hi.toFixed(2)}。时间覆盖 ${(tCover * 100).toFixed(0)}%、价格覆盖 ${(pCover * 100).toFixed(0)}%${coverage >= 0.999 ? '（完整框住标准中枢）' : '（没框全，把范围放大一点）'}${over > 0.05 ? `，框子偏大 ${(over * 100).toFixed(0)}% 略有扣分` : ''}。`);
         explain.push('对照要点：中枢区间是前三笔的重叠区，后续笔只要还在区间附近震荡就算中枢延伸——框住整个震荡区也是对的。');
       }
     }
