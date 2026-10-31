@@ -329,76 +329,39 @@ function buildPivots(bis, bars) {
 }
 
 /*
-  中枢扩展 / 合并（缠论里最容易被画错的一步）
+  中枢扩展 / 合并（缠论）
   ------------------------------------------------------------------
-  两个相邻中枢如果【区间有重叠】且【中间只隔一段（离开段即下一中枢的进入段）】，
-  那就不是一个新中枢，而是同一个中枢在扩展——合并成一个，区间取两者的重叠区
-  （即 max(zd), min(zg)）；只有重叠消失（区间完全分离）才算真正离开、进入下一个中枢。
-  这样画出来才会是「进入段 → 中枢区间 → 离开段」，而不是一截一截首尾相接。
+  **不合并**。两个中枢就是两个中枢——哪怕区间有重叠。
+  理由：
+    ① 每个中枢的 ZG/ZD 是它自己前三段的重叠区，合并后无论取交集还是并集，
+       都会让**其中一个中枢的边界失真**（取交集变窄→把震荡区划到中枢外；
+       取并集变宽→把不属于它的走势吞进来）；
+    ② 缠论里"中枢扩展/升级"是**级别**概念，不是把两个中枢压成一个；
+    ③ 图上并排画两个中枢 + 各自的进/离段，才是真实的走势结构。
+
+  这里只做一件轻量的事：给相邻且区间重叠的中枢打上 `overlapPrev: true`，
+  让前端可以提示"这两个中枢有重叠，属于中枢扩展形态"，但**不改几何**。
 */
 function mergeAdjacent(pivots, bis) {
-  if (pivots.length < 2) return pivots;
+  if (pivots.length < 2) return pivots.map((p, idx) => annotate(p, idx, bis, null));
   const out = [];
-  let cur = { ...pivots[0] };
-  for (let k = 1; k < pivots.length; k++) {
-    const nxt = pivots[k];
-    const overlapLo = Math.max(cur.zd, nxt.zd);
-    const overlapHi = Math.min(cur.zg, nxt.zg);
-    const gapSegments = nxt.startBi - cur.endBi; // 1 表示紧挨着（离开段=下一进段）
-    const hasOverlap = overlapHi > overlapLo;
-    // 重叠足够大（超过较窄中枢的一半）且紧接着 → 视为同一中枢的扩展
-    const minHeight = Math.min(cur.zg - cur.zd, nxt.zg - nxt.zd) || 1;
-    const overlapRatio = hasOverlap ? (overlapHi - overlapLo) / minHeight : 0;
-    // 只要区间有实质重叠（>30%）就视为同一中枢的扩展：
-    // 缠论里"两个中枢重叠"本身就是中枢扩展，不是两个中枢。
-    if (hasOverlap && overlapRatio >= 0.3 && gapSegments <= 3) {
-      // 合并：区间取两中枢的重叠区（这是缠论里中枢扩展后的"新中枢"）
-      const zg2 = overlapHi;
-      const zd2 = overlapLo;
-      // 合并后必须按新区间重筛内段：终点不在区内的一律视作离开
-      let end2 = cur.startBi;
-      let gg2 = -Infinity;
-      let dd2 = Infinity;
-      for (let b = cur.startBi; b <= nxt.endBi; b++) {
-        const bi = bis[b];
-        const isFirst3 = b < cur.startBi + 3;
-        const inside = isFirst3 ? bi.h > zd2 && bi.l < zg2 : bi.p1 <= zg2 + 1e-9 && bi.p1 >= zd2 - 1e-9;
-        if (!inside && !isFirst3) break;
-        if (isFirst3 && !inside) break;
-        end2 = b;
-        gg2 = Math.max(gg2, bi.h);
-        dd2 = Math.min(dd2, bi.l);
-      }
-      const leave2 = end2 + 1 < bis.length ? end2 + 1 : null;
-      cur = {
-        ...cur,
-        endBi: end2,
-        zg: zg2,
-        zd: zd2,
-        gg: Number.isFinite(gg2) ? gg2 : Math.max(cur.gg, nxt.gg),
-        dd: Number.isFinite(dd2) ? dd2 : Math.min(cur.dd, nxt.dd),
-        height: zg2 - zd2,
-        count: end2 - cur.startBi + 1,
-        i1: bis[end2].i1,
-        t1: bis[end2].i1 != null ? undefined : cur.t1,
-        leaveBi: leave2,
-        upgraded: end2 - cur.startBi + 1 >= 9,
-        merged: (cur.merged || 0) + 1,
-        status: leave2 != null ? 'done' : 'ongoing',
-      };
-    } else {
-      out.push(cur);
-      cur = { ...nxt };
-    }
+  for (let k = 0; k < pivots.length; k++) {
+    const prev = k > 0 ? pivots[k - 1] : null;
+    out.push(annotate(pivots[k], k, bis, prev));
   }
-  out.push(cur);
-  // 重新编号 + 补 enter/leave 细节
-  return out.map((p, idx) => ({
+  return out;
+}
+
+/** 补 enter/leave 细节 + 相邻重叠提示（不改几何） */
+function annotate(p, idx, bis, prev) {
+  const overlapPrev = !!prev && Math.min(p.zg, prev.zg) > Math.max(p.zd, prev.zd);
+  return {
     ...p,
     idx,
     enter: p.enterBi != null ? { bi: p.enterBi, i0: bis[p.enterBi].i0, i1: bis[p.enterBi].i1, p0: bis[p.enterBi].p0, p1: bis[p.enterBi].p1, dir: bis[p.enterBi].dir } : null,
     leave: p.leaveBi != null ? { bi: p.leaveBi, i0: bis[p.leaveBi].i0, i1: bis[p.leaveBi].i1, p0: bis[p.leaveBi].p0, p1: bis[p.leaveBi].p1, dir: bis[p.leaveBi].dir } : null,
-  }));
+    overlapPrev,
+  };
 }
 
 function classifyTrend(pivots) {

@@ -30,10 +30,10 @@ const CNF_LIST = [
    PL/PA/RB/ZC/ZS/ZW/ZM/ZL/6E/6J/6C/6S/HE 在該接口无数据，故不列入，
    否则用户选中后只会看到空图。 */
 const USF_LIST = [
-  'ES', 'NQ', 'YM', 'RTY', 'NKD',
+  'ES', 'NQ', 'YM',
   'GC', 'SI', 'HG',
-  'CL', 'NG', 'HO', 'QM', 'BZ',
-  'KC', 'CC', 'SB', 'CT', 'OJ',
+  'CL', 'NG', 'HO', 'QM',
+  'KC', 'CC', 'CT', 'OJ',
   'LE', 'GF'
 ];
 
@@ -429,10 +429,18 @@ async function quotes(items) {
               const last = bars[bars.length - 1];
               const prev = bars.length > 1 ? bars[bars.length - 2] : last;
               const pct = prev.c ? ((last.c - prev.c) / prev.c) * 100 : 0;
-              const had = out[i.market + ':' + i.code];
+              const had = out[i.market + ':' + i.code] || {};
+              // 保留快照里的 high/low/volume/open 等字段，只把价格与涨跌换成日线口径，
+              // 否则 CNF 与 USF 的报价结构不一致，前端高/低列会空
               out[i.market + ':' + i.code] = {
-                market: 'CNF', code: i.code, name: (had && had.name) || i.code,
-                price: last.c, prevClose: prev.c, pct: +pct.toFixed(2), source: 'sina-futures+day',
+                ...had,
+                market: 'CNF', code: i.code, name: had.name || i.code,
+                price: last.c, prevClose: prev.c, pct: +pct.toFixed(2),
+                change: +(last.c - prev.c).toFixed(4),
+                high: last.h, low: last.l, volume: last.v,
+                open: last.o, close: last.c,
+                timeText: new Date(last.t).toISOString().slice(0, 10),
+                source: 'sina-futures+day',
               };
             }
           } catch (e) { /* 保底用快照 */ }
@@ -764,11 +772,11 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
 
 const FUTURES_NAMES = {
   // 外盘
-  ES: '标普500期货', NQ: '纳指100期货', YM: '道指期货', RTY: '罗素2000期货', NKD: '日经225期货',
+  ES: '标普500期货', NQ: '纳指100期货', YM: '道指期货', NKD: '日经225期货',
   GC: '黄金期货', SI: '白银期货', HG: '铜期货', PA: '钯金期货',
   CL: '原油期货', NG: '天然气期货', HO: '取暖油期货', QM: '迷你原油期货', BZ: '布伦特原油期货',
   ZL: '豆油期货',
-  CC: '可可期货', KC: '咖啡期货', SB: '原糖期货', CT: '棉花期货', OJ: '橙汁期货',
+  CC: '可可期货', KC: '咖啡期货', CT: '棉花期货', OJ: '橙汁期货',
 '6A': '澳元期货', '6S': '瑞郎期货',
 LE: '活牛期货', GF: '育肥牛期货',
   // 国内 · 上期所
@@ -897,7 +905,7 @@ const COMMODITY_ALIAS = {
   棕榈: ['P0'],
   棕榈油: ['P0'],
   玉米: ['C0'],
-  白糖: ['SR0', 'SB'],
+  白糖: ['SR0'],
   棉花: ['CF0', 'CT'],
   苹果: ['AP0'],
   红枣: ['CJ0'],

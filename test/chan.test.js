@@ -172,29 +172,44 @@ test('中枢：9 段及以上标记升级', () => {
   }
 });
 
-test('中枢：相邻中枢若区间高度重叠且紧邻，必须合并（否则图上一截一截首尾相接）', () => {
+test('中枢：相邻中枢必须保持独立（重叠只标注、绝不合并几何）', () => {
   const c = require('../server/lib/chan');
   const bars = [];
   for (let i = 0; i < 600; i++) {
-    // 长期在 100 附近来回，制造连续重叠的中枢
     const c0 = 100 + Math.sin(i / 6) * 1.5 + Math.sin(i / 23) * 0.8;
     bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 0.8, l: c0 - 0.8, c: c0 + 0.1, v: 500 });
   }
   const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    // 合并会把两个中枢的边界压成交集/并集，导致其中一个中枢失真
+    assert.ok(!p.merged, '中枢不应被合并（merged 字段必须为空）');
+    assert.ok(p.count === p.endBi - p.startBi + 1, 'count 必须等于段数');
+  }
+  // 相邻重叠必须如实标注
   for (let i = 1; i < a.pivots.length; i++) {
     const p = a.pivots[i - 1];
     const q = a.pivots[i];
-    const lo = Math.max(p.zd, q.zd);
-    const hi = Math.min(p.zg, q.zg);
-    const overlap = hi > lo ? (hi - lo) / Math.min(p.zg - p.zd, q.zg - q.zd) : 0;
-    const gap = q.startBi - p.endBi;
-    if (overlap >= 0.5 && gap <= 2) {
-      assert.fail(`中枢 ${i - 1} 与 ${i} 重叠 ${(overlap * 100).toFixed(0)}% 且只隔 ${gap} 段，应合并`);
-    }
+    const overlap = Math.min(p.zg, q.zg) > Math.max(p.zd, q.zd);
+    assert.equal(!!q.overlapPrev, overlap, `#${i} 的重叠标记与几何不符`);
   }
 });
 
-test('中枢：合并后仍保留进入段/离开段与段计数', () => {
+test('中枢：t1 必须对应末笔终点的 K 线时间，不能是 undefined', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 500; i++) {
+    const c0 = 200 + Math.sin(i / 5) * 2 + Math.sin(i / 31) * 1.1;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1, l: c0 - 1, c: c0, v: 900 });
+  }
+  const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    const lastBi = a.bis[p.endBi];
+    if (!lastBi) continue;
+    assert.equal(p.t1, a.bars[lastBi.i1].t, 't1 与末笔终点 K 线不一致');
+  }
+});
+
+test('中枢：保留进入段/离开段与段计数', () => {
   const c = require('../server/lib/chan');
   const bars = [];
   for (let i = 0; i < 500; i++) {
@@ -268,4 +283,24 @@ test('板块目录：贵金属同时含国内与外盘，金属板块含铜', ()
   assert.ok(codes.includes('AU0') && codes.includes('GC'), '贵金属应含沪金与纽约金');
   const base = S.catalog().find((s) => s.id === 'base');
   assert.ok(base.items.some((i) => i.code === 'CU0'), '有色金属应含沪铜');
+});
+
+/* ---------------- 目录与实盘数据一致性 ---------------- */
+test('板块目录里的每个品种都必须真的能取到日线（防止死引用）', async () => {
+  const S = require('../server/lib/sources');
+  const CAT = require('../server/lib/sectors');
+  const dead = [];
+  // 只抽外盘（国内 68 个已单独全量验证过，这里避免测试太慢）
+  const usf = CAT.catalog()
+    .flatMap((s) => s.items)
+    .filter((i) => i.market === 'USF');
+  for (const it of usf) {
+    try {
+      const k = await S.klines({ market: 'USF', code: it.code, period: 'day', limit: 30 });
+      if (!k.bars || !k.bars.length) dead.push(it.code);
+    } catch (e) {
+      dead.push(it.code + '(' + e.message.slice(0, 20) + ')');
+    }
+  }
+  assert.deepEqual(dead, [], '这些外盘品种在目录里但取不到数据：' + dead.join('、'));
 });

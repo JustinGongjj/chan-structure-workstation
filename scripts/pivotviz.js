@@ -75,12 +75,19 @@ function asciiViz(a) {
       ok(lb.p1 > p.zg || lb.p1 < p.zd, `#${i} 离开段 ${p.leaveBi} 终点未出界`);
     }
     if (p.enterBi != null) ok(a.bis[p.enterBi].dir !== a.bis[p.startBi].dir, `#${i} 进入段方向未反向`);
+    // t1 必须与末笔 i1 对应的 K 线时间一致（合并逻辑曾把 t1 写成 undefined）
+    const lastBi = a.bis[p.endBi];
+    if (lastBi) ok(p.t1 === a.bars[lastBi.i1].t, `#${i} t1 与末笔终点 K 线不一致`);
+    // count 必须等于段数
+    ok(p.count === p.endBi - p.startBi + 1, `#${i} count=${p.count} 与段数不符`);
+    // 中枢不得被合并（区间重叠只标注、不改几何）
+    ok(!p.merged, `#${i} 仍被合并（应保持独立中枢）`);
     if (i > 0) {
       const q = a.pivots[i - 1];
-      ok(p.startBi > q.endBi, `#${i} 与 #${i - 1} 段区间重叠`);
-      const ov = Math.min(p.zg, q.zg) - Math.max(p.zd, q.zd);
-      const ratio = ov > 0 ? ov / Math.min(p.zg - p.zd, q.zg - q.zd) : 0;
-      ok(!(ratio >= 0.5 && p.startBi - q.endBi <= 2), `#${i} 与 #${i - 1} 重叠 ${(ratio * 100).toFixed(0)}% 且紧邻，应合并`);
+      ok(p.startBi > q.endBi, `#${i} 与 #${i - 1} 段序倒置`);
+      const disjoint = Math.min(p.zg, q.zg) <= Math.max(p.zd, q.zd);
+      // 区间有重叠时，必须正确打上提示标记
+      ok(disjoint ? !p.overlapPrev : !!p.overlapPrev, `#${i} overlapPrev 标记与实际重叠不符`);
     }
   });
 

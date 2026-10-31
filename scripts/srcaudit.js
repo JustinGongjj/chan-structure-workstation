@@ -64,8 +64,13 @@ async function probe(src) {
     clearTimeout(to);
     status = r.status;
     const text = (await r.text()).slice(0, 1200);
+    // 已接入的源必须返回"看起来是行情数据"的内容，避免 200 但内容是错误 JSON / 首页 HTML
+    if (src.used && /^\s*\{/.test(text) && /"error"|"Error Message"|"Information"/i.test(text)) {
+      guarded = false;
+      status = 599; // 伪装成失败：200 但内容是错误
+    }
     // 反爬特征：JS 挑战 / 验证页
-    if (/requires JavaScript to verify|__verify|Are you a robot|cf-challenge/i.test(text)) guarded = true;
+    if (/requires JavaScript to verify|__verify|Are you a robot|cf-challenge|_waf_|__jsl_|challenge-platform/i.test(text)) guarded = true;
   } catch (e) {
     err = e.name === 'AbortError' ? 'timeout' : (e.cause?.code || e.name || 'error');
   }
@@ -105,5 +110,5 @@ async function probe(src) {
   const used = results.filter((r) => r.used);
   const usedDown = used.filter((r) => r.level !== 'available');
   console.log(`已接入 ${used.length} 个源，其中异常 ${usedDown.length} 个${usedDown.length ? '：' + usedDown.map((r) => r.name).join('、') : ''}`);
-  process.exit(usedDown.length ? 1 : 0);
+  process.exitCode = usedDown.length ? 1 : 0;
 })();

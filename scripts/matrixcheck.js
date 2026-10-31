@@ -13,7 +13,7 @@ const CASES = [
   { m: 'US', codes: ['NVDA', 'AAPL'] },
   { m: 'CR', codes: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT'] },
   { m: 'CNF', codes: ['RB0', 'IF0', 'AU0', 'CU0', 'M0', 'I0', 'T0', 'AP0', 'SC0', 'JD0'] },
-  { m: 'USF', codes: ['ES', 'NQ', 'GC', 'CL', 'SI', 'HG', 'LE', 'YM'] }
+  { m: 'USF', codes: ['ES', 'NQ', 'GC', 'CL', 'SI', 'HG', 'LE', 'YM', 'KC', 'CC', 'CT', 'OJ', 'GF', 'HO', 'QM'] }
 ];
 
 const SEARCH_CASES = ['黄金', '白银', '铜', '原油', '螺纹钢', '铁矿石', '沪深300', '国债', '苹果', '以太坊', '狗狗币', '标普', '纳指'];
@@ -52,7 +52,14 @@ async function j(url) {
       const tag = `${c.m}:${code}`;
       try {
         const k = await j(`${BASE}/api/kline?market=${c.m}&code=${code}&period=day&limit=300`);
-        ok((k.bars || []).length >= 200, `${tag} K线`, `只有 ${(k.bars || []).length} 根`);
+        const bars = k.bars || [];
+        ok(bars.length >= 200, `${tag} K线`, `只有 ${bars.length} 根`);
+        // 时间必须严格递增，且不能是陈旧数据（最后一根 > 45 天前说明是残档）
+        let mono = true;
+        for (let i = 1; i < bars.length; i++) if (bars[i].t <= bars[i - 1].t) { mono = false; break; }
+        ok(mono, `${tag} K线时间递增`, '存在重复或倒序时间戳');
+        const ageDays = bars.length ? (Date.now() - bars[bars.length - 1].t) / 86400000 : 999;
+        ok(ageDays < 45, `${tag} K线新鲜度`, `最后一根在 ${ageDays.toFixed(0)} 天前`);
         const ch = await j(`${BASE}/api/chan?market=${c.m}&code=${code}&period=day&limit=400`);
         const pv = (ch.pivots || []).length;
         const bis = (ch.bis || []).length;

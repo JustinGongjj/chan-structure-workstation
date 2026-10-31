@@ -71,7 +71,7 @@ const WATCHLIST = {
     { code: 'NQ', name: '纳指100期货' },
     { code: 'GC', name: '黄金期货' },
     { code: 'CL', name: '原油期货' },
-    { code: 'ZN', name: '美债10Y期货' },
+    { code: 'YM', name: '道指期货' },
   ],
 };
 
@@ -83,9 +83,11 @@ function defaultWatchlist() {
   return JSON.parse(JSON.stringify(WATCHLIST));
 }
 
+const ALL_MK = ['A', 'HK', 'US', 'CR', 'CNF', 'USF'];
+
 function normalizeWatchlist(raw) {
-  const out = { A: [], HK: [], US: [], CR: [] };
-  for (const m of ['A', 'HK', 'US', 'CR']) {
+  const out = { A: [], HK: [], US: [], CR: [], CNF: [], USF: [] };
+  for (const m of ALL_MK) {
     const list = Array.isArray(raw && raw[m]) ? raw[m] : [];
     const seen = new Set();
     for (const it of list) {
@@ -112,7 +114,23 @@ function loadWatchlist() {
       console.error('[watchlist] 文件损坏，已备份：', e.message);
     }
   }
-  WL = raw ? normalizeWatchlist(raw) : defaultWatchlist();
+  if (!raw) { WL = defaultWatchlist(); return WL; }
+  // 旧版本存档只有 4 个市场：缺失的市场用默认值补齐（而不是变成空列表），
+  // 否则升级后用户看到"期货自选全没了"。用户主动清空的列表不会被覆盖，
+  // 因为空数组是存在的键，只有"键不存在"才补默认。
+  const out = normalizeWatchlist(raw);
+  const defs = defaultWatchlist();
+  let migrated = false;
+  for (const m of ALL_MK) {
+    if (!Object.prototype.hasOwnProperty.call(raw, m)) {
+      out[m] = defs[m] || [];
+      if ((defs[m] || []).length) migrated = true;
+    }
+  }
+  WL = out;
+  if (migrated) {
+    try { saveWatchlist(); console.log('[watchlist] 已补齐期货市场默认自选'); } catch (e) {}
+  }
   return WL;
 }
 
@@ -170,6 +188,8 @@ const SUITE_PERIODS = {
   HK: ['day', 'week'],
   US: ['day', 'week'],
   CR: ['day', '4h', '60m', '15m', '5m', '1m'],
+  CNF: ['day', '60m', '30m', '15m', '5m'],
+  USF: ['day', '60m', '30m', '15m', '5m'],
 };
 
 const SIGNAL_WEIGHT = { '1B': 100, '2B': 92, '3B': 86, '1S': 100, '2S': 92, '3S': 86 };
@@ -211,7 +231,7 @@ async function analyzeOne({ market, code, period, limit, withQuote = true }) {
 }
 
 async function radarScan({ scope = 'all', period = 'day', limit = 480, nocache = false }) {
-  const markets = scope === 'all' ? ['A', 'HK', 'US', 'CR'] : [scope.toUpperCase()];
+  const markets = scope === 'all' ? ALL_MK.slice() : [scope.toUpperCase()];
   const wl = loadWatchlist();
   const items = [];
   for (const m of markets) for (const it of wl[m] || []) items.push({ market: m, ...it });

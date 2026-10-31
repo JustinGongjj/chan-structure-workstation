@@ -291,16 +291,34 @@ async function gradeLevel(K, { no, token, attemptId, answer }) {
         score = 0;
         verdict = '没有框';
       } else {
+        /*
+          分维度判分（时间 × 价格各占一半），并给合理容差：
+          - 时间轴：允许 ±2 根，框大一点（把震荡区一起圈进去）不该重罚
+          - 价格轴：允许 ±(中枢高度 × 0.25)
+          只用 IoU 会把"按缠论把整个震荡区框住"判成低分——那是标准答案太窄，不是玩家错。
+        */
         const i0 = Math.min(box.x1, box.x2), i1 = Math.max(box.x1, box.x2);
         const lo = Math.min(box.y1, box.y2), hi = Math.max(box.y1, box.y2);
-        const interI = Math.max(0, Math.min(i1, target.i1) - Math.max(i0, target.i0));
-        const interP = Math.max(0, Math.min(hi, target.zg) - Math.max(lo, target.zd));
-        const inter = interI * interP;
-        const union = (i1 - i0) * (hi - lo) + (target.i1 - target.i0) * (target.zg - target.zd) - inter;
-        const iou = union > 0 ? inter / union : 0;
-        score = Math.round(Math.pow(iou, 0.55) * 100);
-        verdict = iou > 0.6 ? '框得很准' : iou > 0.3 ? '大致框住了' : '没框到中枢';
-        explain.push(`标准中枢：第 ${target.i0}~${target.i1} 根，价格 ${target.zd.toFixed(2)}~${target.zg.toFixed(2)}（${target.count} 笔）。你的框重叠度 IoU ${(iou * 100).toFixed(0)}%。`);
+        const tCap = Math.max(1, target.i1 - target.i0);
+        const pCap = Math.max(1e-9, target.zg - target.zd);
+        const TOL_BAR = 2;
+        const TOL_PX = pCap * 0.25;
+        // 时间：重叠长度 / 较大者（不惩罚"框得稍宽"）
+        const tInter = Math.max(0, Math.min(i1, target.i1) - Math.max(i0, target.i0));
+        const tScore = Math.min(1, tInter / Math.max(1, tCap - TOL_BAR * 2));
+        // 价格：重叠 / 较大者
+        const pInter = Math.max(0, Math.min(hi, target.zg) - Math.max(lo, target.zd));
+        const pScore = Math.min(1, pInter / Math.max(1e-9, pCap - TOL_PX * 2));
+        // 越界惩罚：框比标准范围大出很多时才扣
+        const tOver = Math.max(0, (i1 - i0) - tCap) / tCap;
+        const pOver = Math.max(0, (hi - lo) - pCap) / pCap;
+        const overPenalty = Math.min(0.35, (tOver + pOver) * 0.12);
+        const raw = 0.5 * tScore + 0.5 * pScore;
+        score = Math.round(Math.max(0, raw - overPenalty) * 100);
+        verdict = score >= 85 ? '框得很准' : score >= 60 ? '大致框住了' : score > 0 ? '偏离较多' : '没框到中枢';
+        explain.push(`标准中枢：第 ${target.i0}~${target.i1} 根，价格 ${target.zd.toFixed(2)}~${target.zg.toFixed(2)}（${target.count} 笔）。`);
+        explain.push(`你的框：第 ${i0}~${i1} 根，${lo.toFixed(2)}~${hi.toFixed(2)}。时间吻合 ${(tScore * 100).toFixed(0)}%、价格吻合 ${(pScore * 100).toFixed(0)}%${overPenalty > 0 ? `，框过大扣 ${(overPenalty * 100).toFixed(0)} 分` : ''}。`);
+        explain.push('对照要点：中枢区间是前三笔的重叠区，后续笔只要还在区间附近震荡就算中枢延伸——框住整个震荡区也是对的。');
       }
     }
   } else {

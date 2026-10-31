@@ -377,6 +377,8 @@
       b.addEventListener('click', () => {
         App.state.market = b.dataset.m;
         App.state.symbol[b.dataset.m] = b.dataset.c;
+        App.state.pickedSymbol = true; // 选定即视为"显式标的"，刷新后不再掉回选择器
+        App.syncURL();
         hidePicker();
         refresh();
       })
@@ -424,6 +426,8 @@
           el.addEventListener('click', () => {
             App.state.market = el.dataset.m;
             App.state.symbol[el.dataset.m] = el.dataset.c;
+            App.state.pickedSymbol = true;
+            App.syncURL();
             box.style.display = 'none';
             inp.value = '';
             hidePicker();
