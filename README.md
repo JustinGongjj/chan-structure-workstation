@@ -289,8 +289,8 @@ node scripts/pivotviz.js USF ES day    # 指定市场/标的/周期
 | 港股 | 全市场检索 | `00700` `09988` | 腾讯 / 东财 | 日/周/月 |
 | 美股 | 全市场检索 | `NVDA` `AAPL` | 纳斯达克 / 新浪 / 东财 | 日/周/月 |
 | 加密 | **519 个 USDT 交易对** | `BTCUSDT` `ETHUSDT` `SOLUSDT` `DOGEUSDT` … | Binance | 1m~周线 |
-| **国内期货** | **68 个主力连续** | `RB0` `IF0` `AU0` `CU0` `M0` `I0` `T0` `AP0` `SC0` `JD0` … | 新浪期货 | 日/周/月 |
-| **美期货** | **23 个** | `ES` `NQ` `YM` `GC` `SI` `HG` `CL` `NG` `KC` `CC` `SB` `CT` `OJ` `LE` `GF` | 新浪外盘期货 | 日/周/月 |
+| **国内期货** | **68 个主力连续** | `RB0` `IF0` `AU0` `CU0` `M0` `I0` `T0` `AP0` `SC0` `JD0` … | 新浪期货 | **1m~月线** |
+| **美期货** | **23 个** | `ES` `NQ` `YM` `GC` `SI` `HG` `CL` `NG` `KC` `CC` `SB` `CT` `OJ` `LE` `GF` | 新浪外盘期货 | **1m~月线**（分钟线仅当日） |
 
 **商品搜索**：输入中文商品名直接命中多市场合约，例如
 
@@ -312,15 +312,44 @@ node scripts/pivotviz.js USF ES day    # 指定市场/标的/周期
 3. **贵金属交叉校验**：接入 [Gold-API](https://gold-api.com)（免费无 key）取 XAU/XAG 现货，
    与 `GC/SI` 期货价对比，偏离 >3% 标记 `stale`。
 
-**未能接入的源**（如实记录）：
+### 数据源可达性巡检
 
-| 源 | 状态 | 原因 |
+```bash
+npm run check:sources        # 30 个渠道实测，按可用性分级
+```
+
+当前运行时（2026-10-31 实测）的结论：
+
+**✅ 可直接用（免 key，17 个）**
+
+| 源 | 用途 | 状态 |
 | --- | --- | --- |
-| 长桥 OpenAPI（LongPort） | ❌ | `openapi.longportapp.com` 不可达，且需要账户 + IP 白名单 |
-| AKShare | ⚠️ | 是 Python 库，非 HTTP API；其上游多为东财/新浪，本仓已直连 |
-| IBKR API | ❌ | 需要 IB Gateway/TWS 常驻进程与盈透账户 |
-| Metals.dev / GoldAPI.io | ❌ | 需要 API key（免费档 100–300 次/月），无 key 返回 401 |
-| **Gold-API** | ✅ 已接入 | 无需 key，黄金/白银现货现价 |
+| 腾讯行情 / K线 | A股·港股·美股 | 已接入 |
+| 新浪行情 / A股分钟 | A股·外盘期货报价 | 已接入 |
+| 新浪期货日线 / **分钟线** | 国内期货 | 已接入（分钟线 v1.6 新增） |
+| 外盘期货日线 / **分时** | 美期货 | 已接入（分时聚合成分钟线，**仅当日**） |
+| 纳斯达克官方 | 美股日线 | 已接入 |
+| Binance 行情 / K线 | 加密 | 已接入（519 交易对） |
+| **Gold-API** | XAU/XAG 现货 | 已接入（期货交叉校验） |
+| **Alpha Vantage** | 美股兜底 | 已接入（`ALPHAVANTAGE_KEY` 可选，无 key 用 demo） |
+| 东财数据中心 | 期货持仓排名 | 备用 |
+| 巨潮资讯 / 雪球 | A股公告·舆情 | 备用 |
+
+**🔑 需 key / 账号（7 个）**：Yahoo Finance（403）、Stooq（403，且有 JS 反爬挑战，不绕过）、Finnhub、Polygon、Twelve Data、Marketstack、FMP（均 401 需 key）。
+
+**⛔ 域名层不可达（6 个）**：
+
+| 源 | 现象 | 说明 |
+| --- | --- | --- |
+| **TradingView 主站 / data / scanner** | `UND_ERR_CONNECT_TIMEOUT`，10s 超时 | **整域不可达**，无法接入 |
+| 长桥 LongPort OpenAPI | `UND_ERR_CONNECT_TIMEOUT` | 需账户 + IP 白名单 |
+| 东财 push2 / push2his | `UND_ERR_SOCKET` | 行情接口被reset（数据中心正常） |
+| AKShare | — | Python 库而非 HTTP API，上游本就是东财/新浪 |
+| IBKR API | 域名 200 但需 IB Gateway 常驻进程 + 盈透账户 | 不适合无头部署 |
+
+> 关于 TradingView：即使域名可达，其 `scanner`/`data` 接口属于**非公开授权接口**，
+> 公开接入违反其 ToS。若要图形与数据，正路是用 **TradingView Charting Library**（免费申请），
+> 但这会替换掉本站自研的缠论绘图层（笔/中枢/买卖点都在 canvas 上自绘），得不偿失。
 
 > 国内期货的快照接口常年返回几个月前的僵死数据，所以报价统一用**日线最新收盘**重算，
 > 这一点在 `sources.js` 里显式注释，避免以后又被"看起来有数据"骗过去。
@@ -395,6 +424,7 @@ space/                Hugging Face Space (Docker SDK)
 | 2026-10-27 | v1.1 | **弹层两层框架冲突**：`.view{z-index:5000}` 把页面压到弹层之上（文字叠在一起）；元素级 `button{width:100%}` 把弹层标题挤成 0 宽。同时修 toast 被 `.ios/.md .toast` 顶出屏幕、`.btn` 被 F7 的 `--f7-button-height` 裁字 | `npm run check:sheet`（48 组断言：背景/层级/零宽/超宽） |
 | 2026-10-27 | v1.1 | **服务端加固**：自选池原子写（tmp+rename）、空表不再回退默认、垃圾代码被拒（先取行情校验）、60 个上限、并发重复二次校验、写接口去掉 `Access-Control-Allow-Origin:*` | `npm run check:api`（含"去重被正确拒绝"与"垃圾代码被拒"） |
 | 2026-10-27 | v1.1 | **交互健壮性**：切 Tab 清掉算卦 12s 跟随定时器、异步渲染加防串页守卫、雷达轮询改原地更新（不再把手指下的行换掉）、返回键先关弹层再回上页、未捕获异常给可见提示、chart 支持 `destroy()` 修监听泄漏、滚轮默认交还页面滚动（Ctrl/⌘+滚轮才缩放） | `npm run check:flow`（17 步） |
+| 2026-10-31 | v1.6 | **期货分钟线**：国内（OHLCV，1/5/15/30/60分）+ 外盘（分时聚合，标注"仅当日"）；**Alpha Vantage** 接入为美股兜底源；新增 `check:sources` 数据源巡检（30 渠道分级：17 可用 / 7 需 key / 6 不可达）；确认 **TradingView 全域不可达**并留档 | `npm run check:sources`、`check:matrix` 113 项 |
 | 2026-10-30 | v1.5 | **数据覆盖面大扩**：国内期货 68 个主力 + 外盘 23 个（实测筛选，剔除新浪残档品种）；加密搜索接 Binance 519 对 + 中文别名（以太坊/狗狗币…）；商品中文名（黄金/铜/原油/国债…）多市场命中；接入 Gold-API 做贵金属现货交叉校验；新增**新鲜度校验**拒绝 2019 残档；新增 `check:matrix` 108 项全链路矩阵 | `npm run check:matrix` |
 | 2026-10-30 | v1.5 | **先选标的再看图**：结构分析页进入时先展示六市场热门标的 + 搜索，选定后才建图，避免"空白图无从下手"；手机端市场栏同步补期货 | Playwright 实测：选择器→图表互斥、选定后标题变 `CNF · RB0 · 日线`、画线落库 |
 | 2026-10-30 | v1.4 | **中枢严格化**：补进入段/离开段、区间形成后固定、延伸按终点判定、相邻重叠中枢按缠论合并、9 段升级；绘图补进离段箭头与 GG/DD 虚线、标签避让；新增 `check:pivot` 几何校验器（六市场全绿） | `npm run check:pivot`、61 个单测 |
