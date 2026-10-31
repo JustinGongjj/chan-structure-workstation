@@ -326,7 +326,13 @@ function buildPivots(bis, bars) {
       upgraded: innerCount >= 9,
       status: leaveBi != null ? 'done' : 'ongoing',
     });
-    i = Math.max(i + 1, j); // 从中枢结束后继续找下一个
+    /*
+      下一轮从「离开段之后」开始找：离开段 j 是中枢 A 的离开段，
+      它同时也是中枢 B 的进入段（enterBi = j）。若从 j 本身开始扫，
+      B 就会把 j 当成本体第一笔，于是出现「A 的离开段 = B 的区间首笔」，
+      画出来就是一堆首尾相接、互相套娃的中枢（用户一开始就指出的问题）。
+    */
+    i = Math.max(i + 1, j + 1);
   }
   return mergeAdjacent(out, bis);
 }

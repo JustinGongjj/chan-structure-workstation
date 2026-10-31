@@ -111,8 +111,16 @@ async function expectFail(name, path, status, opts = {}) {
   await hit('形而上索引', '/api/metaphysics', j => need(Object.keys(j.systems || {}).length >= 5 || j.books, '缺系统/书目'));
   const dn = await hit('算卦可变性', '/api/divination?market=CR&code=BTCUSDT&nonce=7', j => need(j.hexagram?.ben?.id > 0, '缺卦象'));
   const dn2 = await hit('算卦可变性2', '/api/divination?market=CR&code=BTCUSDT&nonce=99', j => need(j.hexagram?.ben?.id > 0, '缺卦象'));
-  if (dn && dn2 && dn.hexagram.ben.id === dn2.hexagram.ben.id && dn.liuyao?.dongYao === dn2.liuyao?.dongYao)
-    results.push({ name: '算卦可变性', path: 'nonce 7 vs 99', ms: 0, ok: false, error: '不同占次得到同一卦——起卦没真正变化' });
+  // 判据是「起卦种子必须变」而不是「卦必须不同」：只有 64 卦，两次撞同一卦是正常概率事件
+  if (dn && dn2) {
+    const sameSeed = JSON.stringify(dn.seed) === JSON.stringify(dn2.seed);
+    results.push({
+      name: '算卦可变性', path: 'nonce 7 vs 99', ms: 0,
+      ok: !sameSeed,
+      note: sameSeed ? '' : '种子随占次变化',
+      error: sameSeed ? '不同占次的 seed 完全相同——起卦没真正变化' : '',
+    });
+  }
 
   // 自选池写操作
   const before = await hit('自选池读取', '/api/watchlist', j => need(j.list && typeof j.list === 'object' && Array.isArray(j.list.A), '缺 list.A'));

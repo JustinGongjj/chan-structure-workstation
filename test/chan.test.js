@@ -321,3 +321,26 @@ test('中枢：离开段判据是"终点出界"，且必须紧跟中枢末笔', 
     assert.equal(p.leaveBi, p.endBi + 1, '离开段必须紧跟中枢末笔');
   }
 });
+
+/* ---------------- 中枢首尾相接（用户最早指出的问题） ---------------- */
+test('中枢：下一中枢必须从离开段之后开始，不得把离开段当成自己的区间首笔', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 700; i++) {
+    const c0 = 100 + Math.sin(i / 9) * 5 + Math.sin(i / 37) * 2.5;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1.4, l: c0 - 1.4, c: c0, v: 800 });
+  }
+  const a = c.analyze(bars);
+  assert.ok(a.pivots.length >= 3, '样本应形成多个中枢');
+  for (let i = 0; i < a.pivots.length; i++) {
+    const p = a.pivots[i];
+    // 进入段必须紧邻本中枢首笔
+    if (p.enterBi != null) assert.equal(p.enterBi, p.startBi - 1, `#${i} 进入段未紧邻首笔`);
+    if (i + 1 < a.pivots.length) {
+      const q = a.pivots[i + 1];
+      // 关键：下一个中枢不能从本中枢的离开段开始（那样就首尾相接了）
+      assert.ok(q.startBi > p.leaveBi, `#${i + 1} 区间首笔 ${q.startBi} 必须晚于上一离开段 ${p.leaveBi}`);
+      assert.ok(q.enterBi >= p.leaveBi, `#${i + 1} 进入段不得早于上一离开段`);
+    }
+  }
+});

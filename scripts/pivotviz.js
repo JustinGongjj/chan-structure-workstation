@@ -85,9 +85,13 @@ function asciiViz(a) {
     ok(p.count === p.endBi - p.startBi + 1, `#${i} count=${p.count} 与段数不符`);
     // 中枢不得被合并（区间重叠只标注、不改几何）
     ok(!p.merged, `#${i} 仍被合并（应保持独立中枢）`);
+    // 进入段必须紧邻中枢首笔（不能跳过中间走势）
+    if (p.enterBi != null) ok(p.enterBi === p.startBi - 1, `#${i} 进入段 ${p.enterBi} 未紧邻首笔 ${p.startBi}`);
     if (i > 0) {
       const q = a.pivots[i - 1];
       ok(p.startBi > q.endBi, `#${i} 与 #${i - 1} 段序倒置`);
+      // A 的离开段不能晚于 B 的进入段（否则是跳过了一段走势当了进入段）
+      if (q.leaveBi != null) ok(p.enterBi >= q.leaveBi, `#${i} 进入段 ${p.enterBi} 早于上一离开段 ${q.leaveBi}`);
       const disjoint = Math.min(p.zg, q.zg) <= Math.max(p.zd, q.zd);
       // 区间有重叠时，必须正确打上提示标记
       ok(disjoint ? !p.overlapPrev : !!p.overlapPrev, `#${i} overlapPrev 标记与实际重叠不符`);
