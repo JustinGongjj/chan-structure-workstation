@@ -7,11 +7,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/JustinGongjj/chan-structure-workstation/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JustinGongjj/chan-structure-workstation/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-e0b15a"></a>
-  <a href="https://nodejs.org"><img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A518-3c873a"></a>
+  <a href="https://nodejs.org"><img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A520-3c873a"></a>
   <img alt="dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen">
-  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-35%20passing-22b884"></a>
-  <a href="https://huggingface.co/spaces"><img alt="HF Space" src="https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face%20Space-ffd21e"></a>
+  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-71%20passing-22b884"></a>
+  <a href="CHANGELOG.md"><img alt="version" src="https://img.shields.io/badge/version-2.3.0-e0b15a"></a>
 </p>
 
 > **A deterministic, dependency-free Chan-theory (缠论) structure engine + multi-market trading workstation.**
@@ -147,7 +148,7 @@ Ganzhi (干支) calendar computed astronomically (24 solar terms from apparent s
 ## Quickstart
 
 ```bash
-git clone https://github.com/<you>/chan-structure-workstation.git
+git clone https://github.com/JustinGongjj/chan-structure-workstation.git
 cd chan-structure-workstation
 npm start                 # → http://localhost:8931（桌面版）/ http://localhost:8931/m/（手机版）
 # or: PORT=8931 node server/index.js

@@ -2,45 +2,128 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test (Node ${{ matrix.node }})
+  # ── 纯静态检查：不联网、不启服务，最快的反馈 ─────────────────────────
+  static:
+    name: Static (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20, 22]
+        node: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Syntax check (server + web)
+          cache: npm
+      - name: Syntax check (server + web + scripts)
         run: |
-          for f in $(find server web -name '*.js'); do node --check "$f"; done
+          fail=0
+          for f in $(find server web scripts test -name '*.js' -not -path '*/node_modules/*'); do
+            node --check "$f" || { echo "::error file=$f::语法错误"; fail=1; }
+          done
+          exit $fail
       - name: Unit tests
-        run: node --test test/*.test.js
+        run: npm test
+      - name: HTML 引用一致性
+        run: node scripts/htmlcheck.js
 
-  smoke:
-    name: Server smoke test
+  # ── 启动服务 + 接口/UI 门禁：需要本机服务，不依赖外网数据质量 ──────────
+  gates:
+    name: Gates (api / ui / sheets)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Boot server and probe endpoints
+          cache: npm
+      - name: Boot server
         run: |
-          PORT=8931 node server/index.js &
-          sleep 2
-          curl -fsS http://127.0.0.1:8931/api/health | tee /tmp/health.json
-          curl -fsS http://127.0.0.1:8931/api/watchlist | tee /tmp/watchlist.json
-          curl -fsS http://127.0.0.1:8931/api/daily | head -c 200
-          curl -fsS -o /dev/null http://127.0.0.1:8931/
-          curl -fsS -o /dev/null http://127.0.0.1:8931/m/
-          node -e "const h=require('/tmp/health.json'); if(!h.ok) process.exit(1)"
-      - name: Docker build
-        run: docker build -t chan-station:ci .
+          PORT=8931 node server/index.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 40); do
+            curl -fsS http://127.0.0.1:8931/api/health >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:8931/api/health
+      - name: 接口巡检
+        run: npm run check:api
+      - name: 桌面/移动 UI 检查
+        run: npm run check:ui
+      - name: 弹层巡检
+        run: npm run check:sheet
+      - name: CSS 兼容层审计
+        run: npm run check:css
+      - name: 服务日志（失败时）
+        if: failure()
+        run: tail -80 /tmp/server.log
+
+  # ── 端到端流程：需要 Chromium ───────────────────────────────────────
+  e2e:
+    name: E2E flow (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Chromium
+        id: chromium
+        run: |
+          npx --yes playwright@1.49.0 install --with-deps chromium
+          P=$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())" 2>/dev/null || true)
+          if [ -z "$P" ]; then P=$(find ~/.cache/ms-playwright -name chrome -type f -path '*chrome-linux*' | head -1); fi
+          echo "path=$P" >> "$GITHUB_OUTPUT"
+          echo "Chromium: $P"
+      - name: Boot server
+        run: |
+          PORT=8931 node server/index.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 40); do
+            curl -fsS http://127.0.0.1:8931/api/health >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+      - name: 端到端流程（桌面 + 手机 + 闯关）
+        run: npm run check:flow
+        env:
+          CHROME_BIN: ${{ steps.chromium.outputs.path }}
+      - name: 服务日志（失败时）
+        if: failure()
+        run: tail -80 /tmp/server.log
+
+  # ── 外部数据源：只观察不阻塞（上游随时可能挂，不能卡住 PR）──────────────
+  data-sources:
+    name: Data sources (observe-only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Boot server
+        run: |
+          PORT=8931 node server/index.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 40); do
+            curl -fsS http://127.0.0.1:8931/api/health >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+      - name: 全链路矩阵（6 市场 × 品种 × 接口）
+        run: npm run check:matrix
+      - name: 数据源可达性
+        run: npm run check:sources
+      - name: 汇总
+        if: always()
+        run: echo "外部数据源结果仅供参考——上游站点变更不应阻塞合并。"

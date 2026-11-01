@@ -894,6 +894,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// 启动就建好数据目录：新克隆的仓库没有 data/（已在 .gitignore 里），
+// 首次访问不该因为目录缺失而走异常分支
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+
 server.listen(PORT, HOST, () => {
   console.log(`\n  缠论工作站 · Chan Workstation`);
   console.log(`  http://127.0.0.1:${PORT}/  (bind ${HOST}:${PORT})\n`);

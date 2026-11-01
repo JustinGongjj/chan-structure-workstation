@@ -21,3 +21,7 @@ web/downloads/*.part
 .env
 *.key
 
+
+# 运行时状态（本地自选/手绘线，每台机器不同，不进版本库）
+data/
+web/downloads/
