@@ -445,7 +445,7 @@
     U.$$('#divMarket .sq').forEach((b) =>
       b.addEventListener('click', () => {
         setMarket(b.dataset.market);
-        const def = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' };
+        const def = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' };
         state.symbol = def[b.dataset.market];
         U.$('#divSymbol').value = state.symbol;
         cast({ advance: true });

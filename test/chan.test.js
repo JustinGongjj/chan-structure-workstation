@@ -121,3 +121,275 @@ test('价位序列：过滤非法 K 线（0 价、乱序）', () => {
   assert.ok(r.bars.every((x) => x.c > 0), '非法价格被过滤');
   for (let i = 1; i < r.bars.length; i++) assert.ok(r.bars[i].t >= r.bars[i - 1].t, '时间升序');
 });
+
+/* ---------------- 中枢结构：严格按缠论定义（进段 / 区间 / 离开段） ---------------- */
+test('中枢：每段都与区间相交，区间固定不被后续震荡拉长', () => {
+  const f = require('../server/lib/sources');
+  const c = require('../server/lib/chan');
+  // 用合成数据避免网络依赖
+  const bars = [];
+  let p = 100;
+  for (let i = 0; i < 400; i++) {
+    const w = Math.sin(i / 5) * 6 + Math.sin(i / 17) * 10;
+    const c0 = 100 + w;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 2, l: c0 - 2, c: c0 + 0.5, v: 1000 });
+  }
+  const a = c.analyze(bars);
+  for (const pv of a.pivots) {
+    assert.ok(pv.zg > pv.zd, '中枢区间必须有效');
+    assert.ok(pv.count >= 3, '中枢至少 3 段，实际 ' + pv.count);
+    for (let b = pv.startBi; b <= pv.endBi; b++) {
+      const bi = a.bis[b];
+      assert.ok(bi.h > pv.zd && bi.l < pv.zg, `第 ${b} 段必须与中枢区间相交`);
+    }
+    // 第 4 段起（延伸段）终点必须落在区间内
+    for (let b = pv.startBi + 3; b <= pv.endBi; b++) {
+      const bi = a.bis[b];
+      assert.ok(bi.p1 <= pv.zg + 1e-6 && bi.p1 >= pv.zd - 1e-6, `延伸段 ${b} 终点应在区间内`);
+    }
+    // 离开段必须真的离开（终点出界）
+    if (pv.leaveBi != null) {
+      const lb = a.bis[pv.leaveBi];
+      assert.ok(lb.p1 > pv.zg || lb.p1 < pv.zd, '离开段终点必须离开中枢区间');
+    }
+    // 进入段必须存在且与中枢首段反向
+    if (pv.enterBi != null) {
+      assert.notEqual(a.bis[pv.enterBi].dir, a.bis[pv.startBi].dir, '进入段与中枢首段应反向');
+    }
+  }
+});
+
+test('中枢：9 段及以上标记升级', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 500; i++) {
+    const c0 = 100 + Math.sin(i / 40) * 3 + Math.sin(i / 3) * 1.2;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1.5, l: c0 - 1.5, c: c0, v: 800 });
+  }
+  const a = c.analyze(bars);
+  for (const pv of a.pivots) {
+    assert.equal(pv.upgraded, pv.count >= 9, `段数 ${pv.count} 的升级标记应为 ${pv.count >= 9}`);
+  }
+});
+
+test('中枢：相邻中枢必须保持独立（重叠只标注、绝不合并几何）', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 600; i++) {
+    const c0 = 100 + Math.sin(i / 6) * 1.5 + Math.sin(i / 23) * 0.8;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 0.8, l: c0 - 0.8, c: c0 + 0.1, v: 500 });
+  }
+  const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    // 合并会把两个中枢的边界压成交集/并集，导致其中一个中枢失真
+    assert.ok(!p.merged, '中枢不应被合并（merged 字段必须为空）');
+    assert.ok(p.count === p.endBi - p.startBi + 1, 'count 必须等于段数');
+  }
+  // 相邻重叠必须如实标注
+  for (let i = 1; i < a.pivots.length; i++) {
+    const p = a.pivots[i - 1];
+    const q = a.pivots[i];
+    const overlap = Math.min(p.zg, q.zg) > Math.max(p.zd, q.zd);
+    assert.equal(!!q.overlapPrev, overlap, `#${i} 的重叠标记与几何不符`);
+  }
+});
+
+test('中枢：t1 必须对应末笔终点的 K 线时间，不能是 undefined', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 500; i++) {
+    const c0 = 200 + Math.sin(i / 5) * 2 + Math.sin(i / 31) * 1.1;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1, l: c0 - 1, c: c0, v: 900 });
+  }
+  const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    const lastBi = a.bis[p.endBi];
+    if (!lastBi) continue;
+    assert.equal(p.t1, a.bars[lastBi.i1].t, 't1 与末笔终点 K 线不一致');
+  }
+});
+
+test('中枢：保留进入段/离开段与段计数', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 500; i++) {
+    const c0 = 200 + Math.sin(i / 5) * 2 + Math.sin(i / 31) * 1.1;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1, l: c0 - 1, c: c0, v: 900 });
+  }
+  const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    assert.ok(p.count === p.endBi - p.startBi + 1, 'count 应等于段数');
+    if (p.enterBi != null) assert.ok(p.enter === null || typeof p.enter === 'object');
+    if (p.leaveBi != null) assert.ok(p.leave && typeof p.leave.dir === 'number');
+    assert.ok(p.zd < p.zg);
+  }
+});
+
+/* ---------------- 数据新鲜度 ---------------- */
+test('期货数据陈旧时明确报错，而不是返回空图', async () => {
+  const S = require('../server/lib/sources');
+  // 6A/DX 在新浪只有 2019 年的十几根残档，必须被新鲜度校验拦下
+  await assert.rejects(
+    () => S.klines({ market: 'USF', code: '6A', period: 'day', limit: 10 }),
+    /陈旧|数据不足/,
+    '陈旧数据应被拒绝'
+  );
+});
+
+/* ---------------- 期货分钟线 ---------------- */
+test('国内期货分钟线可用且时间递增', async () => {
+  const S = require('../server/lib/sources');
+  const k = await S.klines({ market: 'CNF', code: 'RB0', period: '30m', limit: 80 });
+  assert.ok(k.bars.length >= 20, '国内期货 30 分钟线应有足够数据，实际 ' + k.bars.length);
+  for (let i = 1; i < k.bars.length; i++) {
+    assert.ok(k.bars[i].t > k.bars[i - 1].t, '分钟线时间必须严格递增');
+  }
+  assert.ok(k.bars.every((b) => b.h >= b.l && b.c > 0), 'OHLC 合法性');
+});
+
+test('外盘期货分钟线标注为「仅当日」', async () => {
+  const S = require('../server/lib/sources');
+  const k = await S.klines({ market: 'USF', code: 'GC', period: '15m', limit: 200 });
+  assert.ok(k.bars.length >= 5, '外盘 15 分钟线应有数据');
+  assert.equal(k.intradayOnly, true, '外盘分钟线只有当日分时，必须打标');
+});
+
+/* ---------------- 商品板块目录 ---------------- */
+test('板块目录：分组完整、代码与市场一致、无重复', () => {
+  const S = require('../server/lib/sectors');
+  const cat = S.catalog();
+  assert.ok(cat.length >= 6, '至少 6 个板块，实际 ' + cat.length);
+  const seen = new Set();
+  let total = 0;
+  for (const sec of cat) {
+    assert.ok(sec.count === sec.items.length, `${sec.name} 计数与条目数不符`);
+    for (const it of sec.items) {
+      total++;
+      assert.ok(!seen.has(it.code), `品种重复: ${it.code}`);
+      seen.add(it.code);
+      // 国内代码以 0 结尾，外盘不是 —— 市场归属必须与之一致
+      const want = it.code.endsWith('0') ? 'CNF' : 'USF';
+      assert.equal(it.market, want, `${it.code} 市场归属错误`);
+      assert.ok(it.name && it.ex, `${it.code} 缺中文名或交易所`);
+    }
+  }
+  assert.ok(total >= 80, '品种总数应 >= 80，实际 ' + total);
+});
+
+test('板块目录：贵金属同时含国内与外盘，金属板块含铜', () => {
+  const S = require('../server/lib/sectors');
+  const pre = S.catalog().find((s) => s.id === 'precious');
+  const codes = pre.items.map((i) => i.code);
+  assert.ok(codes.includes('AU0') && codes.includes('GC'), '贵金属应含沪金与纽约金');
+  const base = S.catalog().find((s) => s.id === 'base');
+  assert.ok(base.items.some((i) => i.code === 'CU0'), '有色金属应含沪铜');
+});
+
+/* ---------------- 目录与实盘数据一致性 ---------------- */
+test('板块目录里的每个品种都必须真的能取到日线（防止死引用）', async () => {
+  const S = require('../server/lib/sources');
+  const CAT = require('../server/lib/sectors');
+  const dead = [];
+  // 外盘全测；国内抽 20 个代表（全量 68 个太慢，另有 matrixcheck 覆盖）
+  const all = CAT.catalog().flatMap((s) => s.items);
+  const usf = all.filter((i) => i.market === 'USF');
+  const cnf = all.filter((i) => i.market === 'CNF').slice(0, 20);
+  for (const it of usf.concat(cnf)) {
+    try {
+      const k = await S.klines({ market: it.market, code: it.code, period: 'day', limit: 30 });
+      if (!k.bars || !k.bars.length) dead.push(it.code);
+    } catch (e) {
+      dead.push(it.code + '(' + e.message.slice(0, 20) + ')');
+    }
+  }
+  assert.deepEqual(dead, [], '这些品种在目录里但取不到数据：' + dead.join('、'));
+});
+
+/* ---------------- 离开段语义（复审 MAJOR） ---------------- */
+test('中枢：离开段判据是"终点出界"，且必须紧跟中枢末笔', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 600; i++) {
+    const c0 = 100 + Math.sin(i / 7) * 4 + Math.sin(i / 29) * 2;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1.2, l: c0 - 1.2, c: c0, v: 700 });
+  }
+  const a = c.analyze(bars);
+  for (const p of a.pivots) {
+    if (p.leaveBi == null) continue;
+    const lb = a.bis[p.leaveBi];
+    assert.ok(lb.p1 > p.zg || lb.p1 < p.zd, '离开段终点必须离开中枢区间');
+    assert.equal(p.leaveBi, p.endBi + 1, '离开段必须紧跟中枢末笔');
+  }
+});
+
+/* ---------------- 中枢首尾相接（用户最早指出的问题） ---------------- */
+test('中枢：下一中枢必须从离开段之后开始，不得把离开段当成自己的区间首笔', () => {
+  const c = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 700; i++) {
+    const c0 = 100 + Math.sin(i / 9) * 5 + Math.sin(i / 37) * 2.5;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c0, h: c0 + 1.4, l: c0 - 1.4, c: c0, v: 800 });
+  }
+  const a = c.analyze(bars);
+  assert.ok(a.pivots.length >= 3, '样本应形成多个中枢');
+  for (let i = 0; i < a.pivots.length; i++) {
+    const p = a.pivots[i];
+    // 进入段必须紧邻本中枢首笔
+    if (p.enterBi != null) assert.equal(p.enterBi, p.startBi - 1, `#${i} 进入段未紧邻首笔`);
+    if (i + 1 < a.pivots.length) {
+      const q = a.pivots[i + 1];
+      // 关键：下一个中枢不能从本中枢的离开段开始（那样就首尾相接了）
+      assert.ok(q.startBi > p.leaveBi, `#${i + 1} 区间首笔 ${q.startBi} 必须晚于上一离开段 ${p.leaveBi}`);
+      assert.ok(q.enterBi >= p.leaveBi, `#${i + 1} 进入段不得早于上一离开段`);
+    }
+  }
+});
+
+/* ---------------- 陈旧数据标记 ---------------- */
+test('K 线返回统一带新鲜度标记（不只有期货）', async () => {
+  const S = require('../server/lib/sources');
+  const fresh = await S.klines({ market: 'A', code: '600519', period: 'day', limit: 30 });
+  assert.equal(typeof fresh.dataAgeDays, 'number', '必须返回 dataAgeDays');
+  assert.equal(fresh.staleData, false, '贵州茅台日线不应判为陈旧');
+  // 399137 是早已停更的老指数，必须被标出来
+  const old = await S.klines({ market: 'A', code: '399137', period: 'day', limit: 30 }).catch(() => null);
+  if (old && old.bars.length) {
+    assert.equal(old.staleData, true, '2013 年停更的指数必须标记为陈旧');
+    assert.ok(old.dataAgeDays > 1000, 'dataAgeDays 应反映真实天数');
+  }
+});
+
+/* ---------------- 大文件下载不崩（曾经 ver is not defined 导致进程退出） ---------------- */
+test('静态服务：大文件走流式分支且不崩溃', async () => {
+  const { spawn } = require('child_process');
+  const path = require('path');
+  const node = process.execPath;
+  const port = 8971;
+  const proc = spawn(node, ['server/index.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, PORT: String(port), LOG: '0' },
+    stdio: 'ignore',
+  });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    let up = false;
+    for (let i = 0; i < 40; i++) {
+      try { await fetch(`http://127.0.0.1:${port}/api/health`); up = true; break; } catch { await sleep(150); }
+    }
+    assert.ok(up, '服务应能启动');
+    // 请求一个 >512KB 的文件（下载区若有包，否则退化为检查根页面）
+    const fs = require('fs');
+    const dir = path.join(__dirname, '..', 'web', 'downloads');
+    const big = fs.existsSync(dir)
+      ? fs.readdirSync(dir).find((f) => { try { return fs.statSync(path.join(dir, f)).size > 512 * 1024; } catch { return false; } })
+      : null;
+    const target = big ? `/downloads/${big}` : '/';
+    const r = await fetch(`http://127.0.0.1:${port}${target}`);
+    assert.equal(r.status, 200, '大文件请求应 200');
+    // 关键：请求之后进程必须还活着
+    const r2 = await fetch(`http://127.0.0.1:${port}/api/health`);
+    assert.equal(r2.status, 200, '请求大文件后服务仍应存活');
+  } finally {
+    try { proc.kill('SIGKILL'); } catch (e) {}
+  }
+});

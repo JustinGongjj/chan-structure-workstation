@@ -9,11 +9,13 @@
 <meta name="apple-mobile-web-app-title" content="缠论">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="format-detection" content="telephone=no">
-<title>缠论炒股工作站 · 手机版</title>
-<link rel="manifest" href="/manifest.webmanifest">
+<title>缠论工作站 · 手机版</title>
+<link rel="manifest" href="/manifest.webmanifest?v=__ASSET_V__">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
-<link rel="stylesheet" href="/m/css/mobile.css">
+<link rel="stylesheet" href="/vendor/f7/framework7-bundle.min.css?v=__ASSET_V__">
+<link rel="stylesheet" href="/m/css/f7-compat.css?v=__ASSET_V__">
+<link rel="stylesheet" href="/m/css/mobile.css?v=__ASSET_V__">
 <script>
   (function () {
     try {
@@ -26,6 +28,7 @@
       var theme = (q.match(/[?&]theme=(light|dark)/) || [])[1] || localStorage.getItem('chan-theme');
       if (!theme) theme = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       document.documentElement.dataset.skin = skin;
+      document.documentElement.classList.add(skin === 'android' ? 'md' : 'ios');
       document.documentElement.dataset.theme = theme;
       if (/[?&]skin=/.test(q)) localStorage.setItem('chan-skin', skin);
       if (/[?&]theme=/.test(q)) localStorage.setItem('chan-theme', theme);
@@ -46,7 +49,7 @@
   </button>
 </header>
 
-<main class="view" id="view"></main>
+<main class="view" id="view" role="main"></main>
 
 <nav class="tabbar" id="tabbar">
   <button class="tab active" data-tab="overview">
@@ -72,13 +75,14 @@
 </nav>
 
 <div class="sheet-mask" id="sheetMask"><div class="sheet" id="sheet"></div></div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<div class="ptr" id="ptr" aria-hidden="true"><span class="ptr-dot"></span><span class="ptr-label">下拉刷新</span></div>
 
-<script src="/js/theory-content.js"></script>
-<script src="/js/api.js"></script>
-<script src="/js/ui.js"></script>
-<script src="/js/chart.js"></script>
-<script src="/js/highlight.js"></script>
-<script src="/m/js/mobile.js"></script>
+<script src="/js/theory-content.js?v=__ASSET_V__"></script>
+<script src="/js/api.js?v=__ASSET_V__"></script>
+<script src="/js/ui.js?v=__ASSET_V__"></script>
+<script src="/js/chart.js?v=__ASSET_V__"></script>
+<script src="/js/highlight.js?v=__ASSET_V__"></script>
+<script src="/m/js/mobile.js?v=__ASSET_V__"></script>
 </body>
 </html>

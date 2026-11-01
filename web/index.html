@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="dark light">
 <script>(function(){try{var m=(location.search.match(/[?&]theme=(light|dark)/)||[])[1];var t=m||localStorage.getItem('chan-theme')||'dark';document.documentElement.dataset.theme=t;if(m)localStorage.setItem('chan-theme',m);}catch(e){document.documentElement.dataset.theme='dark'}})();</script>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>缠论炒股工作站 · Chan Station</title>
-<link rel="stylesheet" href="/css/style.css">
+<title>缠论工作站 · Chan Station</title>
+<link rel="stylesheet" href="/css/style.css?v=__ASSET_V__">
 </head>
 <body>
 <div class="app">
@@ -25,6 +25,8 @@
       <a class="nav-item" data-page="radar"><span class="ico">◎</span><span>买卖点雷达</span><em>Signals</em></a>
       <a class="nav-item" data-page="theory"><span class="ico">▤</span><span>缠论理论</span><em>Theory</em></a>
       <a class="nav-item" data-page="divination"><span class="ico">☯</span><span>算卦择时</span><em>I Ching</em></a>
+      <a class="nav-item" data-page="sectors"><span class="ico">▦</span><span>商品板块</span><em>Sectors</em></a>
+      <a class="nav-item" data-page="game"><span class="ico">◈</span><span>缠关 · 108</span><em>Game</em></a>
       <a class="nav-item" data-page="sources"><span class="ico">⇄</span><span>数据源</span><em>Sources</em></a>
     </nav>
     <div class="side-card" id="sideDaily">
@@ -32,16 +34,24 @@
       <div class="side-date">—</div>
       <div class="side-pillars">—</div>
     </div>
+    <div class="side-card" id="sideMacro">
+      <div class="side-card-t">宏观参照</div>
+      <div class="macro-row" id="macroDGS10"><span>美债10Y</span><b>—</b></div>
+      <div class="macro-row" id="macroDGS2"><span>美债2Y</span><b>—</b></div>
+      <div class="macro-row" id="macroVIXCLS"><span>VIX</span><b>—</b></div>
+      <div class="macro-note">FRED · 免 key · 日频</div>
+    </div>
     <div class="side-foot">
       <span class="dot" id="apiDot"></span><span id="apiText">连接中…</span>
     </div>
   </aside>
 
   <main class="main">
+    <div class="mobile-tip">📱 检测到窄屏：建议使用<a href="/m/">手机版</a>（iOS / Android 双皮肤、触屏图表）</div>
     <header class="topbar">
       <div class="search-wrap">
         <span class="search-ico">⌕</span>
-        <input id="globalSearch" placeholder="搜索代码 / 名称（茅台、NVDA、BTC…）" autocomplete="off">
+        <input id="globalSearch" placeholder="搜索：黄金 / 螺纹 / 以太坊 / 600519 / NVDA / ES" autocomplete="off">
         <div class="search-pop" id="searchPop"></div>
       </div>
       <div class="market-tabs" id="marketTabs">
@@ -49,6 +59,8 @@
         <button class="mtab" data-market="HK">港股</button>
         <button class="mtab" data-market="US">美股</button>
         <button class="mtab" data-market="CR">加密</button>
+        <button class="mtab" data-market="CNF">国内期货</button>
+        <button class="mtab" data-market="USF">美期货</button>
       </div>
       <div class="top-right">
         <span class="clock" id="clock">—</span>
@@ -65,7 +77,7 @@
       <div class="page-head">
         <div>
           <h1 class="page-title">总览 <span class="tag-live">多市场 · 缠论视角</span></h1>
-          <p class="page-desc">四市场脉动、指数、自选池与今日结构信号；右侧干支卡为「算卦择时」入口。</p>
+          <p class="page-desc">六市场脉动（A股/港股/美股/加密/国内期货/美期货）、指数、自选池与今日结构信号；右侧干支卡为「算卦择时」入口。</p>
         </div>
         <div class="head-actions">
           <span class="live-stamp" id="liveStampOverview"></span>
@@ -96,9 +108,20 @@
 
     <!-- ================= 结构分析 ================= -->
     <section class="page" id="page-structure">
+      <div class="card picker-card" id="symbolPicker">
+        <div class="card-head">
+          <h3>先选一个标的</h3>
+          <span class="hint">点一个标的即可切换 · 也可以直接搜代码/名称</span>
+          <button class="btn ghost sm" id="pickerClose">收起</button>
+        </div>
+        <div class="form-row"><input class="input" id="pickerSearch" placeholder="搜：黄金 / 螺纹 / 以太坊 / 600519 / NVDA / ES" autocomplete="off"></div>
+        <div class="picker-groups" id="pickerHot"></div>
+        <div class="list" id="pickerResults" style="display:none"></div>
+      </div>
+      <div id="structBody">
       <div class="page-head">
         <div>
-          <h1 class="page-title">结构分析 <span class="tag-live" id="structTitle">—</span> <span class="live-stamp" id="liveStampStruct"></span></h1>
+          <h1 class="page-title">结构分析 <span class="tag-live" id="structTitle">—</span> <span class="live-stamp" id="liveStampStruct"></span> <button class="btn ghost sm" id="switchSymbol" title="换一个标的">换标的</button></h1>
           <p class="page-desc">包含处理 → 分型 → 笔 → 线段 → 中枢 → 背驰 → 买卖点，全部由服务端实时计算。</p>
         </div>
         <div class="head-actions">
@@ -150,6 +173,13 @@
             <div class="chart-toolbar">
               <div class="legend" id="chartLegend"></div>
               <div class="chart-tools">
+                <button class="btn ghost sm" id="drawTrend" title="点两下画趋势线（会吸附到笔端点）">趋势线</button>
+                <button class="btn ghost sm" id="drawLevel" title="点一下画水平线">水平线</button>
+                <button class="btn ghost sm" id="drawRect" title="拖出一个框（用来框中枢）">框</button>
+                <button class="btn ghost sm" id="drawDel" title="删除选中的线（选中后按 Delete 也行）">删除</button>
+                <button class="btn ghost sm" id="drawClear">清空</button>
+                <button class="btn sm" id="drawVerify" title="把手绘线和笔/中枢/买卖点对齐检查">AI 复核</button>
+                <span class="vr"></span>
                 <button class="btn ghost sm" id="zoomIn">＋</button>
                 <button class="btn ghost sm" id="zoomOut">－</button>
                 <button class="btn ghost sm" id="zoomReset">复位</button>
@@ -159,7 +189,10 @@
               <div class="crosshair-tip" id="crosshairTip"></div>
             </div>
             <div class="chart-note" id="chartNote"></div>
+            <div class="draw-hint" id="drawHint">手绘：点「趋势线」后点两下（自动吸附笔端点）· 点线可选中，Delete 删除 · 线按标的+周期保存在服务端</div>
           </div>
+
+
 
           <div class="card">
             <div class="card-head"><h3>区间套 · 多级别联立</h3><span class="hint" id="suiteHint">大级别定方向 → 小级别等买点</span></div>
@@ -186,6 +219,7 @@
           </div>
         </aside>
       </div>
+      </div><!-- /#structBody -->
     </section>
 
     <!-- ================= 雷达 ================= -->
@@ -299,6 +333,36 @@
     </section>
 
     <!-- ================= 数据源 ================= -->
+    <!-- ================= 缠关 · 108 ================= -->
+    <section class="page" id="page-game">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">缠关 · 108 <span class="tag-live">108 课 · 实时行情出题</span></h1>
+          <p class="page-desc">每一关都是一张真实行情图：判断方向、找买卖点、框中枢、辨背驰；答完立刻判分并讲解结构。</p>
+        </div>
+        <div class="head-actions">
+          <a class="btn ghost sm" href="/game/" target="_blank" rel="noopener">新标签打开</a>
+        </div>
+      </div>
+      <div class="game-frame-wrap">
+        <iframe id="gameFrame" class="game-frame" src="about:blank" title="缠关 108 关" loading="lazy"></iframe>
+      </div>
+    </section>
+
+    <!-- ================= 商品板块 ================= -->
+    <section class="page" id="page-sectors">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">商品板块 <span class="tag-live">有色金属 · 黑色 · 能化 · 农产品 · 贵金属</span></h1>
+          <p class="page-desc">按产业链分组浏览期货品种，点任一品种直达结构分析并可在图上画线。</p>
+        </div>
+        <div class="head-actions"><button class="btn sm" data-action="refresh-sectors">刷新行情</button></div>
+      </div>
+      <div class="sector-tabs" id="sectorTabs"></div>
+      <div class="sector-head" id="sectorHead"></div>
+      <div class="sector-grid" id="sectorGrid"></div>
+    </section>
+
     <section class="page" id="page-sources">
       <div class="page-head">
         <div>
@@ -309,6 +373,10 @@
       </div>
       <div class="card"><div id="sourceList" class="src-list"></div></div>
       <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h3>增强数据源（可选 key）</h3><span class="hint">填进 .env.local 后重启即生效，key 只在服务端使用</span></div>
+          <div id="keyList" class="key-list"></div>
+        </div>
         <div class="card"><div class="card-head"><h3>市场 × 级别覆盖</h3></div><div id="covTbl" class="tbl-wrap"></div></div>
         <div class="card"><div class="card-head"><h3>运行信息</h3></div><div id="sysInfo" class="kv"></div></div>
       </div>
@@ -340,6 +408,29 @@
 </div>
 
 <!-- 理论详情弹窗 -->
+<div class="modal-mask" id="drawModal" aria-hidden="true">
+  <div class="modal draw-modal" role="dialog" aria-modal="true" aria-labelledby="drawModalTitle">
+    <header class="modal-head">
+      <div class="modal-head-l">
+        <span class="modal-kind">结构复核</span>
+        <h3 class="modal-title" id="drawModalTitle">AI 复核 · 手绘线 vs 缠论结构</h3>
+      </div>
+      <div class="modal-tools">
+        <span class="modal-count" id="drawScore"></span>
+        <button class="modal-btn close" id="drawModalClose" title="关闭（Esc）" aria-label="关闭"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </header>
+    <div class="modal-body" id="drawModalBody">
+      <div id="drawVerdict" class="draw-verdict"></div>
+      <div id="drawFindings" class="draw-findings"></div>
+    </div>
+    <footer class="modal-foot draw-foot">
+      <span class="modal-kbd" id="drawMethod"></span>
+      <button class="btn ghost sm" id="drawModalAgain">重新复核</button>
+    </footer>
+  </div>
+</div>
+
 <div class="modal-mask" id="modalMask" aria-hidden="true">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <header class="modal-head">
@@ -361,17 +452,18 @@
     </footer>
   </div>
 </div>
-<script src="/js/theory-content.js"></script>
-<script src="/js/api.js"></script>
-<script src="/js/ui.js"></script>
-<script src="/js/chart.js"></script>
-<script src="/js/highlight.js"></script>
-<script src="/js/pages/overview.js"></script>
-<script src="/js/pages/structure.js"></script>
-<script src="/js/pages/radar.js"></script>
-<script src="/js/pages/theory.js"></script>
-<script src="/js/pages/divination.js"></script>
-<script src="/js/pages/sources.js"></script>
-<script src="/js/app.js"></script>
+<script src="/js/theory-content.js?v=__ASSET_V__"></script>
+<script src="/js/api.js?v=__ASSET_V__"></script>
+<script src="/js/ui.js?v=__ASSET_V__"></script>
+<script src="/js/chart.js?v=__ASSET_V__"></script>
+<script src="/js/highlight.js?v=__ASSET_V__"></script>
+<script src="/js/pages/overview.js?v=__ASSET_V__"></script>
+<script src="/js/pages/structure.js?v=__ASSET_V__"></script>
+<script src="/js/pages/radar.js?v=__ASSET_V__"></script>
+<script src="/js/pages/theory.js?v=__ASSET_V__"></script>
+<script src="/js/pages/divination.js?v=__ASSET_V__"></script>
+<script src="/js/pages/sectors.js?v=__ASSET_V__"></script>
+<script src="/js/pages/sources.js?v=__ASSET_V__"></script>
+<script src="/js/app.js?v=__ASSET_V__"></script>
 </body>
 </html>

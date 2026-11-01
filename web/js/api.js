@@ -40,6 +40,7 @@
 
   window.API = {
     get,
+    post,
     health: () => get('/api/health'),
     markets: () => get('/api/markets'),
     overview: () => get('/api/overview'),
@@ -55,6 +56,9 @@
     watchAdd: (p) => post('/api/watchlist', p),
     watchDel: (p) => request('DELETE', '/api/watchlist', p),
     watchReset: () => request('POST', '/api/watchlist/reset', {}),
+    drawings: (p) => get('/api/drawings', p),
+    drawingsSave: (p) => post('/api/drawings', p),
+    drawingsVerify: (p) => post('/api/drawings/verify', p),
     backtest: (p) => get('/api/backtest', p),
     timing: (p) => get('/api/timing', p),
     timingValidate: (p) => get('/api/timing/validate', p),

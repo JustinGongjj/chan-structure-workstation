@@ -7,11 +7,13 @@
       period: 'day',
       hl: null, // 教学标注：理论 → 图上位置
       live: false, // 实时刷新
-      symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' },
+      symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' },
+      pickedSymbol: false,
+      pickerShown: false,
     },
     pages: {},
     go(page, opts) {
-      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'sources'].includes(page)) page = 'overview';
+      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'sectors', 'game', 'sources'].includes(page)) page = 'overview';
       this.state.page = page;
       U.$$('.page').forEach((el) => el.classList.toggle('active', el.id === 'page-' + page));
       U.$$('#nav .nav-item').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
@@ -30,6 +32,7 @@
     openStructure(market, code, period, opts) {
       this.state.market = market || this.state.market;
       this.state.symbol[this.state.market] = code || this.state.symbol[this.state.market];
+      if (code) this.state.pickedSymbol = true;
       if (period) this.state.period = period;
       // 只有显式带上 hl 才保留标注；从雷达/总览点进来默认清空
       this.state.hl = (opts && opts.hl) || null;
@@ -44,6 +47,12 @@
         else if (page === 'radar') await PageRadar.render();
         else if (page === 'theory') PageTheory.render();
         else if (page === 'divination') await PageDivination.render();
+        else if (page === 'sectors') await PageSectors.render();
+        else if (page === 'game') {
+          // 延迟加载：只有真正进来才给 iframe 设 src，别拖慢首页
+          const f = U.$('#gameFrame');
+          if (f && f.getAttribute('src') !== '/game/') f.setAttribute('src', '/game/');
+        }
         else if (page === 'sources') await PageSources.render();
       } catch (e) {
         U.toast('加载失败：' + e.message);
@@ -153,6 +162,7 @@
     if (!btn) return;
     const a = btn.dataset.action;
     if (a === 'refresh-overview' || a === 'radar' || a === 'probe') App.render();
+    if (a === 'refresh-sectors') App.render();
   });
 
   /* ---------- 搜索 ---------- */
@@ -211,6 +221,23 @@
   tick();
   setInterval(tick, 1000);
 
+  /* 宏观参照：FRED 免 key，日频，失败就保持 "—" 不打扰用户 */
+  async function loadMacro() {
+    try {
+      const m = await API.get('/api/macro');
+      const rows = [['DGS10', 'macroDGS10'], ['DGS2', 'macroDGS2'], ['VIXCLS', 'macroVIXCLS']];
+      for (const [id, elId] of rows) {
+        const el = U.$('#' + elId);
+        const v = m.series && m.series[id];
+        if (!el || !v || v.value == null) continue;
+        const cls = v.change > 0 ? 'up-c' : v.change < 0 ? 'down-c' : '';
+        const label = id === 'VIXCLS' ? 'VIX 恐慌' : id === 'DGS10' ? '美债 10Y' : '美债 2Y';
+        el.innerHTML = `<span>${label}</span><b class="${cls}">${v.value.toFixed(2)}</b>`;
+        el.title = `${v.name} · ${v.date} · 较前值 ${v.change > 0 ? '+' : ''}${v.change}`;
+      }
+    } catch (e) { /* 宏观取不到不影响主流程 */ }
+  }
+
   async function loadDaily() {
     try {
       const d = await API.daily();
@@ -240,12 +267,17 @@
     }
     // 深链：?m=HK&c=00700&p=week#structure
     const q = new URLSearchParams(location.search);
-    if (q.get('m') && ['A', 'HK', 'US', 'CR'].includes(q.get('m').toUpperCase())) App.state.market = q.get('m').toUpperCase();
-    if (q.get('c')) App.state.symbol[App.state.market] = q.get('c');
+    if (q.get('m') && ['A', 'HK', 'US', 'CR', 'CNF', 'USF'].includes(q.get('m').toUpperCase())) App.state.market = q.get('m').toUpperCase();
+    if (q.get('c')) {
+      App.state.symbol[App.state.market] = q.get('c');
+      App.state.hl = q.get('hl') || null; // 带标的进入 = 显式指定
+      App.state.pickedSymbol = true;
+    }
     if (q.get('p')) App.state.period = q.get('p');
     if (q.get('hl')) App.state.hl = q.get('hl');
     U.$$('#marketTabs .mtab').forEach((b) => b.classList.toggle('active', b.dataset.market === App.state.market));
     loadDaily();
+    loadMacro();
     const h = location.hash.replace('#', '');
     App.go(h || 'overview', { silent: true });
   }

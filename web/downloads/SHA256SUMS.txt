@@ -1,0 +1,2 @@
+09b2d656721fa075e9d4d32243f7e12eb3656bbb02700ce94cd0971cc0a03424  chan-structure-workstation-v2.3.0-full.bundle
+d9ae1d9868327e35c5312a764893cc0ab6ee79df109bf798617547da3ea2f52a  chan-structure-workstation-v2.3.0-src.zip

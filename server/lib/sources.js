@@ -11,11 +11,39 @@
 
 const { request, getJSON, cached, sleep } = require('./http');
 
+/* 期货主力连续合约：国内用 RB0/AU0/IF0 这类，美期货用 ES/NQ/GC/CL 这类 */
+/* 国内期货主力连续（上期所/大商所/郑商所/中金所/能源中心） */
+const CNF_LIST = [
+  // 上期所
+  'CU0', 'AL0', 'ZN0', 'PB0', 'NI0', 'SN0', 'AU0', 'AG0', 'RB0', 'HC0', 'SS0', 'BU0', 'RU0', 'SP0', 'FU0',
+  // 能源中心
+  'SC0', 'LU0', 'NR0', 'BC0',
+  // 大商所
+  'M0', 'Y0', 'P0', 'A0', 'B0', 'C0', 'CS0', 'JD0', 'L0', 'V0', 'PP0', 'J0', 'JM0', 'I0', 'EG0', 'EB0', 'PG0', 'RR0', 'LH0', 'FB0', 'BB0',
+  // 郑商所
+  'SR0', 'CF0', 'CY0', 'TA0', 'MA0', 'FG0', 'RM0', 'OI0', 'SA0', 'UR0', 'SF0', 'SM0', 'AP0', 'CJ0', 'PK0', 'PF0', 'SH0', 'PX0',
+  // 中金所
+  'IF0', 'IC0', 'IH0', 'IM0', 'TS0', 'TF0', 'T0', 'TL0'
+];
+/* 外盘期货（新浪 hf_*：指数/贵金属/能源/农产品/外汇） */
+/* 外盘期货：仅保留新浪 GlobalFutures 实际有数据的品种（2026-10-30 实测）
+   PL/PA/RB/ZC/ZS/ZW/ZM/ZL/6E/6J/6C/6S/HE 在該接口无数据，故不列入，
+   否则用户选中后只会看到空图。 */
+const USF_LIST = [
+  'ES', 'NQ', 'YM',
+  'GC', 'SI', 'HG',
+  'CL', 'NG', 'HO', 'QM',
+  'KC', 'CC', 'CT', 'OJ',
+  'LE', 'GF'
+];
+
 const MARKETS = {
   A: { key: 'A', name: 'A股', currency: 'CNY', tz: 8, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
   HK: { key: 'HK', name: '港股', currency: 'HKD', tz: 8, intraday: false, periods: ['day', 'week', 'month'] },
   US: { key: 'US', name: '美股', currency: 'USD', tz: -4, intraday: false, periods: ['day', 'week', 'month'] },
   CR: { key: 'CR', name: '加密', currency: 'USDT', tz: 0, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', '4h', 'day', 'week'] },
+  CNF: { key: 'CNF', name: '国内期货', currency: 'CNY', tz: 8, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
+  USF: { key: 'USF', name: '美期货', currency: 'USD', tz: -5, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
 };
 
 const PERIOD_NAME = {
@@ -41,6 +69,8 @@ function normCode(market, raw) {
     return c.replace(/\.HK$/, '').padStart(5, '0');
   }
   if (market === 'US') return c.replace(/^US\.?/, '').replace(/\.(OQ|N|US)$/, '');
+  if (market === 'CNF') return c.replace(/^CNF\.?/, '').replace(/[^A-Z0-9]/g, '');
+  if (market === 'USF') return c.replace(/^USF\.?/, '').replace(/[^A-Z0-9]/g, '');
   return c.replace(/[-/_]/g, '');
 }
 
@@ -55,6 +85,260 @@ function tcCode(market, code) {
   if (market === 'HK') return 'hk' + c;
   if (market === 'US') return 'us' + c;
   return null;
+}
+
+/* ---------------- Finnhub（可选 key：美股实时报价 + 新闻） ---------------- */
+async function finnhubQuote(code) {
+  const key = KEYS.get('FINNHUB_KEY');
+  if (!key) throw new Error('未配置 FINNHUB_KEY');
+  const sym = String(code).toUpperCase();
+  const j = await getJSON(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${key}`, { timeout: 8000 });
+  if (!j || !Number.isFinite(j.c) || j.c <= 0) throw new Error('finnhub 无报价');
+  return {
+    market: 'US', code: sym, name: sym,
+    price: j.c, prevClose: j.pc, change: +(j.c - j.pc).toFixed(4),
+    pct: j.pc ? +(((j.c - j.pc) / j.pc) * 100).toFixed(2) : 0,
+    high: j.h, low: j.l, open: j.o,
+    timeText: j.t ? new Date(j.t * 1000).toISOString().slice(0, 16).replace('T', ' ') : '',
+    source: 'finnhub',
+  };
+}
+
+/* ---------------- Twelve Data（可选 key：多市场 K 线） ---------------- */
+async function twelveDataDaily(code, market) {
+  const key = KEYS.get('TWELVEDATA_KEY');
+  if (!key) throw new Error('未配置 TWELVEDATA_KEY');
+  // 映射：A→.SS/.SZ 后缀不易猜，这里只覆盖 美股/港股/外汇
+  const sym = market === 'HK' ? String(code).padStart(4, '0') + '.HK' : String(code).toUpperCase();
+  const j = await getJSON(
+    `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=1day&outputsize=200&apikey=${key}`,
+    { timeout: 10000 }
+  );
+  if (!j || j.status === 'error' || !Array.isArray(j.values)) throw new Error('twelvedata: ' + ((j && j.message) || '无数据'));
+  const bars = j.values
+    .map((r) => ({
+      t: Date.parse(r.datetime + 'T00:00:00Z'),
+      o: num(r.open), h: num(r.high), l: num(r.low), c: num(r.close), v: num(r.volume),
+    }))
+    .filter((b) => b.t && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+  if (bars.length < 20) throw new Error('twelvedata 数据不足');
+  return { bars, source: 'twelvedata' };
+}
+
+/* ---------------- StockAnalysis（美股，免 key） ----------------
+   字段：{t,o,h,l,c,v,a,...}，一次给约 128 根日线。
+   作为美股在 纳斯达克/新浪/AlphaVantage 全挂时的独立兜底。 */
+async function stockAnalysisDaily(code) {
+  const sym = String(code).toLowerCase().replace(/[^a-z0-9.-]/g, '');
+  const j = await getJSON(`https://stockanalysis.com/api/symbol/s/${sym}/history`, {
+    timeout: 10000,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/125', Accept: '*/*' },
+  });
+  const rows = (j && j.data && j.data.data) || [];
+  if (!Array.isArray(rows) || rows.length < 20) throw new Error('stockanalysis 数据不足');
+  const bars = rows
+    .map((r) => ({
+      t: Date.parse(String(r.t).slice(0, 10) + 'T00:00:00Z'),
+      o: num(r.o), h: num(r.h), l: num(r.l), c: num(r.c), v: num(r.v),
+    }))
+    .filter((b) => b.t && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+  if (bars.length < 20) throw new Error('stockanalysis 数据不足');
+  return { bars, source: 'stockanalysis' };
+}
+
+/* ---------------- FRED 宏观（免 key CSV） ----------------
+   用途：美债收益率等宏观序列，给"择时"模块做风险偏好参照。 */
+const FRED_SERIES = { DGS10: '美债10年期收益率', DGS2: '美债2年期收益率', DFF: '联邦基金利率', VIXCLS: 'VIX 恐慌指数' };
+
+async function fredSeries(id) {
+  if (!FRED_SERIES[id]) throw new Error('不支持的 FRED 序列: ' + id);
+  const txt = await request(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`, { timeout: 10000 });
+  const rows = txt.trim().split('\n').slice(1);
+  const bars = [];
+  for (const line of rows) {
+    const [d, v] = line.split(',');
+    const p = num(v);
+    if (!d || !Number.isFinite(p)) continue;
+    bars.push({ t: Date.parse(d + 'T00:00:00Z'), c: p });
+  }
+  if (!bars.length) throw new Error('FRED 无数据');
+  return { id, name: FRED_SERIES[id], bars: bars.slice(-400), source: 'fred' };
+}
+
+/* ---------------- Alpha Vantage（备用源，可选 key） ----------------
+   用途：美股/全球股票的独立第三方兜底。没有 key 时用 demo（仅极少量品种），
+   配置环境变量 ALPHAVANTAGE_KEY 后自动启用完整能力（免费档 25 次/日）。 */
+const KEYS = require('./keys');
+const avKey = () => KEYS.get('ALPHAVANTAGE_KEY') || 'demo';
+
+async function alphaVantageDaily(code) {
+  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(code)}&outputsize=compact&apikey=${avKey()}`;
+  const j = await getJSON(url, { timeout: 10000 });
+  if (j.Information || j.Note) throw new Error('AlphaVantage 限流或需正式 key');
+  const ts = j['Time Series (Daily)'];
+  if (!ts) throw new Error('AlphaVantage 无数据');
+  const bars = Object.entries(ts)
+    .map(([d, v]) => ({
+      t: Date.parse(d + 'T00:00:00Z'),
+      o: num(v['1. open']), h: num(v['2. high']), l: num(v['3. low']), c: num(v['4. close']), v: num(v['5. volume']),
+    }))
+    .filter((b) => b.t && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+  if (bars.length < 20) throw new Error('AlphaVantage 数据不足');
+  return { bars, source: 'alphavantage' };
+}
+
+/* ---------------- 贵金属现货（Gold-API，免费无 key） ----------------
+   用途：给贵金属期货（GC/SI/AU0/AG0）提供一个独立的现价参照，
+   当期货快照明显偏离现货（>3%）时打上 stale 标记，避免用户被僵死数据误导。 */
+const GOLD_API_SYMBOLS = { GC: 'XAU', SI: 'XAG', AU0: 'XAU', AG0: 'XAG' };
+
+async function goldApiSpot(symbol) {
+  const j = await getJSON('https://api.gold-api.com/price/' + symbol, { timeout: 8000 });
+  if (!j || !Number.isFinite(j.price)) throw new Error('gold-api 无数据');
+  return { symbol, price: j.price, currency: j.currency, updatedAt: j.updatedAt };
+}
+
+/** 批量取贵金属现货（按需、带缓存） */
+async function spotPrecious(codes) {
+  const need = [...new Set(codes.map((c) => GOLD_API_SYMBOLS[c]).filter(Boolean))];
+  if (!need.length) return {};
+  const res = await cached('spot:metals:' + need.join(','), 60000, async () => {
+    const out = {};
+    await Promise.allSettled(need.map(async (sym) => { out[sym] = await goldApiSpot(sym); }));
+    return out;
+  });
+  return res.value;
+}
+
+/* ---------------- 期货（新浪） ---------------- */
+function sinaFuturesUrl(market, code) {
+  return market === 'USF'
+    ? `https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=${code}&_=${Date.now()}`
+    : `https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/InnerFuturesNewService.getDailyKLine?symbol=${code}`;
+}
+
+async function sinaFuturesDaily(market, code) {
+  const txt = await request(sinaFuturesUrl(market, code), {
+    timeout: 9000,
+    referer: 'https://finance.sina.com.cn',
+  });
+  const body = (txt.match(/=(\([\s\S]*\))\s*;?\s*$/) || [])[1] || txt;
+  let arr;
+  try { arr = JSON.parse(body.replace(/^[\s(]+|[\s)]+$/g, '')); } catch (e) { throw new Error('期货K线解析失败'); }
+  if (!Array.isArray(arr) || !arr.length) throw new Error('期货K线为空');
+  const bars = arr
+    .map((k) => {
+      const t = Date.parse(((k.date || k.d) || '') + 'T00:00:00Z');
+      return { t, o: num(k.open ?? k.o), h: num(k.high ?? k.h), l: num(k.low ?? k.l), c: num(k.close ?? k.c), v: num(k.volume ?? k.v) };
+    })
+    .filter((b) => b.t && Number.isFinite(b.c) && b.c > 0)
+    .sort((a, b) => a.t - b.t);
+
+  // 新鲜度校验：新浪部分外盘品种只留了 2019 年的十几根残档，
+  // 不校验的话用户会看到一张"13 根 K 线"的空图还以为系统坏了。
+  const last = bars[bars.length - 1];
+  const ageDays = last ? (Date.now() - last.t) / 86400000 : Infinity;
+  // 45 天：既容纳长假（最长约 10 天）又拦住"停更两个月还以为有数据"的品种
+  if (bars.length < 60 || ageDays > 45) {
+    throw new Error(`该品种数据陈旧（${bars.length} 根，最后一根在 ${last ? new Date(last.t).toISOString().slice(0, 10) : '—'}）`);
+  }
+  return { bars, source: 'sina-futures' };
+}
+
+/* 期货分钟线（新浪）：国内给 OHLCV；外盘分时只有价格，用相邻价合成 O/H/L/C */
+const FUT_MIN_TYPE = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '60m': 60 };
+
+async function sinaFuturesMinute(market, code, period, limit) {
+  const type = FUT_MIN_TYPE[period];
+  if (!type) throw new Error('期货不支持该周期: ' + period);
+  if (market === 'CNF') {
+    const txt = await request(
+      `https://stock2.finance.sina.com.cn/futures/api/openapi.php/InnerFuturesNewService.getFewMinLine?symbol=${code}&type=${type}`,
+      { timeout: 9000, referer: 'https://finance.sina.com.cn' }
+    );
+    const j = JSON.parse(txt);
+    const arr = j?.result?.data;
+    if (!Array.isArray(arr) || !arr.length) throw new Error('国内期货分钟线为空');
+    const bars = arr
+      .map((k) => ({
+        t: Date.parse(String(k.d).replace(' ', 'T') + '+08:00'),
+        o: num(k.o), h: num(k.h), l: num(k.l), c: num(k.c), v: num(k.v),
+      }))
+      .filter((b) => b.t && b.c > 0)
+      .sort((a, b) => a.t - b.t);
+    return { bars: bars.slice(-limit), source: 'sina-futures-min' };
+  }
+  // 外盘：分时序列 [时间, 价格, ...]，聚合到目标周期
+  const txt = await request(
+    `https://stock2.finance.sina.com.cn/futures/api/openapi.php/GlobalFuturesService.getGlobalFuturesMinLine?symbol=${code}`,
+    { timeout: 9000, referer: 'https://finance.sina.com.cn' }
+  );
+  const j = JSON.parse(txt);
+  const raw = j?.result?.data?.minLine_1d;
+  if (!Array.isArray(raw) || raw.length < 5) throw new Error('外盘期货分时为空');
+  // 行格式：[时间, 价格, ...]，最后一项是完整时间戳（跨夜交易会跨日，必须用它）
+  const pts = [];
+  for (const row of raw) {
+    const full = row.find((x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(x));
+    const px = num(row[1]);
+    if (!full || !px) continue;
+    const t = Date.parse(full.replace(' ', 'T') + '+08:00');
+    if (Number.isFinite(t)) pts.push({ t, p: px });
+  }
+  // 按 type 分钟聚合成 OHLC
+  const bucket = type * 60000;
+  const map = new Map();
+  for (const pt of pts) {
+    const k = Math.floor(pt.t / bucket) * bucket;
+    const cur = map.get(k);
+    if (!cur) map.set(k, { t: k, o: pt.p, h: pt.p, l: pt.p, c: pt.p, v: 0 });
+    else { cur.h = Math.max(cur.h, pt.p); cur.l = Math.min(cur.l, pt.p); cur.c = pt.p; }
+  }
+  const bars = [...map.values()].sort((a, b) => a.t - b.t);
+  if (bars.length < 5) throw new Error('外盘期货分时聚合后数据不足');
+  // 新浪外盘只给当日分时（约 1380 个 1 分钟点），所以分钟级最多覆盖一个交易日，
+  // 这里如实标注，前端会据此提示"外盘分钟线仅当日"。
+  return { bars: bars.slice(-limit), source: 'sina-global-min', intradayOnly: true };
+}
+
+/** 期货实时报价（国内期货的快照接口常年僵死，必须用 K 线兜底） */
+async function fetchFuturesQuotes(items) {
+  const map = new Map();
+  if (!items.length) return map;
+  const list = items.map((i) => (i.market === 'USF' ? 'hf_' + i.code : i.code));
+  const txt = await request('https://hq.sinajs.cn/list=' + list.join(','), {
+    encoding: 'gbk', timeout: 8000, referer: 'https://finance.sina.com.cn',
+  });
+  for (const line of txt.split('\n')) {
+    const m = line.match(/var hq_str_([^=]+)="([^"]*)"/);
+    if (!m) continue;
+    const key = m[1];
+    const f = m[2].split(',');
+    const it = items.find((i) => (i.market === 'USF' ? 'hf_' + i.code : i.code) === key);
+    if (!it) continue;
+    let price = 0, prevClose = 0, name = '';
+    if (it.market === 'USF') {
+      // hf_XXX: 0 最新价, 7 昨收? 新浪外盘期货字段: 0现价 2买价 3卖价 4最高 5最低 6时间 7昨结 8今开 ... 13名称
+      price = num(f[0]);
+      prevClose = num(f[7]) || num(f[8]) || price;
+      name = f[13] || it.code;
+    } else {
+      // 国内期货: 0名称 1时间 2开 3高 4低 5昨收 6买 7卖 8最新 9结算 10昨结 11买量 12卖量 13持仓 14成交量
+      name = f[0];
+      price = num(f[8]) || num(f[2]);
+      prevClose = num(f[5]) || num(f[10]) || price;
+    }
+    if (!price) continue;
+    const pct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+    map.set(it.market + ':' + it.code, {
+      market: it.market, code: it.code, name: name.trim() || it.code,
+      price, prevClose, pct: +pct.toFixed(2), source: 'sina-futures', staleSnapshot: it.market === 'CNF',
+    });
+  }
+  return map;
 }
 
 /** 币安交易对 */
@@ -183,15 +467,69 @@ async function quotes(items) {
   const key = 'quotes:' + uniq.map((i) => i.market + i.code).join(',');
   const res = await cached(key, 4000, async () => {
     const out = {};
-    const plain = uniq.filter((i) => i.market !== 'CR');
+    const plain = uniq.filter((i) => i.market !== 'CR' && i.market !== 'CNF' && i.market !== 'USF');
     const crypto = uniq.filter((i) => i.market === 'CR');
+    const futures = uniq.filter((i) => i.market === 'CNF' || i.market === 'USF');
     const jobs = [];
+    if (futures.length) jobs.push(fetchFuturesQuotes(futures));
     for (let i = 0; i < plain.length; i += 50) jobs.push(fetchTencentQuotes(plain.slice(i, i + 50)));
     jobs.push(fetchCryptoQuotes(crypto));
     const maps = await Promise.allSettled(jobs);
     for (const r of maps) {
       if (r.status === 'fulfilled') for (const [k, v] of r.value) out[k] = v;
     }
+    // 贵金属：用 Gold-API 现货交叉校验（期货与现货偏离过大时标记 stale）
+    const metals = uniq.filter((i) => ['GC', 'SI', 'AU0', 'AG0'].includes(i.code));
+    if (metals.length) {
+      try {
+        const spots = await spotPrecious(metals.map((m) => m.code));
+        for (const it of metals) {
+          const spot = spots[GOLD_API_SYMBOLS[it.code]];
+          const q = out[it.market + ':' + it.code];
+          if (!q || !spot) continue;
+          // 沪金以人民币计价，不能直接比；只对美元计价的外盘品种做偏离检查
+          if (it.market === 'USF') {
+            const dev = Math.abs(q.price - spot.price) / spot.price;
+            if (dev > 0.03) {
+              out[it.market + ':' + it.code] = { ...q, stale: true, spotPrice: spot.price, note: `与现货偏离 ${(dev * 100).toFixed(1)}%` };
+            } else {
+              out[it.market + ':' + it.code] = { ...q, spotPrice: spot.price };
+            }
+          }
+        }
+      } catch (e) { /* 现货源异常不影响主流程 */ }
+    }
+
+    // 国内期货快照经常是几个月前的僵死值：统一用日线最新收盘重算
+    if (uniq.some((i) => i.market === 'CNF')) {
+      await Promise.allSettled(
+        uniq.filter((i) => i.market === 'CNF').map(async (i) => {
+          try {
+            const k = await klines({ market: 'CNF', code: i.code, period: 'day', limit: 3 });
+            const bars = k.bars;
+            if (bars.length) {
+              const last = bars[bars.length - 1];
+              const prev = bars.length > 1 ? bars[bars.length - 2] : last;
+              const pct = prev.c ? ((last.c - prev.c) / prev.c) * 100 : 0;
+              const had = out[i.market + ':' + i.code] || {};
+              // 保留快照里的 high/low/volume/open 等字段，只把价格与涨跌换成日线口径，
+              // 否则 CNF 与 USF 的报价结构不一致，前端高/低列会空
+              out[i.market + ':' + i.code] = {
+                ...had,
+                market: 'CNF', code: i.code, name: had.name || i.code,
+                price: last.c, prevClose: prev.c, pct: +pct.toFixed(2),
+                change: +(last.c - prev.c).toFixed(4),
+                high: last.h, low: last.l, volume: last.v,
+                open: last.o, close: last.c,
+                timeText: new Date(last.t).toISOString().slice(0, 10),
+                source: 'sina-futures+day',
+              };
+            }
+          } catch (e) { /* 保底用快照 */ }
+        })
+      );
+    }
+
     // 缺失项回退：东方财富单点补
     const missing = uniq.filter((i) => !out[i.market + ':' + i.code]);
     if (missing.length) {
@@ -261,11 +599,23 @@ function parseTencentDate(s) {
   return Date.parse(s);
 }
 
-/** 腾讯 fqkline：A/港股 日周月（A股前复权）。web 前缀的域名有风控 501，故走 ifzq / proxy 两个入口 */
+/**
+ * 腾讯 fqkline：A/港股 日周月（前复权）
+ *
+ * 2026-10-31 实测事实（三个域名两条路径，行为完全不同）：
+ *   · A 股  ifzq.gtimg.cn/.../fqkline/get          → 501（WAF HTML 页）
+ *   · A 股  proxy.finance.qq.com/.../fqkline/get   → 501（同上）
+ *   · 港股  web.ifzq.gtimg.cn/.../hkfqkline/get    → 200 可用 ← 港股走这条
+ *   · 港股  proxy.finance.qq.com/.../hkfqkline/get → 501
+ * 结论：**不能假设"A 股能用港股就能用"**，必须按市场分别给候选域名。
+ * A 股目前靠 sinaDaily 兜底（source=sina-daily），港股靠上面的 web 域名。
+ */
 async function tencentFq(market, code, period, limit) {
   const tc = tcCode(market, code);
   const n = Math.min(Math.max(limit, 60), 800);
-  const hosts = ['https://ifzq.gtimg.cn/appstock/app/fqkline/get', 'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get'];
+  const hosts = market === 'HK'
+    ? ['https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get', 'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/hkfqkline/get']
+    : ['https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get', 'https://ifzq.gtimg.cn/appstock/app/fqkline/get'];
   const errs = [];
   for (const host of hosts) {
     try {
@@ -450,10 +800,20 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
 
     if (m === 'CR') return tryEach([() => binanceKline(c, period, limit)]);
 
+    if (m === 'CNF' || m === 'USF') {
+      if (period !== 'day' && period !== 'week' && period !== 'month') {
+        return tryEach([() => sinaFuturesMinute(m, c, period, limit)]);
+      }
+      const daily = await tryEach([() => sinaFuturesDaily(m, c)]);
+      if (period === 'day') return { ...daily, bars: daily.bars.slice(-limit) };
+      const agg = period === 'week' ? aggBars(daily.bars, weekKey) : aggBars(daily.bars, monthKey);
+      return { bars: agg.slice(-limit), source: daily.source + '+agg' };
+    }
+
     if (period === 'day' || period === 'week' || period === 'month') {
       if (m === 'A') {
         try {
-          return await tryEach([() => tencentFq(m, c, period, limit), () => emKline(m, c, period, limit)]);
+          return await tryEach([() => tencentFq(m, c, period, limit), () => sinaDaily(m, c, Math.min(limit * 2, 1023)), () => emKline(m, c, period, limit)]);
         } catch (e) {
           // 兜底：新浪日线（scale=240）+ 周月聚合
           const daily = await tryEach([() => sinaDaily(m, c, Math.min(limit * 2, 1023))]);
@@ -463,7 +823,14 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
         }
       }
       if (m === 'US') {
-        const daily = await tryEach([() => nasdaqDaily(c, Math.min(limit * 2 + 60, 1200)), () => sinaUsDaily(c), () => emKline(m, c, 'day', limit * 2)]);
+        const daily = await tryEach([
+          () => nasdaqDaily(c, Math.min(limit * 2 + 60, 1200)),
+          () => sinaUsDaily(c),
+          () => stockAnalysisDaily(c),
+          () => twelveDataDaily(c, m),
+          () => alphaVantageDaily(c),
+          () => emKline(m, c, 'day', limit * 2),
+        ]);
         if (period === 'day') return { ...daily, bars: daily.bars.slice(-limit) };
         const agg = period === 'week' ? aggBars(daily.bars, weekKey) : aggBars(daily.bars, monthKey);
         return { bars: agg.slice(-limit), source: daily.source + '+agg' };
@@ -483,6 +850,20 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
   });
 
   const out = res.value;
+  /*
+    统一新鲜度检查（不只期货）：
+    复审核出 A:399137 搜得到、K 线停在 2013-03-01，图上照常画并显示"刚刚更新"——
+    对指数/ETF 这类长期停更或退市的代码，必须明确告诉用户"这是旧数据"。
+    这里不抛错（有些老指数确实需要看历史），而是打 dataAgeDays / staleData 标记，
+    由前端提示。
+  */
+  const bars = out.bars || [];
+  const lastT = bars.length ? bars[bars.length - 1].t : 0;
+  const dataAgeDays = lastT ? Math.round((Date.now() - lastT) / 86400000) : null;
+  // 日线：>10 天没更新基本就是停更/节假日；分钟线：>3 天
+  const staleLimit = period === 'day' || period === 'week' || period === 'month' ? 10 : 3;
+  const staleData = dataAgeDays != null && dataAgeDays > staleLimit;
+
   return {
     market: m,
     code: c,
@@ -490,13 +871,221 @@ async function klines({ market, code, period = 'day', limit = 600 }) {
     periodName: PERIOD_NAME[period],
     source: out.source,
     stale: !!res.stale,
-    bars: out.bars,
+    intradayOnly: !!out.intradayOnly,
+    dataAgeDays,
+    staleData,
+    bars,
   };
 }
 
 /* ------------------------------------------------------------------ */
 /* 搜索                                                                */
 /* ------------------------------------------------------------------ */
+
+const FUTURES_NAMES = {
+  // 外盘
+  ES: '标普500期货', NQ: '纳指100期货', YM: '道指期货', NKD: '日经225期货',
+  GC: '黄金期货', SI: '白银期货', HG: '铜期货', PA: '钯金期货',
+  CL: '原油期货', NG: '天然气期货', HO: '取暖油期货', QM: '迷你原油期货', BZ: '布伦特原油期货',
+  ZL: '豆油期货',
+  CC: '可可期货', KC: '咖啡期货', CT: '棉花期货', OJ: '橙汁期货',
+'6A': '澳元期货', '6S': '瑞郎期货',
+LE: '活牛期货', GF: '育肥牛期货',
+  // 国内 · 上期所
+  CU0: '沪铜主力', AL0: '沪铝主力', ZN0: '沪锌主力', PB0: '沪铅主力', NI0: '沪镍主力', SN0: '沪锡主力',
+  AU0: '沪金主力', AG0: '沪银主力', RB0: '螺纹钢主力', WR0: '线材主力', HC0: '热卷主力',
+  SS0: '不锈钢主力', BU0: '沥青主力', RU0: '橡胶主力', SP0: '纸浆主力', FU0: '燃油主力',
+  // 国内 · 能源中心
+  SC0: '原油主力(INE)', LU0: '低硫燃油主力', NR0: '20号胶主力', BC0: '国际铜主力',
+  // 国内 · 大商所
+  M0: '豆粕主力', Y0: '豆油主力', P0: '棕榈油主力', A0: '豆一主力', B0: '豆二主力',
+  C0: '玉米主力', CS0: '淀粉主力', JD0: '鸡蛋主力', L0: '塑料主力', V0: 'PVC主力',
+  PP0: '聚丙烯主力', J0: '焦炭主力', JM0: '焦煤主力', I0: '铁矿石主力', EG0: '乙二醇主力',
+  EB0: '苯乙烯主力', PG0: 'LPG主力', RR0: '粳米主力', LH0: '生猪主力', FB0: '纤维板主力', BB0: '胶合板主力',
+  // 国内 · 郑商所
+  SR0: '白糖主力', CF0: '棉花主力', CY0: '棉纱主力', TA0: 'PTA主力', MA0: '甲醇主力',
+  FG0: '玻璃主力', RM0: '菜粕主力', OI0: '菜油主力', SA0: '纯碱主力', UR0: '尿素主力',
+  SF0: '硅铁主力', SM0: '锰硅主力', AP0: '苹果主力', CJ0: '红枣主力', PK0: '花生主力',
+PF0: '短纤主力', SH0: '烧碱主力', PX0: '对二甲苯主力',
+  // 国内 · 中金所
+  IF0: '沪深300股指主力', IC0: '中证500股指主力', IH0: '上证50股指主力', IM0: '中证1000股指主力',
+  TS0: '2年期国债主力', TF0: '5年期国债主力', T0: '10年期国债主力', TL0: '30年期国债主力',
+};
+
+/* 加密货币中文别名（用户搜"以太坊""狗狗币"要能命中） */
+const COIN_ALIAS = {
+  比特币: 'BTC', 大饼: 'BTC',
+  以太坊: 'ETH', 以太: 'ETH',
+  币安币: 'BNB',
+  索拉纳: 'SOL', solana: 'SOL',
+  瑞波: 'XRP', 瑞波币: 'XRP',
+  狗狗币: 'DOGE', 狗币: 'DOGE',
+  艾达: 'ADA', ada: 'ADA',
+  波卡: 'DOT',
+  柴犬: 'SHIB',
+  莱特币: 'LTC',
+  波场: 'TRX',
+  雪崩: 'AVAX',
+  链接: 'LINK', chainlink: 'LINK',
+  马蹄: 'MATIC', polygon: 'MATIC',
+  柚子: 'EOS',
+  比特现金: 'BCH',
+  恒星: 'XLM',
+  门罗: 'XMR',
+  洋葱: 'ATOM', cosmos: 'ATOM',
+  文件币: 'FIL',
+  唯链: 'VET',
+  算法: 'ALGO',
+  以太经典: 'ETC',
+  渲染: 'RNDR',
+  仲裁: 'ARB',
+  苏伊: 'SUI',
+  aptos: 'APT',
+  佩佩: 'PEPE',
+  near: 'NEAR',
+  inj: 'INJ',
+  ton: 'TON',
+  世界币: 'WLD',
+};
+
+let COIN_CACHE = null;
+async function binanceSymbols() {
+  if (COIN_CACHE && Date.now() - COIN_CACHE.at < 30 * 60 * 1000) return COIN_CACHE.list;
+  const j = await getJSON('https://data-api.binance.vision/api/v3/exchangeInfo', { timeout: 9000 });
+  const list = (j.symbols || [])
+    .filter((x) => x.quoteAsset === 'USDT' && x.status === 'TRADING')
+    .map((x) => ({ symbol: x.symbol, base: x.baseAsset, quote: x.quoteAsset }));
+  COIN_CACHE = { at: Date.now(), list };
+  return list;
+}
+
+/* 搜索加密货币：代码 / 中文别名 / 模糊都命中 */
+async function searchCrypto(q) {
+  const raw = String(q || '').trim();
+  if (!raw) return [];
+  const kw = raw.toUpperCase();
+  const out = [];
+  const seen = new Set();
+  const push = (sym, name) => {
+    if (seen.has(sym)) return;
+    seen.add(sym);
+    out.push({ market: 'CR', code: sym, name: name || sym, type: 'crypto' });
+  };
+  const short = raw.length < 2;
+  // ① 中文别名（单字只允许别名精确相等）
+  for (const [alias, base] of Object.entries(COIN_ALIAS)) {
+    const hit = short ? alias === raw : (raw.includes(alias) || alias.includes(raw));
+    if (hit || kw === base) push(base + 'USDT', alias + ' (' + base + ')');
+  }
+  // ② Binance 全量交易对（单字不做前缀扫，否则 A→ADA/ATOM/ALGO 一排）
+  try {
+    const list = short ? [] : await binanceSymbols();
+    for (const it of list) {
+      if (it.base === kw || it.symbol === kw || it.base.startsWith(kw) || (kw.length >= 2 && it.symbol.includes(kw))) {
+        push(it.symbol, it.base + '/USDT');
+        if (out.length >= 12) break;
+      }
+    }
+  } catch (e) { /* 网络异常时只返回别名命中 */ }
+  return out.slice(0, 10);
+}
+
+/* 商品关键词别名：用户搜"黄金"要能同时命中 沪金(AU0) 与 纽约金(GC) */
+const COMMODITY_ALIAS = {
+  黄金: ['GC', 'AU0', 'SI'],
+  金: ['GC', 'AU0'],
+  白银: ['SI', 'AG0'],
+  银: ['SI', 'AG0'],
+  铜: ['HG', 'CU0', 'BC0'],
+  铝: ['AL0'],
+  锌: ['ZN0'],
+  镍: ['NI0'],
+  锡: ['SN0'],
+  铅: ['PB0'],
+  原油: ['CL', 'SC0', 'BZ', 'QM'],
+  石油: ['CL', 'SC0'],
+  天然气: ['NG'],
+  螺纹: ['RB0'],
+  螺纹钢: ['RB0'],
+  热卷: ['HC0'],
+  铁矿: ['I0'],
+  铁矿石: ['I0'],
+  焦炭: ['J0'],
+  焦煤: ['JM0'],
+
+  豆粕: ['M0'],
+  豆油: ['Y0'],
+  大豆: ['A0', 'B0'],
+  棕榈: ['P0'],
+  棕榈油: ['P0'],
+  玉米: ['C0'],
+  白糖: ['SR0'],
+  棉花: ['CF0', 'CT'],
+  苹果: ['AP0'],
+  红枣: ['CJ0'],
+  花生: ['PK0'],
+  鸡蛋: ['JD0'],
+  生猪: ['LH0'],
+  菜粕: ['RM0'],
+  菜油: ['OI0'],
+  纯碱: ['SA0'],
+  玻璃: ['FG0'],
+  甲醇: ['MA0'],
+  尿素: ['UR0'],
+  塑料: ['L0'],
+  聚丙烯: ['PP0'],
+  乙二醇: ['EG0'],
+  沥青: ['BU0'],
+  橡胶: ['RU0', 'NR0'],
+  纸浆: ['SP0'],
+  股指: ['IF0', 'IC0', 'IH0', 'IM0'],
+  沪深300: ['IF0'],
+  中证500: ['IC0'],
+  上证50: ['IH0'],
+  中证1000: ['IM0'],
+  国债: ['T0', 'TF0', 'TS0', 'TL0'],
+  标普: ['ES'],
+  纳指: ['NQ'],
+  道指: ['YM'],
+  日经: ['NKD'],
+  美元: ['DX'],
+
+
+
+  可可: ['CC'],
+  咖啡: ['KC'],
+  橙汁: ['OJ'],
+};
+
+function searchFutures(q) {
+  const raw = String(q || '').trim();
+  const kw = raw.toUpperCase();
+  if (!kw) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (code) => {
+    // 只返回当前品种池里真实可用的（避免"搜得到却打不开"）
+    if (seen.has(code) || !FUTURES_NAMES[code]) return;
+    if (!CNF_LIST.includes(code) && !USF_LIST.includes(code)) return;
+    seen.add(code);
+    out.push({ market: code.endsWith('0') ? 'CNF' : 'USF', code, name: FUTURES_NAMES[code], type: 'futures' });
+  };
+  const short = raw.length < 2; // 单字查询
+  // ① 关键词别名优先（黄金 → GC / AU0 / SI）。
+  //    单字时只允许"别名等于查询字"，否则「金」会命中所有带金的品种、「A」会命中一堆代码。
+  for (const [alias, codes] of Object.entries(COMMODITY_ALIAS)) {
+    const hit = short ? alias === raw : (raw.includes(alias) || alias.includes(raw));
+    if (hit) codes.forEach(push);
+  }
+  // ② 代码 / 中文名直接匹配：单字只比中文名，不比代码（否则 A→AL0/AU0/A0/AG0… 全中）
+  for (const [code, name] of Object.entries(FUTURES_NAMES)) {
+    const hit = short
+      ? name === raw || name.startsWith(raw)
+      : (code.includes(kw) || name.includes(raw) || name.toUpperCase().includes(kw));
+    if (hit) push(code);
+  }
+  return out.slice(0, short ? 4 : 10);
+}
 
 async function search(q) {
   const kw = String(q || '').trim();
@@ -509,6 +1098,8 @@ async function search(q) {
     });
     const body = unescapeUnicode((txt.match(/v_hint="([^"]*)"/) || [])[1] || '');
     const items = [];
+    items.push(...searchFutures(kw)); // 期货合约优先（腾讯搜索不含期货）
+    try { items.push(...(await searchCrypto(kw))); } catch (e) {} // 加密货币
     for (const seg of body.split('^')) {
       const p = seg.split('~');
       if (p.length < 4) continue;
@@ -521,7 +1112,7 @@ async function search(q) {
       if (!market) continue;
       items.push({ market, code, name, pinyin: py, kind: p[4] || '' });
     }
-    return items.slice(0, 12);
+    return items.slice(0, 16);
   });
   return res.value;
 }
@@ -532,11 +1123,16 @@ async function search(q) {
 
 const PROBES = [
   { id: 'tencent-quote', name: '腾讯行情（A/港/美 实时）', url: 'https://qt.gtimg.cn/q=sh000001', encoding: 'gbk', markets: ['A', 'HK', 'US'] },
-  { id: 'tencent-kline', name: '腾讯K线（A/港股 日周月）', url: 'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600519,day,,,5,qfq', markets: ['A', 'HK'] },
+  // A 股 fqkline 已被腾讯 WAF 拦成 501；港股走 hkfqkline 另一条路径，仍然可用
+  { id: 'tencent-kline-hk', name: '腾讯K线·港股（hkfqkline）', url: 'https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get?param=hk00700,day,,,5,qfq', markets: ['HK'] },
+  { id: 'sina-daily', name: '新浪A股日线（当前主力）', url: 'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh600519&scale=240&ma=no&datalen=5', markets: ['A'] },
   { id: 'sina-minute', name: '新浪分钟线（A股 1/5/15/30/60）', url: 'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh600519&scale=5&ma=no&datalen=5', markets: ['A'] },
-  { id: 'nasdaq', name: '纳斯达克官方（美股日线）', url: 'https://api.nasdaq.com/api/quote/AAPL/historical?assetclass=stocks&fromdate=2026-09-01&todate=2026-10-26&limit=5', markets: ['US'] },
+  { id: 'sina-futures', name: '新浪期货（国内主连日线）', url: 'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_x=/InnerFuturesNewService.getDailyKLine?symbol=RB0', markets: ['CNF'] },
+  { id: 'nasdaq', name: '纳斯达克官方（美股日线）', url: 'https://api.nasdaq.com/api/quote/AAPL/historical?assetclass=stocks&fromdate=2026-09-01&todate=2026-10-30&limit=5', markets: ['US'] },
+  { id: 'stockanalysis', name: 'StockAnalysis（美股兜底）', url: 'https://stockanalysis.com/api/symbol/s/aapl/history', markets: ['US'] },
   { id: 'binance', name: '币安公共行情（加密 现货）', url: 'https://data-api.binance.vision/api/v3/ticker/price?symbol=BTCUSDT', markets: ['CR'] },
-  { id: 'eastmoney', name: '东方财富（通用兜底）', url: 'https://push2.eastmoney.com/api/qt/stock/get?secid=1.600519&fields=f43,f58', markets: ['A', 'HK', 'US'] },
+  { id: 'gold-api', name: 'Gold-API（贵金属现货）', url: 'https://api.gold-api.com/price/XAU', markets: ['USF'] },
+  { id: 'fred', name: 'FRED（美债/VIX）', url: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10', markets: ['MACRO'] },
 ];
 
 async function probe() {
@@ -556,6 +1152,11 @@ async function probe() {
 
 module.exports = {
   MARKETS,
+  finnhubQuote,
+  twelveDataDaily,
+  fredSeries,
+  FRED_SERIES,
+  stockAnalysisDaily,
   PERIOD_NAME,
   PERIOD_MINUTES,
   normCode,

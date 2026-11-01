@@ -260,8 +260,21 @@ function makeSegment(bis, a, b, dir, done) {
 /* ------------------------------------------------------------------ */
 
 function buildPivots(bis, bars) {
+  /*
+    缠论中枢定义（严格版）：
+      ① 中枢本体由「至少三段次级别走势」相互重叠构成；
+      ② 区间 ZG = min(各段高点)，ZD = max(各段低点)，且要求 ZG > ZD；
+      ③ 区间在**形成那一刻就固定**：之后的震荡只要不完全离开，就只是"延伸"，
+         不得扩大/收缩 ZG、ZD（这是最常见的画错点）；
+      ④ 中枢之前与中枢首段反向的那一段是「进入段」；
+         中枢之后第一条**终点离开中枢区间**（p1 > ZG 或 p1 < ZD）的笔是「离开段」。
+         注意：离开段的**起点必然贴着中枢边界**（走势从中枢里走出来），所以不能要求
+         "整段都在区间外"——那是自相矛盾（实测 600519 的 12 个中枢全部不满足）。
+         判据只看终点，这与"延伸=终点仍在内"互为补集；
+      ⑤ 中枢内段数 ≥ 9 时升级为高一级别中枢。
+  */
   const out = [];
-  let i = 0;
+  let i = 1; // 从第 1 段开始：需要前面有段可以当"进入段"
   let guard = 0;
   while (i + 2 < bis.length && guard++ < 500) {
     const tri = [bis[i], bis[i + 1], bis[i + 2]];
@@ -273,8 +286,11 @@ function buildPivots(bis, bars) {
     }
     let gg = Math.max(...tri.map((b) => b.h));
     let dd = Math.min(...tri.map((b) => b.l));
+
+    // —— 延伸：后续段的**终点**仍落在中枢区间内 = 还在中枢里震荡（不是离开）
+    //    判据必须看端点而不是"整段是否与区间相交"：像 1142→1806 这种整段穿越中枢的，
+    //    是典型的「离开段」，绝不能被吞进中枢（否则中枢会被拉成长条，画面全错）。
     let j = i + 3;
-    // 延伸：后续笔的终点仍落在中枢区间内，则中枢扩展（区间不变）
     while (j < bis.length) {
       const b = bis[j];
       const endsInside = b.p1 <= zg && b.p1 >= zd;
@@ -283,28 +299,78 @@ function buildPivots(bis, bars) {
       dd = Math.min(dd, b.l);
       j++;
     }
-    const endBi = j - 1;
+
+    const endBi = j - 1; // 中枢内最后一段
+    const innerCount = endBi - i + 1;
+    const enterBi = i - 1 >= 0 ? i - 1 : null;
+    const leaveBi = j < bis.length ? j : null;
     out.push({
       idx: out.length,
       startBi: i,
       endBi,
+      enterBi,
+      leaveBi,
       zg,
       zd,
       gg,
       dd,
       height: zg - zd,
-      count: endBi - i + 1,
+      count: innerCount,
       i0: bis[i].i0,
       i1: bis[endBi].i1,
       t0: bars[bis[i].i0].t,
       t1: bars[bis[endBi].i1].t,
-      enterBi: i - 1 >= 0 ? i - 1 : null,
-      leaveBi: j < bis.length ? j : null,
-      upgraded: endBi - i + 1 >= 9,
+      // 进/离段的极值，画图时用来标注进入段、离开段
+      enter: enterBi != null ? { bi: enterBi, i0: bis[enterBi].i0, i1: bis[enterBi].i1, p0: bis[enterBi].p0, p1: bis[enterBi].p1, dir: bis[enterBi].dir } : null,
+      leave: leaveBi != null ? { bi: leaveBi, i0: bis[leaveBi].i0, i1: bis[leaveBi].i1, p0: bis[leaveBi].p0, p1: bis[leaveBi].p1, dir: bis[leaveBi].dir } : null,
+      upgraded: innerCount >= 9,
+      status: leaveBi != null ? 'done' : 'ongoing',
     });
-    i = j;
+    /*
+      下一轮从「离开段之后」开始找：离开段 j 是中枢 A 的离开段，
+      它同时也是中枢 B 的进入段（enterBi = j）。若从 j 本身开始扫，
+      B 就会把 j 当成本体第一笔，于是出现「A 的离开段 = B 的区间首笔」，
+      画出来就是一堆首尾相接、互相套娃的中枢（用户一开始就指出的问题）。
+    */
+    i = Math.max(i + 1, j + 1);
+  }
+  return mergeAdjacent(out, bis);
+}
+
+/*
+  中枢扩展 / 合并（缠论）
+  ------------------------------------------------------------------
+  **不合并**。两个中枢就是两个中枢——哪怕区间有重叠。
+  理由：
+    ① 每个中枢的 ZG/ZD 是它自己前三段的重叠区，合并后无论取交集还是并集，
+       都会让**其中一个中枢的边界失真**（取交集变窄→把震荡区划到中枢外；
+       取并集变宽→把不属于它的走势吞进来）；
+    ② 缠论里"中枢扩展/升级"是**级别**概念，不是把两个中枢压成一个；
+    ③ 图上并排画两个中枢 + 各自的进/离段，才是真实的走势结构。
+
+  这里只做一件轻量的事：给相邻且区间重叠的中枢打上 `overlapPrev: true`，
+  让前端可以提示"这两个中枢有重叠，属于中枢扩展形态"，但**不改几何**。
+*/
+function mergeAdjacent(pivots, bis) {
+  if (pivots.length < 2) return pivots.map((p, idx) => annotate(p, idx, bis, null));
+  const out = [];
+  for (let k = 0; k < pivots.length; k++) {
+    const prev = k > 0 ? pivots[k - 1] : null;
+    out.push(annotate(pivots[k], k, bis, prev));
   }
   return out;
+}
+
+/** 补 enter/leave 细节 + 相邻重叠提示（不改几何） */
+function annotate(p, idx, bis, prev) {
+  const overlapPrev = !!prev && Math.min(p.zg, prev.zg) > Math.max(p.zd, prev.zd);
+  return {
+    ...p,
+    idx,
+    enter: p.enterBi != null ? { bi: p.enterBi, i0: bis[p.enterBi].i0, i1: bis[p.enterBi].i1, p0: bis[p.enterBi].p0, p1: bis[p.enterBi].p1, dir: bis[p.enterBi].dir } : null,
+    leave: p.leaveBi != null ? { bi: p.leaveBi, i0: bis[p.leaveBi].i0, i1: bis[p.leaveBi].i1, p0: bis[p.leaveBi].p0, p1: bis[p.leaveBi].p1, dir: bis[p.leaveBi].dir } : null,
+    overlapPrev,
+  };
 }
 
 function classifyTrend(pivots) {
@@ -629,25 +695,8 @@ function analyze(rawBars, opts = {}) {
       endBar: b.endBar,
     })),
     segments: segments.map((s) => ({ dir: s.dir, i0: s.i0, i1: s.i1, p0: s.p0, p1: s.p1, done: s.done, startBi: s.startBi, endBi: s.endBi })),
-    pivots: pivots.map((p) => ({
-      idx: p.idx,
-      zg: p.zg,
-      zd: p.zd,
-      gg: p.gg,
-      dd: p.dd,
-      height: p.height,
-      count: p.count,
-      i0: p.i0,
-      i1: p.i1,
-      t0: p.t0,
-      t1: p.t1,
-      upgraded: p.upgraded,
-      active: p === lastPivot,
-      startBi: p.startBi,
-      endBi: p.endBi,
-      enterBi: p.enterBi,
-      leaveBi: p.leaveBi,
-    })),
+    // 保留全部字段（enter/leave/status 等新增信息不能被白名单吃掉）
+    pivots: pivots.map((p) => ({ ...p, active: p === lastPivot })),
     beichi: beichi.map((b) => ({ ...b })),
     signals: signals.map((s) => ({ ...s, typeName: s.name })),
     trend,

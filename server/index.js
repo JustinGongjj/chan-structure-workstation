@@ -1,21 +1,26 @@
 'use strict';
 /**
- * 缠论炒股工作站 —— 零依赖 HTTP 服务
+ * 缠论工作站 —— 零依赖 HTTP 服务
  * 静态站点（web/） + JSON API（行情 / 缠论结构 / 雷达 / 干支算卦 / 数据源探测）
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const zlib = require('zlib');
 const { URL } = require('url');
 
 const S = require('./lib/sources');
+const SECTORS = require('./lib/sectors');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
 const BT = require('./lib/backtest');
 const META = require('./lib/metaphysics');
 const K = require('./lib/chan-lessons');
+const DRAW = require('./lib/drawing');
+const GAME = require('./lib/game');
 const { cached, mapPool, cacheStats } = require('./lib/http');
 
 const PORT = Number(process.env.PORT || 8931);
@@ -54,6 +59,20 @@ const WATCHLIST = {
     { code: 'SOLUSDT', name: 'SOL/USDT' },
     { code: 'BNBUSDT', name: 'BNB/USDT' },
   ],
+  CNF: [
+    { code: 'RB0', name: '螺纹钢主连' },
+    { code: 'IF0', name: '沪深300主连' },
+    { code: 'AU0', name: '沪金主连' },
+    { code: 'CU0', name: '沪铜主连' },
+    { code: 'M0', name: '豆粕主连' },
+  ],
+  USF: [
+    { code: 'ES', name: '标普500期货' },
+    { code: 'NQ', name: '纳指100期货' },
+    { code: 'GC', name: '黄金期货' },
+    { code: 'CL', name: '原油期货' },
+    { code: 'YM', name: '道指期货' },
+  ],
 };
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -64,9 +83,11 @@ function defaultWatchlist() {
   return JSON.parse(JSON.stringify(WATCHLIST));
 }
 
+const ALL_MK = ['A', 'HK', 'US', 'CR', 'CNF', 'USF'];
+
 function normalizeWatchlist(raw) {
-  const out = { A: [], HK: [], US: [], CR: [] };
-  for (const m of ['A', 'HK', 'US', 'CR']) {
+  const out = { A: [], HK: [], US: [], CR: [], CNF: [], USF: [] };
+  for (const m of ALL_MK) {
     const list = Array.isArray(raw && raw[m]) ? raw[m] : [];
     const seen = new Set();
     for (const it of list) {
@@ -78,27 +99,46 @@ function normalizeWatchlist(raw) {
       if (out[m].length >= 60) break;
     }
   }
-  const total = out.A.length + out.HK.length + out.US.length + out.CR.length;
-  return total ? out : defaultWatchlist();
+  return out; // 空列表也是合法状态（用户可能全删了），不要回退成默认
 }
 
 function loadWatchlist() {
   if (WL) return WL;
+  let raw = null;
   try {
-    WL = normalizeWatchlist(JSON.parse(fs.readFileSync(WL_FILE, 'utf8')));
+    raw = JSON.parse(fs.readFileSync(WL_FILE, 'utf8'));
   } catch (e) {
-    WL = defaultWatchlist();
+    // 文件不存在 → 用默认；文件损坏 → 不要静默当成默认（先备份再说）
+    if (e.code !== 'ENOENT') {
+      try { fs.copyFileSync(WL_FILE, WL_FILE + '.corrupt-' + Date.now()); } catch (e2) {}
+      console.error('[watchlist] 文件损坏，已备份：', e.message);
+    }
+  }
+  if (!raw) { WL = defaultWatchlist(); return WL; }
+  // 旧版本存档只有 4 个市场：缺失的市场用默认值补齐（而不是变成空列表），
+  // 否则升级后用户看到"期货自选全没了"。用户主动清空的列表不会被覆盖，
+  // 因为空数组是存在的键，只有"键不存在"才补默认。
+  const out = normalizeWatchlist(raw);
+  const defs = defaultWatchlist();
+  let migrated = false;
+  for (const m of ALL_MK) {
+    if (!Object.prototype.hasOwnProperty.call(raw, m)) {
+      out[m] = defs[m] || [];
+      if ((defs[m] || []).length) migrated = true;
+    }
+  }
+  WL = out;
+  if (migrated) {
+    try { saveWatchlist(); console.log('[watchlist] 已补齐期货市场默认自选'); } catch (e) {}
   }
   return WL;
 }
 
 function saveWatchlist() {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(WL_FILE, JSON.stringify(WL, null, 2));
-  } catch (e) {
-    console.error('[watchlist] save failed:', e.message);
-  }
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = WL_FILE + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(WL, null, 2));
+  fs.renameSync(tmp, WL_FILE); // 原子替换：进程被杀也不会留下半个文件
 }
 
 function readBody(req, limit = 65536) {
@@ -134,6 +174,12 @@ const INDEX_BOARD = [
   { market: 'US', code: 'usINX', name: '标普500' },
   { market: 'CR', code: 'BTCUSDT', name: 'BTC' },
   { market: 'CR', code: 'ETHUSDT', name: 'ETH' },
+  { market: 'CNF', code: 'IF0', name: '沪深300主连' },
+  { market: 'CNF', code: 'RB0', name: '螺纹钢主连' },
+  { market: 'CNF', code: 'AU0', name: '沪金主连' },
+  { market: 'USF', code: 'ES', name: '标普500期货' },
+  { market: 'USF', code: 'NQ', name: '纳指期货' },
+  { market: 'USF', code: 'GC', name: '黄金期货' },
 ];
 
 /* 区间套用的级别顺序（大 → 小） */
@@ -142,6 +188,8 @@ const SUITE_PERIODS = {
   HK: ['day', 'week'],
   US: ['day', 'week'],
   CR: ['day', '4h', '60m', '15m', '5m', '1m'],
+  CNF: ['day', '60m', '30m', '15m', '5m'],
+  USF: ['day', '60m', '30m', '15m', '5m'],
 };
 
 const SIGNAL_WEIGHT = { '1B': 100, '2B': 92, '3B': 86, '1S': 100, '2S': 92, '3S': 86 };
@@ -183,7 +231,7 @@ async function analyzeOne({ market, code, period, limit, withQuote = true }) {
 }
 
 async function radarScan({ scope = 'all', period = 'day', limit = 480, nocache = false }) {
-  const markets = scope === 'all' ? ['A', 'HK', 'US', 'CR'] : [scope.toUpperCase()];
+  const markets = scope === 'all' ? ALL_MK.slice() : [scope.toUpperCase()];
   const wl = loadWatchlist();
   const items = [];
   for (const m of markets) for (const it of wl[m] || []) items.push({ market: m, ...it });
@@ -284,7 +332,8 @@ async function overview() {
   });
   const wl = loadWatchlist();
   const watchItems = [];
-  for (const m of ['A', 'HK', 'US', 'CR']) for (const it of wl[m] || []) watchItems.push({ market: m, ...it });
+  const ALL_MARKETS = ['A', 'HK', 'US', 'CR', 'CNF', 'USF'];
+  for (const m of ALL_MARKETS) for (const it of wl[m] || []) watchItems.push({ market: m, ...it });
   const wm = await getQuoteMap(watchItems);
   const watch = watchItems.map((it) => {
     const q = wm.get(it.market + ':' + S.normCode(it.market, it.code));
@@ -302,7 +351,7 @@ async function overview() {
     };
   });
   const pulse = {};
-  for (const m of ['A', 'HK', 'US', 'CR']) {
+  for (const m of ALL_MARKETS) {
     const rows = watch.filter((w) => w.market === m && Number.isFinite(w.pct));
     const avg = rows.length ? rows.reduce((a, b) => a + b.pct, 0) / rows.length : 0;
     pulse[m] = {
@@ -328,25 +377,95 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.png': 'image/png',
+  '.zip': 'application/zip',
+  '.bundle': 'application/octet-stream',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.zip': 'application/zip',
+  '.bundle': 'application/octet-stream',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
 };
+
+const GZIP_EXT = new Set(['.html', '.css', '.js', '.json', '.webmanifest', '.svg', '.md', '.txt']);
+
+function sendBuffer(req, res, buf, ext, extra = {}) {
+  const ver = assetVersion();
+  const etag = 'W/"' + buf.length.toString(16) + '-' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 12) + '"';
+  const headers = {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': GZIP_EXT.has(ext) ? 'no-cache' : 'public, max-age=300',
+    ETag: etag,
+    'X-Asset-Version': ver,
+    Vary: 'Accept-Encoding',
+    ...extra,
+  };
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, headers).end();
+    return;
+  }
+  const gz = GZIP_EXT.has(ext) && /gzip/.test(req.headers['accept-encoding'] || '') && buf.length > 1024;
+  if (gz) {
+    const z = zlib.gzipSync(buf, { level: 6 });
+    res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip', 'Content-Length': z.length });
+    res.end(z);
+    return;
+  }
+  res.writeHead(200, { ...headers, 'Content-Length': buf.length });
+  res.end(buf);
+}
 
 function sendJSON(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
     'Content-Length': Buffer.byteLength(body),
   });
   res.end(body);
 }
 
+/* ---------------- 构建指纹 ----------------
+   手机端"改了却还是旧的"绝大多数是缓存：Service Worker + HTTP 缓存叠加。
+   把 web/ 下代码资源的 mtime+size 汇总成一个指纹，HTML 里的 __ASSET_V__ 会被替换成它，
+   于是每次部署 CSS/JS 的 URL 都会变，任何缓存层都不可能再拿旧文件糊弄用户。 */
+/* 只统计 mtime+size，不读内容：便宜到可以每 1.5 秒重算，
+   这样"改完文件不重启"也能立刻换 URL（否则哈希会停在启动那一刻）。 */
+let _vCache = { at: 0, v: 'dev' };
+function assetVersion() {
+  const now = Date.now();
+  if (now - _vCache.at < 1500) return _vCache.v;
+  const h = crypto.createHash('sha1');
+  const walk = (dir) => {
+    let list = [];
+    let ents;
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return list; }
+    for (const e of ents) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (['downloads', 'node_modules'].includes(e.name)) continue;
+        list = list.concat(walk(p));
+      } else if (/\.(js|css|html|webmanifest)$/.test(e.name)) {
+        try { const st = fs.statSync(p); h.update(path.relative(WEB_ROOT, p) + ':' + st.size + ':' + st.mtimeMs + ';'); } catch (e2) {}
+      }
+    }
+    return list;
+  };
+  walk(WEB_ROOT);
+  _vCache = { at: now, v: h.digest('hex').slice(0, 10) };
+  return _vCache.v;
+}
+const ASSET_V = assetVersion(); // 仅用于日志/兼容，取值为启动瞬间
+
+const MOBILE_UA = /Android|iPhone|iPod|iPad|Mobile|HarmonyOS|MicroMessenger/i;
+
 function serveStatic(req, res, pathname) {
+  // 手机浏览器访问桌面首页 → 直接给手机版（可用 ?desktop=1 留在桌面版）
+  if (pathname === '/' && MOBILE_UA.test(req.headers['user-agent'] || '') && !/[?&]desktop=1/.test(req.url)) {
+    res.writeHead(302, { Location: '/m/' }).end();
+    return;
+  }
   let rel = pathname === '/' ? '/index.html' : pathname;
   if (rel.endsWith('/')) rel += 'index.html';
   const file = path.join(WEB_ROOT, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
@@ -360,17 +479,81 @@ function serveStatic(req, res, pathname) {
       return;
     }
     const ext = path.extname(file).toLowerCase();
+    const noCache = ['.html', '.css', '.js', '.json', '.webmanifest'].includes(ext);
+    if (ext === '.html') {
+      // 注入构建指纹：?v=__ASSET_V__ → 每次部署都变，绕开一切缓存
+      fs.readFile(file, 'utf8', (e2, html) => {
+        if (e2) { res.writeHead(500).end('read error'); return; }
+        const ver = assetVersion();
+        const out = html
+          .replace(/__ASSET_V__/g, ver)
+          .replace('</head>', `<script>window.__ASSET_V__=${JSON.stringify(ver)};</script></head>`);
+        sendBuffer(req, res, Buffer.from(out), '.html', { 'Cache-Control': 'no-cache, no-store, must-revalidate' });
+      });
+      return;
+    }
+    if (GZIP_EXT.has(ext) || st.size < 512 * 1024) {
+      fs.readFile(file, (e2, buf) => {
+        if (e2) { res.writeHead(500).end('read error'); return; }
+        sendBuffer(req, res, buf, ext);
+      });
+      return;
+    }
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
+      'Cache-Control': noCache ? 'no-cache' : 'public, max-age=300',
+      'X-Asset-Version': assetVersion(),
       'Content-Length': st.size,
     });
     fs.createReadStream(file).pipe(res);
   });
 }
 
+/* ---------------- 手绘线存储 ----------------
+   结构：{ "A:600519:day": { updatedAt, drawings: [...] } }
+   用原子写，避免进程被杀造成半个文件；单文件够用（几 KB），不做数据库。 */
+const DRAW_FILE = path.join(DATA_DIR, 'drawings.json');
+let DRAW_STORE = null;
+
+function loadDrawings() {
+  if (DRAW_STORE) return DRAW_STORE;
+  try {
+    DRAW_STORE = JSON.parse(fs.readFileSync(DRAW_FILE, 'utf8')) || {};
+  } catch (e) {
+    DRAW_STORE = {};
+  }
+  return DRAW_STORE;
+}
+
+function saveDrawings() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = DRAW_FILE + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(DRAW_STORE, null, 2));
+  fs.renameSync(tmp, DRAW_FILE);
+}
+
+const drawKey = (market, code, period) => {
+  const m = String(market || 'A').toUpperCase();
+  const norm = code ? S.normCode(m, code) || String(code).toUpperCase() : '';
+  return `${m}:${norm}:${String(period || 'day')}`;
+};
+
+function sanitizeDrawing(d) {
+  const type = ['trend', 'hline', 'rect', 'ray', 'note'].includes(d && d.type) ? d.type : 'trend';
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    id: String((d && d.id) || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+    type,
+    x1: num(d && d.x1),
+    y1: num(d && d.y1),
+    ...(type === 'hline' ? {} : { x2: num(d && d.x2), y2: num(d && d.y2) }),
+    label: String((d && d.label) || '').slice(0, 40),
+    color: String((d && d.color) || '').slice(0, 16)
+  };
+}
+
 const routes = {
-  '/api/health': async () => ({ ok: true, uptimeSec: Math.round((Date.now() - START) / 1000), cache: cacheStats(), node: process.version }),
+  '/api/health': async () => ({ ok: true, uptimeSec: Math.round((Date.now() - START) / 1000), cache: cacheStats(), node: process.version, assetVersion: assetVersion() }),
   '/api/markets': async () => ({
     markets: S.MARKETS,
     watchlist: WATCHLIST,
@@ -379,7 +562,53 @@ const routes = {
     suite: SUITE_PERIODS,
   }),
   '/api/overview': async () => overview(),
+  // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景
+  '/api/macro': async () => {
+    const out = { asof: Date.now(), series: {} };
+    for (const id of ['DGS10', 'DGS2', 'VIXCLS']) {
+      try {
+        const r = await S.fredSeries(id);
+        const last = r.bars[r.bars.length - 1];
+        const prev = r.bars[r.bars.length - 2] || last;
+        out.series[id] = {
+          name: r.name,
+          value: last.c,
+          change: +(last.c - prev.c).toFixed(3),
+          date: new Date(last.t).toISOString().slice(0, 10),
+          points: r.bars.length,
+        };
+      } catch (e) { out.series[id] = { name: S.FRED_SERIES[id], error: String(e.message || e) }; }
+    }
+    return out;
+  },
+  // 商品板块目录（有色金属/贵金属/黑色系/能源化工/农产品/金融期货/外盘指数）
+  '/api/sectors': async () => ({ sectors: SECTORS.catalog(), total: SECTORS.catalog().reduce((n, s) => n + s.count, 0) }),
+  // 板块实时快照：一次返回某板块所有品种的报价
+  '/api/sector': async (u) => {
+    const id = String(u.searchParams.get('id') || '').toLowerCase();
+    const sec = SECTORS.catalog().find((s) => s.id === id);
+    if (!sec) throw new Error('未知板块: ' + id);
+    const items = sec.items;
+    const qm = await getQuoteMap(items.map((i) => ({ market: i.market, code: i.code })));
+    return {
+      id: sec.id,
+      name: sec.name,
+      desc: sec.desc,
+      items: items.map((it) => {
+        const q = qm.get(it.market + ':' + S.normCode(it.market, it.code));
+        return {
+          ...it,
+          price: q ? q.price : null,
+          pct: q ? q.pct : null,
+          change: q ? q.change : null,
+          timeText: q ? q.timeText : '',
+        };
+      }),
+    };
+  },
   '/api/watchlist': async () => ({ list: loadWatchlist(), defaults: WATCHLIST }),
+  // 可选增强源的配置状态（只返回是否已配置，绝不返回 key 本身）
+  '/api/keys': async () => ({ providers: require('./lib/keys').status(), envFile: '.env.local' }),
   '/api/sources': async () => ({ probedAt: Date.now(), sources: await cached('probe', 60000, () => S.probe()).then((r) => r.value) }),
   '/api/search': async (u) => ({ q: u.searchParams.get('q') || '', items: await S.search(u.searchParams.get('q') || '') }),
   '/api/quote': async (u) => {
@@ -408,6 +637,19 @@ const routes = {
       period: u.searchParams.get('period') || 'day',
       nocache: u.searchParams.get('nocache') === '1',
     }),
+  '/api/game/map': async () => {
+    const map = GAME.buildMap(K);
+    return { ok: true, ...map, generatedAt: Date.now() };
+  },
+  '/api/game/level': async (u) => {
+    const no = Number(u.searchParams.get('no') || 1);
+    return await GAME.makeLevel(K, no);
+  },
+  '/api/drawings': async (u) => {
+    const key = drawKey(u.searchParams.get('market'), u.searchParams.get('code'), u.searchParams.get('period'));
+    const rec = loadDrawings()[key] || { drawings: [], updatedAt: null };
+    return { ok: true, key, drawings: rec.drawings || [], updatedAt: rec.updatedAt || null };
+  },
   '/api/daily': async () => V.daily(),
   '/api/chan-lessons': async () => ({
     themes: K.THEMES,
@@ -477,6 +719,24 @@ const routes = {
       ...stats,
     };
   },
+  '/api/drawings/verify': async (u, pre) => {
+    const body = pre && pre.body ? pre.body : await readBody(u.__req);
+    const market = String(body.market || 'A').toUpperCase();
+    const code = body.code || '';
+    const period = body.period || 'day';
+    const drawings = Array.isArray(body.drawings) ? body.drawings.slice(0, 40) : [];
+    const res = await analyzeOne({ market, code, period, limit: 600, withQuote: false });
+    if (!res || !res.ok) throw new Error('行情不可用，暂时无法校验');
+    const out = DRAW.verify({ drawings, analysis: res, market, code, period });
+    out.target = { market, code, name: res.name || '', price: res.quote ? res.quote.price : null };
+    out.analysisSummary = {
+      trend: res.trend && res.trend.type,
+      bis: (res.bis || []).length,
+      pivots: (res.pivots || []).length,
+      signals: (res.signals || []).slice(-3).map((s) => ({ type: s.type, name: s.name, barIdx: s.barIdx, price: s.price }))
+    };
+    return out;
+  },
   '/api/divination': async (u) => {
     const market = (u.searchParams.get('market') || 'A').toUpperCase();
     const code = u.searchParams.get('code') || u.searchParams.get('symbol') || '';
@@ -511,6 +771,46 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   // 自选池写操作
+  // 闯关判分（POST）：答案只在服务端重算
+  if (u.pathname === '/api/game/answer' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const out = await GAME.gradeLevel(K, { no: body.no, token: body.token, attemptId: body.attemptId, answer: body.answer });
+      sendJSON(res, 200, out);
+    } catch (e) {
+      sendJSON(res, 400, { ok: false, error: e.message });
+    }
+    return;
+  }
+  // 手绘线保存（POST）与校验（POST /api/drawings/verify）
+  if (u.pathname === '/api/drawings' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const key = drawKey(body.market, body.code, body.period);
+      if (!body.code) throw new Error('缺少 code');
+      const all = Array.isArray(body.drawings) ? body.drawings : [];
+      // 超上限时保留最新的 40 条（之前是保留最旧的，等于把刚画的丢掉）
+      const kept = all.length > 40 ? all.slice(-40) : all;
+      const list = kept.map(sanitizeDrawing);
+      loadDrawings()[key] = { drawings: list, updatedAt: Date.now() };
+      saveDrawings();
+      console.log(`[drawings] save ${key} · ${list.length} 条${all.length > 40 ? ` (丢弃最早 ${all.length - 40} 条)` : ''}`);
+      sendJSON(res, 200, { ok: true, key, count: list.length, dropped: Math.max(0, all.length - 40), drawings: list });
+    } catch (e) {
+      sendJSON(res, 400, { ok: false, error: e.message });
+    }
+    return;
+  }
+  if (u.pathname === '/api/drawings/verify' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const out = await routes['/api/drawings/verify'](u, { body });
+      sendJSON(res, 200, out);
+    } catch (e) {
+      sendJSON(res, 400, { ok: false, error: e.message });
+    }
+    return;
+  }
   if (u.pathname === '/api/watchlist' || u.pathname === '/api/watchlist/reset') {
     try {
       const wl = loadWatchlist();
@@ -527,25 +827,32 @@ const server = http.createServer(async (req, res) => {
         if (!['A', 'HK', 'US', 'CR'].includes(market)) throw new Error('不支持的市场');
         if (!code.trim()) throw new Error('请填写代码');
         const norm = S.normCode(market, code);
+        if (!norm) throw new Error('代码格式不正确');
         if (!wl[market]) wl[market] = [];
+        if (wl[market].length >= 60) throw new Error('该市场自选已达 60 个上限');
         if (wl[market].some((x) => x.code === norm)) throw new Error('该标的已在自选池中');
         let name = String(body.name || '').trim();
-        if (!name) {
-          try {
-            const qs = await S.quotes([{ market, code: norm }]);
-            if (qs[0] && qs[0].name) name = qs[0].name;
-          } catch (e) {
-            /* 名字取不到就用代码 */
-          }
+        let quote = null;
+        try {
+          const qs = await S.quotes([{ market, code: norm }]);
+          quote = qs && qs[0];
+        } catch (e) { /* 网络异常时仍然允许添加，只是没名字 */ }
+        if (quote && quote.price > 0) {
+          if (!name) name = quote.name || norm;
+        } else if (!name) {
+          throw new Error('查不到该标的的行情，请检查代码');
         }
+        // await 期间可能已有并发请求加过同一个，落库前再查一次
+        if (wl[market].some((x) => x.code === norm)) throw new Error('该标的已在自选池中');
         wl[market].push({ code: norm, name: name || norm });
         saveWatchlist();
         sendJSON(res, 200, { ok: true, list: wl, added: { market, code: norm, name: name || norm } });
         return;
       }
       if (req.method === 'DELETE') {
-        const market = String(u.searchParams.get('market') || '').toUpperCase();
-        const code = String(u.searchParams.get('code') || '');
+        const dbody = await readBody(req).catch(() => ({}));
+        const market = String(u.searchParams.get('market') || dbody.market || '').toUpperCase();
+        const code = String(u.searchParams.get('code') || dbody.code || '');
         if (!market || !code) throw new Error('缺少 market / code');
         const norm = S.normCode(market, code);
         if (wl[market]) wl[market] = wl[market].filter((x) => x.code !== norm);
@@ -578,15 +885,21 @@ const server = http.createServer(async (req, res) => {
     const data = await handler(u);
     sendJSON(res, 200, { ok: true, ...data });
   } catch (e) {
-    console.error('[api]', u.pathname, String(e.message || e));
-    sendJSON(res, 500, { ok: false, error: String(e.message || e), path: u.pathname });
+    // e.status 由 handler 自己给出（比如参数非法 = 400）；没给就是真故障 = 500
+    const code = Number(e && e.status) || (/未知|不支持|非法|无效|参数/.test(String(e.message || '')) ? 400 : 500);
+    if (code >= 500) console.error('[api]', u.pathname, String(e.message || e));
+    sendJSON(res, code, { ok: false, error: String(e.message || e), path: u.pathname });
   } finally {
     if (process.env.LOG !== '0') console.log(`${req.method} ${u.pathname} ${Date.now() - started}ms`);
   }
 });
 
+// 启动就建好数据目录：新克隆的仓库没有 data/（已在 .gitignore 里），
+// 首次访问不该因为目录缺失而走异常分支
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+
 server.listen(PORT, HOST, () => {
-  console.log(`\n  缠论炒股工作站 · Chan Workstation`);
+  console.log(`\n  缠论工作站 · Chan Workstation`);
   console.log(`  http://127.0.0.1:${PORT}/  (bind ${HOST}:${PORT})\n`);
 });
 

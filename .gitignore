@@ -10,3 +10,18 @@ dist/
 .chrome-deps/
 scripts/shot.sh
 scripts/restart.sh
+
+# 打包产物不入库（避免 .git 体积暴涨）
+web/downloads/*.zip
+web/downloads/*.bundle
+web/downloads/*.part
+
+# 本地密钥（不要提交）
+.env.local
+.env
+*.key
+
+
+# 运行时状态（本地自选/手绘线，每台机器不同，不进版本库）
+data/
+web/downloads/

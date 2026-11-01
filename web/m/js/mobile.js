@@ -1,5 +1,5 @@
 /* =========================================================
-   缠论炒股工作站 · 手机版（iOS / Android 双皮肤）
+   缠论工作站 · 手机版（iOS / Android 双皮肤）
    复用 PC 端 API、格式化、图表与教学标注模块
    ========================================================= */
 (function () {
@@ -10,7 +10,7 @@
   const state = {
     tab: 'overview',
     market: 'A',
-    symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' },
+    symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' },
     period: 'day',
     hl: null,
     live: localStorage.getItem('chan-live') === '1',
@@ -25,20 +25,46 @@
   };
 
   const PNAME = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1时', '4h': '4时', day: '日线', week: '周线', month: '月线' };
-  const PERIODS = { A: ['day', 'week', '60m', '30m', '15m', '5m'], HK: ['day', 'week'], US: ['day', 'week'], CR: ['day', '4h', '60m', '15m', '5m'] };
+  const PERIODS = { A: ['day', 'week', '60m', '30m', '15m', '5m'], HK: ['day', 'week'], US: ['day', 'week'], CR: ['day', '4h', '60m', '15m', '5m'], CNF: ['day', 'week', '60m', '30m', '15m', '5m'], USF: ['day', 'week', '60m', '30m', '15m', '5m'] };
+  /* 教学标注可选结构：与 web/js/highlight.js 的 HL_TITLE 保持一致（19 种全开） */
   const HL_CHOICES = [
     ['', '不标注'],
     ['fenxing', '分型'],
     ['bi', '笔'],
+    ['xianduan', '线段'],
     ['zhongshu', '中枢'],
+    ['zhongshu_kuozhan', '中枢扩展'],
     ['a_A_b', 'a+A+b'],
-    ['beichi', '背驰'],
+    ['zoushi_wanmei', '走势终完美'],
+    ['zoushi_jibie', '级别'],
+    ['zoushi_digui', '走势递归'],
+    ['tongjibie_fenjie', '同级别分解'],
+    ['beichi', '趋势背驰'],
+    ['panzheng_beichi', '盘整背驰'],
     ['buy1', '一买'],
+    ['buy2', '二买'],
     ['buy3', '三买'],
+    ['qujian_tao', '区间套'],
+    ['zhongyin', '中阴阶段'],
+    ['jiehelv', '结合律'],
+    ['xiaozhuanda', '小转大']
   ];
 
+  const BUILD = 'v1.1 · 2026-10-27';
+
   /* ---------------- 基础 ---------------- */
+  /* 轻触感反馈：只有用户真的操作过之后才触发（否则 Chrome 会打 policy 警告） */
+  let userTouched = false;
+  function haptic(ms) {
+    if (!userTouched) return;
+    try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch (e) {}
+  }
+  ['pointerdown', 'touchstart', 'keydown'].forEach((ev) =>
+    window.addEventListener(ev, () => { userTouched = true; }, { passive: true, once: true })
+  );
+
   function toast(msg) {
+    haptic(5);
     const el = $('#toast');
     el.textContent = msg;
     el.classList.add('show');
@@ -61,10 +87,19 @@
   /* ---------------- 路由 ---------------- */
   async function go(tab, opts) {
     if (!['overview', 'radar', 'structure', 'theory', 'divination'].includes(tab)) tab = 'overview';
+    if (state.tab === 'divination' && tab !== 'divination') {
+      clearInterval(state.div && state.div.timer);
+      if (state.div) { state.div.timer = null; state.div.live = false; }
+    }
+    closeSheet();
+    const token = (state.renderToken = (state.renderToken || 0) + 1);
     state.tab = tab;
     U.$$('#tabbar .tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     $('#appTitle').textContent = { overview: '总览', radar: '买卖点雷达', structure: '结构分析', theory: '缠论理论', divination: '算卦择时' }[tab];
-    if (!(opts && opts.silent)) history.replaceState(null, '', `?tab=${tab}${location.search.includes('skin=') ? '&skin=' + document.documentElement.dataset.skin : ''}#${tab}`);
+    if (!(opts && opts.silent)) {
+      const q = `?tab=${tab}${location.search.includes('skin=') ? '&skin=' + document.documentElement.dataset.skin : ''}#${tab}`;
+      try { history.pushState({ tab }, '', q); } catch (e) { history.replaceState(null, '', q); }
+    }
     view.innerHTML = skeleton();
     view.scrollTop = 0;
     window.scrollTo(0, 0);
@@ -75,11 +110,127 @@
       else if (tab === 'theory') renderTheory();
       else await renderDivination();
     } catch (e) {
-      view.innerHTML = `<div class="empty">加载失败：${U.esc(e.message)}<br><button class="btn sm" id="retryBtn" style="margin-top:12px">重试</button></div>`;
+      view.innerHTML = `<div class="empty">加载失败：${U.esc(e.message)}<br><button class="btn button sm" id="retryBtn" style="margin-top:12px">重试</button></div>`;
       const b = $('#retryBtn');
       if (b) b.addEventListener('click', () => go(state.tab));
     }
   }
+
+  /* 防串页：异步渲染落地前再确认一次当前 Tab（用户可能已经切走了） */
+  const stale = (t) => state.tab !== t;
+
+  /* ---------------- 手绘线（手机端） ---------------- */
+  let drawKey = '';
+  let drawList = [];
+  let drawSaveTimer = null;
+
+  function bindDrawTools() {
+    U.$$('#drawTools .chip').forEach((b) =>
+      b.addEventListener('click', () => {
+        const k = b.dataset.draw;
+        const chart = state.chart;
+        if (!chart) return;
+        haptic(6);
+        if (k === 'del') {
+          if (!chart.deleteSelected()) toast('先在图上点一条线选中它');
+          return;
+        }
+        if (k === 'clear') {
+          if (!confirm('清空当前标的的手绘线？')) return;
+          chart.clearDrawings();
+          return;
+        }
+        const on = chart.drawMode === k;
+        chart.setDrawMode(on ? 'none' : k);
+        U.$$('#drawTools .chip').forEach((x) => x.classList.toggle('gold', !on && x === b));
+        setDrawHint(on ? '' : k === 'trend' ? '点两下画趋势线' : k === 'rect' ? '拖出一个框' : '点一下画水平线');
+      })
+    );
+    const vb = $('#dVerify');
+    if (vb) vb.addEventListener('click', runMobileVerify);
+    if (state.chart) {
+      state.chart.onDraws = (list) => {
+        drawList = list;
+        setDrawHint('已保存');
+        clearTimeout(drawSaveTimer);
+        drawSaveTimer = setTimeout(() => {
+          const k = { market: state.market, code: state.symbol[state.market], period: state.period };
+          API.drawingsSave({ ...k, drawings: list })
+            .then((r) => setDrawHint(r.dropped ? `已保存（超出上限，丢弃最早的 ${r.dropped} 条）` : '已保存'))
+            .catch((e) => setDrawHint('保存失败：' + e.message));
+        }, 350);
+      };
+    }
+  }
+
+  function setDrawHint(msg) {
+    const el = $('#drawHint');
+    if (!el) return;
+    el.textContent = (msg ? msg + ' · ' : '') + `当前 ${drawList.length} 条 · 点线选中后可删除`;
+  }
+
+  let drawSeq = 0;
+
+  async function loadDrawings() {
+    const k = { market: state.market, code: state.symbol[state.market], period: state.period };
+    const seq = ++drawSeq;
+    drawKey = `${k.market}:${k.code}:${k.period}`;
+    try {
+      const res = await API.drawings(k);
+      if (seq !== drawSeq) return; // 乱序返回直接丢弃
+      drawList = res.drawings || [];
+    } catch (e) {
+      if (seq !== drawSeq) return;
+      drawList = [];
+    }
+    if (state.chart) state.chart.setDrawings(drawList);
+    setDrawHint('');
+  }
+
+  /* 复核结果直接弹层显示（用户反馈：塞在页面里找不到） */
+  function drawVerdictHtml(res) {
+    const lv = res.verdict.level || 'warn';
+    const lines = (res.lines || [])
+      .map(
+        (ln) => `<div class="dv-line"><div class="dv-h">${ln.type === 'hline' ? '水平线' : ln.type === 'rect' ? '矩形' : '趋势线'}${ln.label ? ' · ' + U.esc(ln.label) : ''} · ${ln.score} 分</div>
+        ${ln.findings
+          .map((f) => `<div class="dv-f ${f.level}">${f.level === 'ok' ? '✓' : f.level === 'warn' ? '!' : '✗'} ${U.esc(f.text)}</div>`)
+          .join('')}</div>`
+      )
+      .join('');
+    return `<div class="card" style="margin-bottom:0">
+      <div class="row between" style="margin-bottom:8px"><span class="hint">一致度</span><span style="font-size:20px;font-weight:800">${res.score} / 100</span></div>
+      <div class="dv ${lv}">${U.esc(res.verdict.text)}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${lines || '<div class="hint">还没有画线</div>'}</div>
+      <div class="hint" style="margin-top:10px">${U.esc((res.method && res.method.steps || []).join(' · '))}</div>
+      <div class="hint" style="margin-top:6px;opacity:.75">${U.esc(res.engine || '')} · ${U.esc(res.disclaimer || '')}</div>
+      <button class="btn button primary block" id="dReVerify" style="margin-top:12px">重新复核</button>
+    </div>`;
+  }
+
+  async function runMobileVerify() {
+    const k = { market: state.market, code: state.symbol[state.market], period: state.period };
+    openSheet('AI 复核 · 手绘线 vs 缠论结构', '<div class="empty">正在把线和笔/中枢/买卖点对齐…</div>');
+    try {
+      const res = await API.drawingsVerify({ ...k, drawings: state.chart ? state.chart.getDrawings() : [] });
+      if (stale('structure')) return;
+      const box = $('#sheet');
+      if (!box) return;
+      box.innerHTML =
+        `<div class="sheet-head"><h3>AI 复核 · 手绘线 vs 缠论结构</h3><button class="sheet-close" id="sheetClose" aria-label="关闭"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>` +
+        drawVerdictHtml(res);
+      $('#sheetClose')?.addEventListener('click', closeSheet);
+      $('#dReVerify')?.addEventListener('click', runMobileVerify);
+      haptic(10);
+    } catch (e) {
+      const box = $('#sheet');
+      if (box)
+        box.innerHTML =
+          `<div class="sheet-head"><h3>AI 复核</h3><button class="sheet-close" id="sheetClose" aria-label="关闭"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div class="empty">复核失败：${U.esc(e.message)}</div>`;
+      $('#sheetClose')?.addEventListener('click', closeSheet);
+    }
+  }
+
 
   /* ---------------- 总览 ---------------- */
   async function renderOverview() {
@@ -87,11 +238,11 @@
     const daily = await API.daily().catch(() => null);
     const p = ov.pulse;
     const pulseCards = [
-      ['A', 'A股'], ['HK', '港股'], ['US', '美股'], ['CR', '加密'],
+      ['A', 'A股'], ['HK', '港股'], ['US', '美股'], ['CR', '加密'], ['CNF', '国内期货'], ['USF', '美期货'],
     ]
       .map(([m, name]) => {
         const x = p[m] || { avgPct: 0, up: 0, down: 0, heat: 50 };
-        return `<div class="pulse">
+        return `<div class="pulse" data-pulse="${m}">
         <div class="n"><span>${name} · 自选均涨</span><span class="chip">${U.MK[m]}</span></div>
         <div class="v ${U.cls(x.avgPct)}">${U.pct(x.avgPct)}</div>
         <div class="s">涨 ${x.up} · 跌 ${x.down}</div>
@@ -99,6 +250,11 @@
       </div>`;
       })
       .join('');
+
+    setTimeout(() => {
+      const b = $('#openSectors');
+      if (b) b.addEventListener('click', openSectors);
+    }, 0);
 
     const idx = ov.indices
       .map(
@@ -130,9 +286,14 @@
     </div>`
       : '';
 
+    if (stale('overview')) return;
     view.innerHTML = `
-      <h1 class="page-title">总览 ${stampHtml()}</h1>
-      <div class="page-sub">四市场自选池 · 点击任意标的进入结构分析</div>
+      <h1 class="page-title">总览 <span id="ovStamp">${stampHtml()}</span></h1>
+      <div class="page-sub">六市场自选池 · 点击任意标的进入结构分析</div>
+      <div class="section" style="display:flex;gap:8px">
+        <button class="btn button" id="openSectors" style="flex:1">▦ 商品板块</button>
+        <a class="btn button" id="openGame" href="/game/" style="flex:1;text-align:center">◈ 缠关 108</a>
+      </div>
       <div class="pulse-grid section">${pulseCards}</div>
       <div class="section">
         <div class="section-head"><h3>指数</h3><span class="hint">左右滑动</span></div>
@@ -183,15 +344,110 @@
       });
   }
 
+  /* 实时增量刷新总览：只更新文本节点，绝不重建 DOM —— 重建会把用户的滚动位置弹回顶部 */
+  function patchOverview(ov) {
+    if (!ov) return;
+    const p = ov.pulse || {};
+    ['A', 'HK', 'US', 'CR'].forEach((m) => {
+      const card = document.querySelector(`.pulse[data-pulse="${m}"]`);
+      if (!card) return;
+      const x = p[m] || { avgPct: 0, up: 0, down: 0, heat: 50 };
+      const v = card.querySelector('.v');
+      if (v) { v.className = 'v ' + U.cls(x.avgPct); v.textContent = U.pct(x.avgPct); }
+      const sm = card.querySelector('.s');
+      if (sm) sm.textContent = `涨 ${x.up} · 跌 ${x.down}`;
+      const heat = card.querySelector('.heat i');
+      if (heat) heat.style.width = x.heat + '%';
+    });
+    (ov.indices || []).forEach((r) => {
+      const el = document.querySelector(`.idx-chip[data-m="${r.market}"][data-c="${r.code}"]`);
+      if (!el) return;
+      const pEl = el.querySelector('.p');
+      if (pEl) { pEl.className = 'p ' + U.cls(r.pct); pEl.textContent = U.fmt(r.price, 2); }
+      const cEl = el.querySelector('.c');
+      if (cEl) { cEl.className = 'c ' + U.cls(r.pct); cEl.textContent = U.pct(r.pct); }
+    });
+    (ov.watch || []).forEach((r) => {
+      const el = document.querySelector(`#view .list-item[data-m="${r.market}"][data-c="${r.code}"]`);
+      if (!el) return;
+      const px = el.querySelector('.px');
+      if (px) { px.className = 'px ' + U.cls(r.pct); px.textContent = U.fmt(r.price); }
+      const dt = el.querySelector('.dt');
+      if (dt) { dt.className = 'dt ' + U.cls(r.pct); dt.textContent = U.pct(r.pct); }
+    });
+    const st = document.querySelector('#ovStamp');
+    if (st) st.innerHTML = stampHtml();
+  }
+
   /* ---------------- 雷达 ---------------- */
+  /* ---------- 商品板块（底部弹层） ---------- */
+  async function openSectors() {
+    let catalog = [];
+    try {
+      const r = await API.get('/api/sectors');
+      catalog = r.sectors || [];
+    } catch (e) { toast('板块目录加载失败'); return; }
+    if (!catalog.length) { toast('暂无板块'); return; }
+
+    const tabsHtml = catalog
+      .map((s, i) => `<button class="button sq ${i === 0 ? 'active' : ''}" data-sid="${s.id}">${U.esc(s.name)} ${s.count}</button>`)
+      .join('');
+
+    openSheet(
+      '商品板块',
+      `<div class="seg segmented" id="secTabs" style="overflow-x:auto;flex-wrap:nowrap">${tabsHtml}</div>
+       <div id="secList" class="list"><div class="empty">加载中…</div></div>`,
+      () => {
+        let seq = 0;
+        const load = async (sid) => {
+          const my = ++seq;
+          const list = $('#secList');
+          list.innerHTML = '<div class="empty">加载中…</div>';
+          try {
+            const r = await API.get('/api/sector?id=' + encodeURIComponent(sid));
+            if (my !== seq) return;
+            list.innerHTML = (r.items || []).map((it) => {
+              const cls = it.pct > 0 ? 'up-c' : it.pct < 0 ? 'down-c' : '';
+              const pct = it.pct == null ? '—' : (it.pct > 0 ? '+' : '') + it.pct.toFixed(2) + '%';
+              const px = it.price == null ? '—' : (it.price >= 1000 ? it.price.toFixed(1) : it.price.toFixed(2));
+              return `<div class="list-item" data-m="${it.market}" data-c="${it.code}">
+                <div class="mid"><div class="nm">${U.esc(it.name)}</div><div class="cd">${U.esc(it.code)} · ${U.esc(it.ex)}</div></div>
+                <div style="text-align:right"><div class="nm ${cls}">${px}</div><div class="cd ${cls}">${pct}</div></div>
+              </div>`;
+            }).join('') || '<div class="empty">该板块暂无品种</div>';
+            U.$$('#secList .list-item[data-c]').forEach((el) =>
+              el.addEventListener('click', () => {
+                closeSheet();
+                state.market = el.dataset.m;
+                state.symbol[el.dataset.m] = el.dataset.c;
+                state.period = 'day';
+                go('structure');
+              })
+            );
+          } catch (e) {
+            if (my === seq) list.innerHTML = '<div class="empty">加载失败：' + U.esc(e.message) + '</div>';
+          }
+        };
+        U.$$('#secTabs .sq').forEach((b) =>
+          b.addEventListener('click', () => {
+            U.$$('#secTabs .sq').forEach((x) => x.classList.toggle('active', x === b));
+            load(b.dataset.sid);
+          })
+        );
+        load(catalog[0].id);
+      }
+    );
+  }
+
   async function renderRadar() {
+    if (stale('radar')) return;
     view.innerHTML = `
       <h1 class="page-title">买卖点雷达 ${stampHtml()}</h1>
       <div class="page-sub">按「信号新鲜度 × 类型权重」排序，点击进入结构分析</div>
       <div class="section">
-        <div class="seg" id="rScope">
+        <div class="seg segmented" id="rScope">
           ${[['all', '全部'], ['A', 'A股'], ['HK', '港股'], ['US', '美股'], ['CR', '加密']]
-            .map(([k, n]) => `<button class="sq ${state.radarScope === k ? 'active' : ''}" data-k="${k}">${n}</button>`)
+            .map(([k, n]) => `<button class="sq button ${state.radarScope === k ? 'active' : ''}" data-k="${k}">${n}</button>`)
             .join('')}
         </div>
       </div>
@@ -220,6 +476,19 @@
   function paintRadar(rows) {
     const box = $('#rList');
     if (!box) return;
+    // 已有的行顺序一致时，只更新数字，不重建 DOM（否则排序抖动会让用户点错标的）
+    const existing = [...box.querySelectorAll('.list-item[data-c]')].map((el) => el.dataset.m + ':' + el.dataset.c);
+    const incoming = rows.filter((r) => !r.error).map((r) => r.market + ':' + r.code);
+    if (existing.length && existing.join() === incoming.join()) {
+      rows.filter((r) => !r.error).forEach((r, i) => {
+        const el = box.querySelectorAll('.list-item[data-c]')[i];
+        const px = el.querySelector('.px');
+        if (px && r.price != null) { px.className = 'px ' + U.cls(r.pct); px.textContent = U.fmt(r.price); }
+        const dt = el.querySelector('.dt');
+        if (dt) { dt.className = 'dt ' + U.cls(r.pct); dt.textContent = U.pct(r.pct); }
+      });
+      return;
+    }
     if (!rows.length) {
       box.innerHTML = '<div class="empty">自选池为空，点右上「＋ 自选」添加</div>';
       return;
@@ -258,14 +527,14 @@
       <h1 class="page-title">结构分析 ${stampHtml()}</h1>
       <div class="page-sub">${U.MK[market]} · ${U.esc(code)} · ${PNAME[state.period]}</div>
       <div class="section">
-        <div class="seg" id="sMarket">
-          ${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
-          <button class="sq" id="sSearch">搜索</button>
+        <div class="seg segmented" id="sMarket">
+          ${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
+          <button class="sq button" id="sSearch">搜索</button>
         </div>
       </div>
       <div class="section">
-        <div class="seg" id="sPeriod">
-          ${periods.map((p) => `<button class="sq ${p === state.period ? 'active' : ''}" data-p="${p}">${PNAME[p]}</button>`).join('')}
+        <div class="seg segmented" id="sPeriod">
+          ${periods.map((p) => `<button class="sq button ${p === state.period ? 'active' : ''}" data-p="${p}">${PNAME[p]}</button>`).join('')}
         </div>
       </div>
       <div class="card chart-card">
@@ -280,11 +549,29 @@
         <div class="hint" style="padding:4px 2px 2px">单指拖动平移 · 双指捏合缩放</div>
       </div>
       <div class="section">
+        <div class="section-head"><h3>手绘线</h3><button class="chip gold" id="dVerify">AI 复核 →</button></div>
+        <div class="hscroll" id="drawTools">
+          <button class="chip" data-draw="trend">趋势线</button>
+          <button class="chip" data-draw="hline">水平线</button>
+          <button class="chip" data-draw="rect">框中枢</button>
+          <button class="chip" data-draw="del">删除选中</button>
+          <button class="chip" data-draw="clear">清空</button>
+        </div>
+        <div class="hint" id="drawHint" style="margin-top:2px">点「趋势线」后在图上点两下（自动吸附笔端点）</div>
+        <div id="dVerifyBox"></div>
+      </div>
+      <div class="section">
         <div class="section-head"><h3>教学标注</h3><span class="hint">在图上圈出对应结构</span></div>
         <div class="hscroll">
-          ${HL_CHOICES.map(
-            ([k, n]) => `<button class="chip ${(state.hl || '') === k ? 'gold' : ''}" data-hl="${k}" style="padding:6px 12px;font-size:12px">${n}</button>`
-          ).join('')}
+          ${(() => {
+            const cur = state.hl || '';
+            const known = HL_CHOICES.some(([k]) => k === cur);
+            // 从理论页或 ?hl= 带过来的 key 可能不在选项里：补一个激活项，避免"图上画了但没选中"
+            const extra = !known && cur ? [['' + cur, (window.CHAN_HL?.HL_TITLE?.[cur] || cur)]] : [];
+            return HL_CHOICES.concat(extra).map(
+              ([k, n]) => `<button class="chip ${cur === k ? 'gold' : ''}" data-hl="${k}" style="padding:6px 12px;font-size:12px">${n}</button>`
+            ).join('');
+          })()}
         </div>
       </div>
       <div id="teachBox"></div>
@@ -295,6 +582,10 @@
     U.$$('#sMarket .sq[data-m]').forEach((b) =>
       b.addEventListener('click', () => {
         state.market = b.dataset.m;
+        // 每个市场支持的周期不同（港股/美股只有日线·周线）；不兼容就退回日线，
+        // 否则会请求一个不存在的周期：图表空白 + 一直"加载中"+ 服务端 500
+        if (!PERIODS[state.market].includes(state.period)) state.period = 'day';
+        if (!state.symbol[state.market]) state.symbol[state.market] = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' }[state.market];
         renderStructure();
       })
     );
@@ -314,7 +605,9 @@
     );
 
     const cv = $('#mChart');
+    if (state.chart) state.chart.destroy();
     state.chart = new ChanChart(cv, $('#mTip'));
+    bindDrawTools(); // 必须在 chart 建好之后绑定：工具按钮要拿 state.chart
     try {
       const res = await API.chan({ market, code, period: state.period, limit: 600 });
       if (!res.ok) {
@@ -323,6 +616,7 @@
       }
       state.lastChan = res;
       state.chart.setData(res);
+      loadDrawings(); // 图表实例每次重建，必须重新载入，否则已有线会消失并被"1 条"覆盖保存
       paintStructure(res);
       loadMobileBacktest(market, code, state.period);
     } catch (e) {
@@ -399,7 +693,7 @@
       if (state.chart) state.chart.setHighlight(null);
       return;
     }
-    if (state.chart) state.chart.setHighlight(spec.bands.length ? spec : null);
+    if (state.chart) state.chart.setHighlight(spec.bands.length ? spec : null, { keepView: true });
     box.innerHTML = `<div class="card">
       <div class="row between" style="margin-bottom:6px"><h3 style="font-size:14px">${U.esc(spec.title)}</h3><span class="chip gold">教学标注</span></div>
       <ol class="teach-steps">${spec.steps.map((x) => `<li>${x}</li>`).join('')}</ol>
@@ -448,7 +742,7 @@
     view.innerHTML = `
       <h1 class="page-title">缠论理论</h1>
       <div class="page-sub">点开任意条目看完整内容，可一键在图上标注</div>
-      <div class="theory-tabs">${tabs.map(([k, n]) => `<button class="sq ${state.theoryTab === k ? 'active' : ''}" data-t="${k}">${n}</button>`).join('')}</div>
+      <div class="theory-tabs">${tabs.map(([k, n]) => `<button class="sq button ${state.theoryTab === k ? 'active' : ''}" data-t="${k}">${n}</button>`).join('')}</div>
       <div style="margin-top:6px">${body}</div>`;
     U.$$('.theory-tabs .sq').forEach((b) =>
       b.addEventListener('click', () => {
@@ -474,7 +768,7 @@
       <div class="md-sec"><h4>识别步骤</h4><ol class="md-steps">${(c.howTo || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</ol></div>
       <div class="md-sec"><h4>常见误区</h4><ol class="md-steps">${(c.mistakes || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</ol></div>
       <div class="md-sec"><h4>在图上对应</h4><p>${U.esc(c.station)}</p></div>
-      <button class="btn primary block" id="goChart" data-hl="${U.esc(key)}">在结构图上标注它 →</button>`;
+      <button class="btn button primary block" id="goChart" data-hl="${U.esc(key)}">在结构图上标注它 →</button>`;
       openSheet(c.name, html, () => {
         const b = $('#goChart');
         if (b) b.addEventListener('click', () => {
@@ -512,24 +806,25 @@
 
   /* ---------------- 算卦 ---------------- */
   function renderDivination() {
+    if (stale('divination')) return;
     const d = state.div;
     view.innerHTML = `
       <h1 class="page-title">算卦择时</h1>
       <div class="page-sub">代码 + 实时价 + 时辰起卦；娱乐向，不构成投资建议</div>
       <div class="card">
         <div class="form-row"><div class="hint" style="margin-bottom:6px">市场</div>
-          <div class="seg" id="dMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
+          <div class="seg segmented" id="dMarket">${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
         </div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">标的代码</div><input class="input" id="dCode" value="${U.esc(d.code)}" placeholder="600519 / NVDA / BTCUSDT" autocomplete="off"></div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">起卦方式</div>
-          <div class="seg" id="dMode">
-            <button class="sq ${d.mode === 'price' ? 'active' : ''}" data-k="price">随市（+现价）</button>
-            <button class="sq ${d.mode === 'time' ? 'active' : ''}" data-k="time">时辰（稳定）</button>
+          <div class="seg segmented" id="dMode">
+            <button class="sq button ${d.mode === 'price' ? 'active' : ''}" data-k="price">随市（+现价）</button>
+            <button class="sq button ${d.mode === 'time' ? 'active' : ''}" data-k="time">时辰（稳定）</button>
           </div>
         </div>
         <div class="row" style="gap:8px;margin-top:12px">
-          <button class="btn primary" id="dCast" style="flex:1">起 卦</button>
-          <button class="btn ${d.live ? 'primary' : ''}" id="dLive" style="flex:0 0 auto">${d.live ? '跟随中' : '跟随'}</button>
+          <button class="btn button primary" id="dCast" style="flex:1">起 卦</button>
+          <button class="btn button ${d.live ? 'primary' : ''}" id="dLive" style="flex:0 0 auto">${d.live ? '跟随中' : '跟随'}</button>
         </div>
       </div>
       <div id="dResult">${state.div.last ? '' : '<div class="card empty">点上面的「起卦」开始</div>'}</div>
@@ -540,8 +835,13 @@
         d.market = b.dataset.m;
         d.code = { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT' }[b.dataset.m];
         d.nonce = 0;
+        d.last = null;
         $('#dCode').value = d.code;
         U.$$('#dMarket .sq').forEach((x) => x.classList.toggle('active', x === b));
+        // 旧卦象/择时是上一个标的的，必须清掉再重算，否则会显示 A股 600519 的价格配美股代码
+        const resBox = $('#dResult');
+        if (resBox) resBox.innerHTML = '<div class="card empty">点「起卦」按新标的起卦</div>';
+        loadMobileTiming();
       })
     );
     U.$$('#dMode .sq').forEach((b) =>
@@ -577,6 +877,7 @@
     const box = $('#dTiming');
     if (!box) return;
     try {
+      if (stale('divination')) return;
       const res = await API.timing({ market: state.div.market, code: state.div.code });
       const c = res.composite;
       const color = c >= 58 ? 'var(--down-text)' : c <= 42 ? 'var(--up-text)' : 'var(--gold)';
@@ -682,7 +983,7 @@
     const sheet = $('#sheet');
     sheet.innerHTML = `<div class="sheet-head"><h3>${U.esc(title)}</h3><button class="sheet-close" id="sheetClose" aria-label="关闭"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>${html}`;
     mask.classList.add('show');
-    document.body.style.overflow = 'hidden';
+    document.documentElement.classList.add('sheet-open');
     const close = () => closeSheet();
     $('#sheetClose').addEventListener('click', close);
     mask.onclick = (e) => {
@@ -692,13 +993,13 @@
   }
   function closeSheet() {
     $('#sheetMask').classList.remove('show');
-    document.body.style.overflow = '';
+    document.documentElement.classList.remove('sheet-open');
   }
 
   async function openSearch() {
     openSheet(
       '切换标的',
-      `<div class="form-row"><input class="input" id="qInput" placeholder="代码 / 名称：茅台、NVDA、00700、BTC" autocomplete="off"></div>
+      `<div class="form-row"><input class="input" id="qInput" placeholder="代码 / 名称：黄金、螺纹、以太坊、600519、NVDA、ES" autocomplete="off"></div>
        <div id="qList" class="list"><div class="empty">输入关键字开始搜索</div></div>`,
       () => {
         const inp = $('#qInput');
@@ -734,6 +1035,12 @@
     );
   }
 
+  /* 自选池变了 → 总览/雷达要立刻反映（之前关掉弹层后列表还是旧的） */
+  function refreshAfterWatchChange() {
+    if (state.tab === 'overview') renderOverview();
+    else if (state.tab === 'radar') renderRadar();
+  }
+
   async function openWatchlist() {
     const SK = { market: state.market };
     const render = async () => {
@@ -747,9 +1054,9 @@
       const list = data[SK.market] || [];
       openSheet(
         '管理自选',
-        `<div class="seg" id="wMarket">${['A', 'HK', 'US', 'CR'].map((m) => `<button class="sq ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${data[m].length}</button>`).join('')}</div>
+        `<div class="seg segmented" id="wMarket">${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${(data[m] || []).length}</button>`).join('')}</div>
          <div class="form-row" style="margin-top:12px"><input class="input" id="wCode" placeholder="输入代码，如 600519 / NVDA / BTCUSDT"></div>
-         <button class="btn primary block" id="wAdd">添加</button>
+         <button class="btn button primary block" id="wAdd">添加</button>
          <div class="list" style="margin-top:12px">
            ${list.length
              ? list
@@ -759,7 +1066,7 @@
                  .join('')
              : '<div class="empty">该市场暂无自选</div>'}
          </div>
-         <button class="btn block" id="wReset" style="margin-top:10px">恢复默认自选池</button>`,
+         <button class="btn button block" id="wReset" style="margin-top:10px">恢复默认自选池</button>`,
         () => {
           U.$$('#wMarket .sq').forEach((b) =>
             b.addEventListener('click', () => {
@@ -772,6 +1079,7 @@
               try {
                 await API.watchDel({ market: SK.market, code: b.dataset.del });
                 render();
+                refreshAfterWatchChange();
                 toast('已删除');
               } catch (e) {
                 toast('删除失败');
@@ -785,6 +1093,7 @@
               const r = await API.watchAdd({ market: SK.market, code });
               toast('已添加 ' + (r.added.name || r.added.code));
               render();
+              refreshAfterWatchChange();
             } catch (e) {
               toast(e.message);
             }
@@ -795,6 +1104,7 @@
               await API.watchReset();
               toast('已恢复默认');
               render();
+              refreshAfterWatchChange();
             } catch (e) {
               toast('恢复失败');
             }
@@ -811,18 +1121,34 @@
     openSheet(
       '更多设置',
       `<div class="section-head"><h3>界面皮肤</h3></div>
-       <div class="seg" id="mSkin"><button class="sq ${skin === 'ios' ? 'active' : ''}" data-k="ios">iOS 风格</button><button class="sq ${skin === 'android' ? 'active' : ''}" data-k="android">Android 风格</button></div>
+       <div class="seg segmented" id="mSkin"><button class="sq button ${skin === 'ios' ? 'active' : ''}" data-k="ios">iOS 风格</button><button class="sq button ${skin === 'android' ? 'active' : ''}" data-k="android">Android 风格</button></div>
        <div class="section-head" style="margin-top:14px"><h3>主题</h3></div>
-       <div class="seg" id="mTheme"><button class="sq ${theme === 'dark' ? 'active' : ''}" data-k="dark">深色</button><button class="sq ${theme === 'light' ? 'active' : ''}" data-k="light">浅色</button></div>
+       <div class="seg segmented" id="mTheme"><button class="sq button ${theme === 'dark' ? 'active' : ''}" data-k="dark">深色</button><button class="sq button ${theme === 'light' ? 'active' : ''}" data-k="light">浅色</button></div>
        <div class="section-head" style="margin-top:14px"><h3>实时刷新</h3></div>
-       <div class="seg" id="mLive"><button class="sq ${state.live ? 'active' : ''}" data-k="on">开启（10s）</button><button class="sq ${!state.live ? 'active' : ''}" data-k="off">关闭</button></div>
+       <div class="seg segmented" id="mLive"><button class="sq button ${state.live ? 'active' : ''}" data-k="on">开启（10s）</button><button class="sq button ${!state.live ? 'active' : ''}" data-k="off">关闭</button></div>
        <div class="section-head" style="margin-top:14px"><h3>数据源</h3></div>
        <div id="mSources" class="hint">检测中…</div>
-       <div class="hint" style="margin-top:16px;line-height:1.8">缠论工作站 · 手机版 v1.0<br>PC 版：<a href="/" style="color:var(--accent)">/</a> · iOS 皮肤 <a href="?skin=ios" style="color:var(--accent)">?skin=ios</a> · Android 皮肤 <a href="?skin=android" style="color:var(--accent)">?skin=android</a></div>`,
+       <div class="section-head" style="margin-top:14px"><h3>版本</h3></div>
+       <div class="row between" style="gap:8px">
+         <span class="hint" id="mVer">手机版 ${BUILD} · 资源 ${(window.__ASSET_V__ || 'dev')}</span>
+         <button class="btn button sm" id="mReload">强制刷新</button>
+       </div>
+       <div class="hint" style="margin-top:16px;line-height:1.8">缠论工作站 · 手机版 ${BUILD}<br>PC 版：<a href="/?desktop=1" style="color:var(--accent)">/?desktop=1</a> · iOS 皮肤 <a href="?skin=ios" style="color:var(--accent)">?skin=ios</a> · Android 皮肤 <a href="?skin=android" style="color:var(--accent)">?skin=android</a></div>`,
       () => {
+        const rb = $('#mReload');
+        if (rb) rb.addEventListener('click', async () => {
+          try {
+            const regs = await navigator.serviceWorker?.getRegistrations?.();
+            if (regs) await Promise.all(regs.map((r) => r.unregister()));
+            if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); }
+          } catch (e) {}
+          location.reload();
+        });
         U.$$('#mSkin .sq').forEach((b) =>
           b.addEventListener('click', () => {
             document.documentElement.dataset.skin = b.dataset.k;
+            document.documentElement.classList.toggle('ios', b.dataset.k === 'ios');
+            document.documentElement.classList.toggle('md', b.dataset.k === 'android');
             localStorage.setItem('chan-skin', b.dataset.k);
             U.$$('#mSkin .sq').forEach((x) => x.classList.toggle('active', x === b));
             toast('已切换为 ' + (b.dataset.k === 'ios' ? 'iOS' : 'Android') + ' 风格');
@@ -868,7 +1194,11 @@
       state.timer = setInterval(async () => {
         state.tickN++;
         try {
-          if (state.tab === 'overview') await renderOverview();
+          if (document.querySelector('.sheet-mask.show')) return; // 弹层打开时不刷，免得打断输入
+          if (state.tab === 'overview') {
+            const ov = await API.overview();
+            patchOverview(ov);
+          }
           else if (state.tab === 'structure' && state.tickN % 2 === 0 && state.lastChan) {
             const res = await API.chan({ market: state.market, code: state.symbol[state.market], period: state.period, limit: 600 });
             if (res.ok) {
@@ -888,9 +1218,90 @@
     }
   }
 
+  /* 有新版本部署时提示（不打断当前操作） */
+  function watchUpdate() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      const t = document.getElementById('toast');
+      if (t && !t._updateShown) {
+        t._updateShown = true;
+        toast('已更新到新版本，可下拉刷新');
+      }
+    });
+  }
+
+  /* ---------------- 下拉刷新 ----------------
+     html 上禁掉了原生下拉刷新（避免误触整页重载），所以自己做一个：
+     只在页面顶部、单指、纵向超过 12px 时接管；列表/图表内部的滚动不受影响。 */
+  function bindPullToRefresh() {
+    const el = document.getElementById('ptr');
+    if (!el) return;
+    let startY = 0;
+    let pulling = false;
+    let dy = 0;
+    const THRESHOLD = 64;
+    const label = el.querySelector('.ptr-label');
+    const top = () => (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+
+    document.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length !== 1 || !top() || document.documentElement.classList.contains('sheet-open')) return;
+        startY = e.touches[0].clientY;
+        pulling = true;
+        dy = 0;
+      },
+      { passive: true }
+    );
+
+    document.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!pulling) return;
+        dy = e.touches[0].clientY - startY;
+        if (dy <= 0) { pulling = false; el.classList.remove('show', 'ready'); return; }
+        if (dy > 12) {
+          el.classList.add('show');
+          el.classList.toggle('ready', dy >= THRESHOLD);
+          if (label) label.textContent = dy >= THRESHOLD ? '松手刷新' : '下拉刷新';
+        }
+      },
+      { passive: true }
+    );
+
+    document.addEventListener(
+      'touchend',
+      async () => {
+        if (!pulling) { el.classList.remove('show', 'ready'); return; }
+        pulling = false;
+        const fire = dy >= THRESHOLD;
+        el.classList.remove('ready');
+        if (!fire) { el.classList.remove('show'); return; }
+        el.classList.add('busy');
+        if (label) label.textContent = '刷新中…';
+        haptic(12);
+        try {
+          if (state.tab === 'overview') { const ov = await API.overview(); patchOverview(ov); await renderOverview(); }
+          else if (state.tab === 'radar') await renderRadar();
+          else if (state.tab === 'structure') await renderStructure();
+          else if (state.tab === 'divination') await renderDivination();
+          else renderTheory();
+          toast('已刷新');
+        } catch (e) {
+          toast('刷新失败：' + e.message);
+        } finally {
+          el.classList.remove('busy', 'show');
+          if (label) label.textContent = '下拉刷新';
+        }
+      },
+      { passive: true }
+    );
+  }
+
   /* ---------------- 启动 ---------------- */
   function boot() {
-    U.$$('#tabbar .tab').forEach((b) => b.addEventListener('click', () => go(b.dataset.tab)));
+    U.$$('#tabbar .tab').forEach((b) => b.addEventListener('click', () => { haptic(6); go(b.dataset.tab); }));
+    bindPullToRefresh();
     const sb = $('#searchBtn');
     if (sb) sb.addEventListener('click', openSearch);
     const mb = $('#moreBtn');
@@ -908,10 +1319,30 @@
       else if (sh === 'watch') openWatchlist();
       else if (sh === 'theory') openTheory('c', 0);
     }, 700);
+    watchUpdate();
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/m/sw.js', { scope: '/m/' }).catch(() => {});
+      navigator.serviceWorker.register('/m/sw.js?v=' + (window.__ASSET_V__ || 'dev'), { scope: '/m/' }).catch(() => {});
     }
   }
+  /* 安卓返回键 / iOS 手势返回：先关弹层，再回上一个 Tab，最后才退出 */
+  window.addEventListener('popstate', (e) => {
+    if (document.documentElement.classList.contains('sheet-open')) {
+      closeSheet();
+      history.pushState(e.state || {}, '', location.href);
+      return;
+    }
+    const t = (e.state && e.state.tab) || new URLSearchParams(location.search).get('tab') || 'overview';
+    if (t !== state.tab) go(t, { silent: true });
+  });
+
+  /* 全局兜底：任何未捕获异常都给出可见提示，而不是白屏 */
+  window.addEventListener('error', (e) => {
+    if (e && e.message && /Script error/.test(e.message)) return;
+    const v = document.getElementById('view');
+    if (v && !v.children.length) v.innerHTML = '<div class="card empty">页面出错了：' + (e.message || '未知错误') + '<br><button class="btn sm" onclick="location.reload()" style="margin-top:10px">重新加载</button></div>';
+  });
+  window.addEventListener('unhandledrejection', () => {});
+
   document.addEventListener('DOMContentLoaded', boot);
   if (document.readyState !== 'loading') boot();
 })();

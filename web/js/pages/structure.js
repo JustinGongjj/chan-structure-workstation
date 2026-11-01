@@ -5,6 +5,8 @@
     HK: ['day', 'week', 'month'],
     US: ['day', 'week', 'month'],
     CR: ['day', 'week', '4h', '60m', '15m', '5m', '1m'],
+    CNF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
+    USF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
   };
   const PNAME = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1时', '4h': '4时', day: '日线', week: '周线', month: '月线' };
   let chart = null;
@@ -55,7 +57,8 @@
     );
   }
 
-  async function refresh() {
+  async function refresh(opts) {
+    bindPickerOnce();
     const market = App.state.market;
     const code = App.state.symbol[market];
     const period = App.state.period;
@@ -72,6 +75,8 @@
         return;
       }
       chart.setData(res);
+      // 每次都重新载入：renderStructure 会重建 canvas，只在 key 变化时载入会让已有线消失
+      loadDrawings();
       U.stamp('liveStampStruct');
       renderState(res);
       renderSignals(res);
@@ -101,7 +106,7 @@
     const rows = [
       ['现价', `<span class="${U.cls(q.pct)}">${U.fmt(st.price)}（${U.pct(q.pct)}）</span>`],
       ['趋势类型', `${res.trend.type}<span class="hint">（${res.trend.sub}）</span>`],
-      ['当前中枢', pv ? `[${U.fmt(pv.zd)}, ${U.fmt(pv.zg)}] · ${pv.count} 笔${pv.upgraded ? ' · 九笔升级' : ''}` : '尚未形成'],
+      ['当前中枢', pv ? `[${U.fmt(pv.zd)}, ${U.fmt(pv.zg)}] · ${pv.count} 笔${pv.upgraded ? ' · 九笔升级' : ''}${pv.overlapPrev ? ' · 与前一中枢重叠（扩展形态）' : ''}` : '尚未形成'],
       ['现价位置', U.POS_TXT[st.position] || '—'],
       ['最后一笔', res.bis.length ? `${res.bis[res.bis.length - 1].dir > 0 ? '向上' : '向下'} ${U.fmt(res.bis[res.bis.length - 1].p0)} → ${U.fmt(res.bis[res.bis.length - 1].p1)}` : '—'],
       ['结构', res.structure.replace(/（.*?）/, '')],
@@ -237,6 +242,9 @@
     const cardEl = U.$('#teachCard');
     cardEl.style.display = '';
     const foot = U.$('#teachFoot');
+    // 先清掉上一次的步骤条：insertAdjacentHTML 只是插入，不清会越叠越多（复现：切 9 次概念叠出 9 条）
+    const oldBar = U.$('#teachStepBar');
+    if (oldBar) oldBar.remove();
     if (foot && spec.steps.length > 1) {
       foot.insertAdjacentHTML(
         'afterend',
@@ -281,6 +289,13 @@
       renderNarrative(res);
       applyHighlight(res, true);
       U.stamp('liveStampStruct');
+      // 陈旧数据明确提示，避免把 2013 年的图当成今天的行情
+      const stampEl = U.$('#liveStampStruct');
+      if (stampEl) {
+        if (res.staleData) {
+          stampEl.innerHTML = `<span style="color:var(--warn,#e0a33e)">⚠ 数据陈旧 ${res.dataAgeDays} 天未更新（最后 ${new Date(res.bars[res.bars.length - 1].t).toISOString().slice(0, 10)}）</span>`;
+        }
+      }
       if (++liveN % 3 === 0) loadSuite(market, code);
     } catch (e) {
       /* 静默 */
@@ -345,11 +360,274 @@
     }
   }
 
+  /* ---------------- 标的选择器 ---------------- */
+  const HOT = [
+    ['A', '热门 A 股', [['600519', '贵州茅台'], ['300750', '宁德时代'], ['000001', '平安银行'], ['601899', '紫金矿业'], ['002594', '比亚迪']]],
+    ['CNF', '国内期货', [['IF0', '沪深300主连'], ['RB0', '螺纹钢主连'], ['AU0', '沪金主连'], ['CU0', '沪铜主连'], ['M0', '豆粕主连'], ['SC0', '原油主连']]],
+    ['USF', '美期货', [['ES', '标普500'], ['NQ', '纳指100'], ['GC', '黄金'], ['CL', '原油'], ['SI', '白银']]],
+    ['CR', '加密', [['BTCUSDT', 'BTC'], ['ETHUSDT', 'ETH'], ['SOLUSDT', 'SOL'], ['BNBUSDT', 'BNB'], ['XRPUSDT', 'XRP'], ['DOGEUSDT', 'DOGE']]],
+    ['US', '热门美股', [['NVDA', '英伟达'], ['AAPL', '苹果'], ['TSLA', '特斯拉'], ['MSFT', '微软']]],
+    ['HK', '热门港股', [['00700', '腾讯控股'], ['09988', '阿里巴巴'], ['03690', '美团']]]
+  ];
+
+  let pickerBound = false;
+
+  function renderPicker() {
+    const box = U.$('#pickerHot');
+    if (!box) return;
+    box.innerHTML = HOT.map(
+      ([mk, title, items]) => `<div class="picker-group">
+        <div class="pg-title">${title}</div>
+        <div class="picker-chips">${items
+          .map(([code, name]) => `<button class="picker-chip" data-m="${mk}" data-c="${code}">${U.esc(name)}<span class="mk">${U.MK[mk]}</span></button>`)
+          .join('')}</div>
+      </div>`
+    ).join('');
+    U.$$('#pickerHot .picker-chip').forEach((b) =>
+      b.addEventListener('click', () => {
+        App.state.market = b.dataset.m;
+        App.state.symbol[b.dataset.m] = b.dataset.c;
+        App.state.pickedSymbol = true; // 选定即视为"显式标的"，刷新后不再掉回选择器
+        App.syncURL();
+        hidePicker();
+        refresh();
+      })
+    );
+  }
+
+  /*
+    设计要点（复审核出过一次 BLOCKER）：结构页**永远出图**。
+    标的选择器是"换标的"的辅助面板，默认折叠；只有首次访问（本次会话还没选过任何标的）
+    才默认展开，并且给一个"直接用默认标的"的出口——绝不能因为没选标的就让图不出现。
+  */
+  function hidePicker() {
+    const p = U.$('#symbolPicker');
+    if (p) p.style.display = 'none';
+  }
+
+  function showPicker() {
+    const p = U.$('#symbolPicker');
+    if (p) p.style.display = '';
+  }
+
+  function pickExplicit(code) {
+    App.state.symbol[App.state.market] = code;
+    App.state.pickedSymbol = true;
+    App.syncURL();
+    hidePicker();
+    return refresh();
+  }
+
+  function bindPickerOnce() {
+    if (pickerBound) return;
+    pickerBound = true;
+    renderPicker();
+    const close = U.$('#pickerClose');
+    if (close) close.addEventListener('click', () => hidePicker());
+    const sw = U.$('#switchSymbol');
+    if (sw) sw.addEventListener('click', () => {
+      const p = U.$('#symbolPicker');
+      if (!p) return;
+      if (p.style.display === 'none') { showPicker(); p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      else hidePicker();
+    });
+    const inp = U.$('#pickerSearch');
+    const box = U.$('#pickerResults');
+    if (!inp || !box) return;
+    const run = U.debounce(async () => {
+      const q = inp.value.trim();
+      if (q.length < 1) { box.style.display = 'none'; return; }
+      try {
+        const res = await API.search(q);
+        box.innerHTML = res.items.length
+          ? res.items.map((it) => `<div class="list-item" data-m="${it.market}" data-c="${it.code}">
+              <span class="chip">${U.MK[it.market] || it.market}</span>
+              <div class="mid"><div class="nm">${U.esc(it.name)}</div><div class="cd">${U.esc(it.code)}</div></div>
+            </div>`).join('')
+          : '<div class="list-item">没有匹配的标的</div>';
+        box.style.display = '';
+        U.$$('.list-item[data-c]', box).forEach((el) =>
+          el.addEventListener('click', () => {
+            App.state.market = el.dataset.m;
+            App.state.symbol[el.dataset.m] = el.dataset.c;
+            App.state.pickedSymbol = true;
+            App.syncURL();
+            box.style.display = 'none';
+            inp.value = '';
+            hidePicker();
+            refresh();
+          })
+        );
+      } catch (e) {
+        box.innerHTML = '<div class="list-item">搜索失败：' + U.esc(e.message) + '</div>';
+        box.style.display = '';
+      }
+    }, 260);
+    inp.addEventListener('input', run);
+  }
+
+  /* ---------------- 手绘线 ---------------- */
+  let drawingKey = '';
+  let drawingList = [];
+  let saveTimer = null;
+
+  function currentKey() {
+    const st = App.state;
+    return { market: st.market, code: st.symbol ? st.symbol[st.market] : st.code, period: st.period };
+  }
+
+  let drawSeq = 0;
+
+  async function loadDrawings() {
+    const k = currentKey();
+    const key = `${k.market}:${k.code}:${k.period}`;
+    const seq = ++drawSeq;
+    drawingKey = key;
+    try {
+      const res = await API.drawings(k);
+      if (seq !== drawSeq) return; // 乱序返回：丢掉，否则会把别的标的的线套上来
+      drawingList = res.drawings || [];
+    } catch (e) {
+      if (seq !== drawSeq) return;
+      drawingList = [];
+    }
+    chart.setDrawings(drawingList);
+    updateDrawHint();
+  }
+
+  function persistDrawings(list) {
+    drawingList = list;
+    const k = currentKey();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      API.drawingsSave({ ...k, drawings: list })
+        .then((r) => updateDrawHint(r && r.dropped ? `已保存（丢弃最早 ${r.dropped} 条）` : '已保存'))
+        .catch((e) => updateDrawHint('保存失败：' + e.message));
+    }, 350);
+  }
+
+  function updateDrawHint(msg) {
+    const el = U.$('#drawHint');
+    if (!el) return;
+    const n = drawingList.length;
+    el.textContent =
+      (msg ? msg + ' · ' : '') +
+      `当前 ${n} 条手绘线 · 点「趋势线」后点两下（自动吸附笔端点）· 点线选中后 Delete 删除`;
+  }
+
+  function bindDrawing() {
+    const setBtn = (id, mode) => {
+      const b = U.$('#' + id);
+      if (!b) return;
+      b.addEventListener('click', () => {
+        const on = chart.drawMode === mode;
+        chart.setDrawMode(on ? 'none' : mode);
+        ['drawTrend', 'drawLevel', 'drawRect'].forEach((bid) => {
+          const el = U.$('#' + bid);
+          if (!el) return;
+          el.classList.toggle('primary', false);
+          el.setAttribute('aria-pressed', 'false');
+        });
+        if (!on) {
+          b.classList.add('primary');
+          b.setAttribute('aria-pressed', 'true');
+        }
+        updateDrawHint(on ? '已退出画线' : mode === 'trend' ? '点两下画线' : mode === 'rect' ? '拖出一个框' : '点一下画水平线');
+      });
+    };
+    setBtn('drawTrend', 'trend');
+    setBtn('drawLevel', 'hline');
+    setBtn('drawRect', 'rect');
+    U.$('#drawDel')?.addEventListener('click', () => {
+      if (!chart.deleteSelected()) U.toast('先点一条线选中它');
+    });
+    U.$('#drawClear')?.addEventListener('click', () => {
+      if (confirm('清空当前标的的全部手绘线？')) chart.clearDrawings();
+    });
+    U.$('#drawVerify')?.addEventListener('click', runDrawVerify);
+    U.$('#drawModalClose')?.addEventListener('click', closeDrawModal);
+    U.$('#drawModalAgain')?.addEventListener('click', runDrawVerify);
+    U.$('#drawModal')?.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'drawModal') closeDrawModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && U.$('#drawModal')?.classList.contains('show')) closeDrawModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      const typing = (() => {
+        const a = document.activeElement;
+        return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+      })();
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing) {
+        if (chart.deleteSelected()) e.preventDefault();
+      }
+      if (e.key === 'Escape') chart.setDrawMode('none');
+    });
+    chart.onDraws = (list) => {
+      persistDrawings(list);
+      updateDrawHint('已保存');
+    };
+  }
+
+  function openDrawModal() {
+    const m = U.$('#drawModal');
+    if (!m) return;
+    m.classList.add('show');
+    m.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    U.$('#drawModalClose')?.focus();
+  }
+
+  function closeDrawModal() {
+    const m = U.$('#drawModal');
+    if (!m) return;
+    m.classList.remove('show');
+    m.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  async function runDrawVerify() {
+    const k = currentKey();
+    if (U.$('#drawScore')) U.$('#drawScore').textContent = '复核中…';
+    if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = '<div class="loading">正在把线和笔/中枢/买卖点对齐…</div>';
+    if (U.$('#drawFindings')) U.$('#drawFindings').innerHTML = '';
+    if (U.$('#drawMethod')) U.$('#drawMethod').textContent = '';
+    openDrawModal(); // 结果直接在弹窗里出来，而不是塞在页面底部
+    try {
+      const res = await API.drawingsVerify({ ...k, drawings: chart.getDrawings() });
+      renderDrawVerify(res);
+    } catch (e) {
+      if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = '<div class="loading">复核失败：' + U.esc(e.message) + '</div>';
+      if (U.$('#drawScore')) U.$('#drawScore').textContent = '失败';
+    }
+  }
+
+  function renderDrawVerify(res) {
+    const lv = { ok: 'ok', warn: 'warn', fail: 'fail' }[res.verdict.level] || 'warn';
+    if (U.$('#drawScore')) U.$('#drawScore').innerHTML = `一致度 <b>${res.score}</b> / 100`;
+    if (U.$('#drawVerdict')) U.$('#drawVerdict').innerHTML = `<div class="dv ${lv}">${U.esc(res.verdict.text)}</div>`;
+    if (U.$('#drawFindings')) {
+      U.$('#drawFindings').innerHTML = (res.lines || [])
+        .map((ln) => {
+          const tag = ln.type === 'hline' ? '水平线' : ln.type === 'rect' ? '矩形' : '趋势线';
+          return `<div class="dv-line"><div class="dv-h">${tag} · ${ln.score} 分</div>${ln.findings
+            .map((f) => `<div class="dv-f ${f.level}">${f.level === 'ok' ? '✓' : f.level === 'warn' ? '!' : '✗'} ${U.esc(f.text)}</div>`)
+            .join('')}</div>`;
+        })
+        .join('') || '<div class="hint">还没有画线</div>';
+    }
+    if (U.$('#drawMethod'))
+      U.$('#drawMethod').innerHTML =
+        U.esc((res.method && res.method.steps || []).join(' · ')) +
+        `<br><span style="opacity:.75">引擎：${U.esc(res.engine || 'rule-based')}（确定性规则，非大模型）· ${U.esc(res.disclaimer || '')}</span>`;
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     initChart();
     U.$('#zoomIn').addEventListener('click', () => chart.zoom(1 / 1.25));
     U.$('#zoomOut').addEventListener('click', () => chart.zoom(1.25));
     U.$('#zoomReset').addEventListener('click', () => chart.resetView());
+    bindDrawing();
     const sel = U.$('#teachSelect');
     if (sel)
       sel.addEventListener('change', () => {
@@ -376,5 +654,23 @@
     window.addEventListener('resize', U.debounce(() => chart && chart.draw(), 120));
   });
 
-  window.PageStructure = { render: refresh, tick, getChart: () => chart };
+  function renderPage() {
+    bindPickerOnce();
+    /*
+      永远出图；选择器只在**本次会话第一次**进结构页时展开做引导。
+      复审核出：原来每次 render（切市场 tab / 点导航 / 实时 tick）都会 showPicker()，
+      用户手动收起后又被重新拉开。用 pickerShown 记住"已经引导过一次"。
+    */
+    if (App.state.pickedSymbol || App.state.pickerShown) hidePicker();
+    else { showPicker(); App.state.pickerShown = true; }
+    return refresh();
+  }
+
+  window.PageStructure = {
+    render: renderPage,
+    tick,
+    getChart: () => chart,
+    showPicker,
+    hidePicker,
+  };
 })();

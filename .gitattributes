@@ -1,0 +1,26 @@
+# 统一换行符，避免 Windows 克隆后脚本报 CRLF 错误
+* text=auto eol=lf
+
+# 明确二进制文件
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.gif binary
+*.zip binary
+*.gz binary
+
+# 语法高亮识别
+*.md text
+*.yml text
+*.yaml text
+
+# GitHub 语言统计：把前端 JS 也算进来
+web/**/*.js linguist-language=JavaScript
+server/**/*.js linguist-language=JavaScript
+scripts/**/*.js linguist-language=JavaScript
+
+# 不参与语言统计
+docs/** linguist-documentation
+data/** linguist-vendored
+web/vendor/** linguist-vendored

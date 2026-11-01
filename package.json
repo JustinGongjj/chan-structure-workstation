@@ -1,20 +1,18 @@
 {
   "name": "chan-structure-workstation",
-  "version": "1.0.0",
-  "description": "Deterministic, dependency-free Chan-theory (缠论) structure engine + multi-market trading workstation (A-shares / HK / US / crypto) with teaching chart annotations and a mobile PWA.",
+  "version": "2.3.0",
+  "description": "缠论工作站 · 零依赖 Node.js 的缠论（Chan Theory）技术分析平台：六市场实时行情、笔/线段/中枢/背驰/买卖点、手绘线 AI 复核、算卦择时、108 关闯关游戏",
   "keywords": [
-    "chan-theory",
-    "chang-lun",
+    "chanlun",
     "缠论",
     "technical-analysis",
-    "price-action",
-    "divergence",
-    "quantitative-finance",
-    "stock-analysis",
+    "stock",
+    "futures",
     "crypto",
+    "zero-dependency",
+    "nodejs",
     "canvas",
-    "pwa",
-    "zero-dependency"
+    "trading"
   ],
   "license": "MIT",
   "private": false,
@@ -35,10 +33,21 @@
     "dev": "PORT=8931 node server/index.js",
     "test": "node --test test/*.test.js",
     "lint": "find server web -name '*.js' -exec node --check {} +",
-    "docker": "docker build -t chan-station . && docker run --rm -p 8931:8931 chan-station"
+    "docker": "docker build -t chan-station . && docker run --rm -p 8931:8931 chan-station",
+    "check:api": "node scripts/apicheck.js",
+    "check:ui": "node scripts/uicheck.js",
+    "check:flow": "node scripts/flowcheck.js",
+    "check:all": "node --test test/*.test.js && node scripts/htmlcheck.js && node scripts/cssaudit.js && node scripts/apicheck.js && node scripts/uicheck.js && node scripts/sheetcheck.js && node scripts/flowcheck.js && node scripts/perfcheck.js",
+    "check:sheet": "node scripts/sheetcheck.js",
+    "check:css": "node scripts/cssaudit.js",
+    "check:perf": "node scripts/perfcheck.js",
+    "check:pivot": "node scripts/pivotviz.js",
+    "check:matrix": "node scripts/matrixcheck.js",
+    "check:sources": "node scripts/srcaudit.js",
+    "check:html": "node scripts/htmlcheck.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "repository": {
     "type": "git",
@@ -47,5 +56,9 @@
   "bugs": {
     "url": "https://github.com/JustinGongjj/chan-structure-workstation/issues"
   },
-  "homepage": "https://github.com/JustinGongjj/chan-structure-workstation#readme"
+  "homepage": "https://github.com/JustinGongjj/chan-structure-workstation#readme",
+  "author": {
+    "name": "JustinGongjj",
+    "url": "https://github.com/JustinGongjj"
+  }
 }
