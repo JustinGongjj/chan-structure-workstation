@@ -502,7 +502,7 @@ function serveStatic(req, res, pathname) {
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Cache-Control': noCache ? 'no-cache' : 'public, max-age=300',
-      'X-Asset-Version': ver,
+      'X-Asset-Version': assetVersion(),
       'Content-Length': st.size,
     });
     fs.createReadStream(file).pipe(res);

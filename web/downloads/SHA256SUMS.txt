@@ -1,2 +1,2 @@
-738bd5977f28b1334fc40d1bfe91d54b97a80d2abba19a1a5f719ad508bd258a  chan-station-git-bundle-20261027.bundle
-8b09c0499ee14c082e3c9446d51151b13b9d8201701d78dc0022377fada69724  chan-station-src-20261027.zip
+09b2d656721fa075e9d4d32243f7e12eb3656bbb02700ce94cd0971cc0a03424  chan-structure-workstation-v2.3.0-full.bundle
+d9ae1d9868327e35c5312a764893cc0ab6ee79df109bf798617547da3ea2f52a  chan-structure-workstation-v2.3.0-src.zip

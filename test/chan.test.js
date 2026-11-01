@@ -358,3 +358,38 @@ test('K 线返回统一带新鲜度标记（不只有期货）', async () => {
     assert.ok(old.dataAgeDays > 1000, 'dataAgeDays 应反映真实天数');
   }
 });
+
+/* ---------------- 大文件下载不崩（曾经 ver is not defined 导致进程退出） ---------------- */
+test('静态服务：大文件走流式分支且不崩溃', async () => {
+  const { spawn } = require('child_process');
+  const path = require('path');
+  const node = process.execPath;
+  const port = 8971;
+  const proc = spawn(node, ['server/index.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, PORT: String(port), LOG: '0' },
+    stdio: 'ignore',
+  });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    let up = false;
+    for (let i = 0; i < 40; i++) {
+      try { await fetch(`http://127.0.0.1:${port}/api/health`); up = true; break; } catch { await sleep(150); }
+    }
+    assert.ok(up, '服务应能启动');
+    // 请求一个 >512KB 的文件（下载区若有包，否则退化为检查根页面）
+    const fs = require('fs');
+    const dir = path.join(__dirname, '..', 'web', 'downloads');
+    const big = fs.existsSync(dir)
+      ? fs.readdirSync(dir).find((f) => { try { return fs.statSync(path.join(dir, f)).size > 512 * 1024; } catch { return false; } })
+      : null;
+    const target = big ? `/downloads/${big}` : '/';
+    const r = await fetch(`http://127.0.0.1:${port}${target}`);
+    assert.equal(r.status, 200, '大文件请求应 200');
+    // 关键：请求之后进程必须还活着
+    const r2 = await fetch(`http://127.0.0.1:${port}/api/health`);
+    assert.equal(r2.status, 200, '请求大文件后服务仍应存活');
+  } finally {
+    try { proc.kill('SIGKILL'); } catch (e) {}
+  }
+});
