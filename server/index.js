@@ -19,6 +19,8 @@ const EXPANSION = require('./lib/expansion');
 const DECOMP = require('./lib/decomposition');
 const BTENGINE = require('./lib/btengine');
 const BTBATCH = require('./lib/batch');
+const UNIV = require('./lib/universe');
+const OOS = require('./lib/oos');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -516,17 +518,8 @@ function serveStatic(req, res, pathname) {
 }
 
 /* ---------------- 回测：默认标的池与参数解析 ---------------- */
-const BT_DEFAULT_SYMBOLS = [
-  { market: 'A', code: '600519' }, { market: 'A', code: '000001' }, { market: 'A', code: '300750' },
-  { market: 'A', code: '601899' }, { market: 'A', code: '002594' }, { market: 'A', code: '600036' },
-  { market: 'A', code: '000858' },
-  { market: 'US', code: 'NVDA' }, { market: 'US', code: 'AAPL' }, { market: 'US', code: 'TSLA' },
-  { market: 'US', code: 'MSFT' },
-  { market: 'CR', code: 'BTCUSDT' }, { market: 'CR', code: 'ETHUSDT' }, { market: 'CR', code: 'SOLUSDT' },
-  { market: 'CNF', code: 'RB0' }, { market: 'CNF', code: 'IF0' }, { market: 'CNF', code: 'AU0' },
-  { market: 'CNF', code: 'CU0' },
-  { market: 'HK', code: '00700' }, { market: 'HK', code: '09988' }, { market: 'HK', code: '03690' },
-];
+// 默认标的池来自 universe.js（136 个，按行业/板块分散预设，非按回测表现挑选）
+const BT_DEFAULT_SYMBOLS = UNIV.flatUniverse();
 
 function btOptsFromQuery(u) {
   const q = (k, d) => (u.searchParams.has(k) ? Number(u.searchParams.get(k)) : d);
@@ -671,9 +664,10 @@ const routes = {
         return { market: (m || 'A').toUpperCase(), code: (c || '').trim() };
       }).filter((x) => x.code);
     } else {
-      items = BT_DEFAULT_SYMBOLS;
+      const mk = u.searchParams.get('markets');
+      items = mk ? UNIV.flatUniverse(mk.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean)) : BT_DEFAULT_SYMBOLS;
     }
-    if (items.length > 40) return { ok: false, error: '标的数量超过 40 上限' };
+    if (items.length > 160) return { ok: false, error: `标的数量超过 160 上限（当前 ${items.length}）` };
     const symbols = [];
     for (const it of items) {
       try {
@@ -711,6 +705,29 @@ const routes = {
     }
     out.sort((a, b) => b.avgNetPct - a.avgNetPct);
     return { ok: true, symbols: symbols.length, rows: out };
+  },
+  // 标的池信息
+  '/api/bt/universe': async () => ({ ok: true, stats: UNIV.universeStats(), items: UNIV.flatUniverse() }),
+  // 样本外验证：训练期调参 → 验证期检验，判断是否过拟合
+  '/api/bt/oos': async (u) => {
+    const period = u.searchParams.get('period') || 'day';
+    const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
+    const ratio = Math.min(0.85, Math.max(0.4, Number(u.searchParams.get('ratio') || 0.6)));
+    const mk = u.searchParams.get('markets');
+    const items = mk ? UNIV.flatUniverse(mk.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean)) : BT_DEFAULT_SYMBOLS;
+    if (items.length > 160) return { ok: false, error: '标的上限 160' };
+    const symbols = [];
+    for (const it of items) {
+      try { const kl = await S.klines({ market: it.market, code: it.code, period, limit }); if (kl.bars.length >= 400) symbols.push({ ...it, bars: kl.bars }); } catch (e) {}
+    }
+    if (symbols.length < 5) return { ok: false, error: `有效标的仅 ${symbols.length} 个，至少需要 5 个` };
+    const base = btOptsFromQuery(u);
+    const grid = {
+      signalTypes: [['3B'], ['3B', '2B'], ['1B', '2B', '3B'], null],
+      stopPct: [0, 8],
+      takePct: [0, 20],
+    };
+    return { ...OOS.walkForward(symbols, { ...base, period, entry: 'buy' }, grid, ratio), requested: items.length, fetched: symbols.length };
   },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景

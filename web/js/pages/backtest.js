@@ -7,6 +7,7 @@
 
   const P = () => ({
     symbols: (U.$('#btSymbols')?.value || '').trim(),
+    markets: (U.$('#btMarkets')?.value || '').trim(),
     period: U.$('#btPeriod')?.value || 'day',
     entry: U.$('#btEntry')?.value || 'both',
     signalTypes: (U.$('#btSignals')?.value || '').trim(),
@@ -66,7 +67,9 @@
     const p = P();
     U.$('#btStats').innerHTML = '<div class="loading">批量回测中（多标的，可能需 1-2 分钟）…</div>';
     try {
-      const r = await API.get(`/api/bt/batch?${qs(p)}`);
+      const q2 = { ...p };
+      if (q2.symbols) delete q2.markets;   // 手填标的优先于市场池
+      const r = await API.get(`/api/bt/batch?${qs(q2)}`);
       if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
       lastBatch = r;
       renderVerdict(r.summary.verdict);
@@ -105,7 +108,15 @@
       if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
       renderVerdict(null);
       U.$('#btStats').innerHTML = statRow('扫描组合', `${r.rows.length} 组 / ${r.symbols} 标的`);
-      U.$('#btTypes').innerHTML = '';
+      // 稳健候选：验证期表现最好的那组（常与训练期第 1 名不同）
+      if (r.robustPick && r.robustPick !== r.best) {
+        const q = r.robustPick.params;
+        U.$('#btTypes').innerHTML = `<div class="bt-verdict up"><div class="btv-head"><b>稳健候选</b><span>${U.esc((q.signalTypes || ['全部']).join('+'))} 止损${q.stopPct}% 止盈${q.takePct}%</span></div>
+          <ul><li>训练期 ${r.robustPick.inSample.avgPct}%（${r.robustPick.inSample.trades} 笔）→ 验证期 <b>${r.robustPick.outSample.avgPct}%</b>（${r.robustPick.outSample.trades} 笔）</li>
+          <li>这组在训练期不是第 1 名，但验证期最稳 —— 少加参数比调参更可靠</li></ul></div>`;
+      } else {
+        U.$('#btTypes').innerHTML = '';
+      }
       U.$('#btRows').innerHTML = `<table class="bt-tbl"><thead><tr><th>#</th><th>信号</th><th>止损</th><th>止盈</th><th>笔数</th><th>胜率</th><th>平均</th><th>跑赢</th></tr></thead><tbody>${
         r.rows.map((x, i) => `<tr class="${i === 0 ? 'best' : ''}"><td>${i + 1}</td><td>${U.esc(x.signals)}</td><td>${x.stopPct}%</td><td>${x.takePct}%</td><td>${x.trades}</td><td>${x.winRate}%</td><td class="${x.avgNetPct > 0 ? 'up' : 'down'}">${x.avgNetPct}%</td><td>${x.beat}/${r.symbols}</td></tr>`).join('')
       }</tbody></table>`;
@@ -115,6 +126,63 @@
       U.$('#btCurveHint').textContent = '扫描模式不画资金曲线';
     } catch (e) {
       U.$('#btStats').innerHTML = `<div class="loading">${U.esc(e.message)}</div>`;
+    }
+  }
+
+  /* ---------------- 样本外验证 ---------------- */
+  async function runOos() {
+    const p = P();
+    U.$('#btStats').innerHTML = '<div class="loading">样本外验证中（训练期扫参数 + 验证期检验，约需 5-10 分钟）…</div>';
+    U.$('#btVerdict').innerHTML = '<div class="bt-verdict gold"><div class="btv-head"><b>样本外验证</b><span>正在切分训练/验证期并扫描参数…</span></div></div>';
+    try {
+      const q2 = { ...p };
+      if (q2.symbols) delete q2.markets;
+      const r = await API.get(`/api/bt/oos?${qs(q2)}`);
+      if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; renderVerdict(null); return; }
+      const map = { robust: ['up', '样本外有效'], partial: ['gold', '信号有效·参数不重要'], decayed: ['gold', '衰减明显'], overfit: ['down', '过拟合'], insufficient: ['muted', '样本不足'] };
+      const [cls, txt] = map[r.verdict.level] || ['muted', '待定'];
+      U.$('#btVerdict').innerHTML = `<div class="bt-verdict ${cls}">
+        <div class="btv-head"><b>样本外验证：${txt}</b><span>${U.esc(r.verdict.text || '')}</span></div>
+        <ul>${(r.verdict.reasons || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</ul>
+      </div>`;
+      const fd = (t) => new Date(t).toISOString().slice(0, 10);
+      U.$('#btStats').innerHTML = [
+        statRow('标的数', r.symbols),
+        statRow('参数组合', r.combos),
+        statRow('训练/验证', `${Math.round(r.ratio * 100)}% / ${Math.round((1 - r.ratio) * 100)}%`),
+        statRow('训练期', `${fd(r.inRange[0])} ~ ${fd(r.inRange[1])}`),
+        statRow('验证期', `${fd(r.outRange[0])} ~ ${fd(r.outRange[1])}`),
+        statRow('最优参数交易(训练)', `${r.best.inSample.trades} 笔`),
+        statRow('最优参数交易(验证)', `${r.best.outSample.trades} 笔`),
+        statRow('训练期平均', `${r.best.inSample.avgPct}%`),
+        statRow('验证期平均', `${r.best.outSample.avgPct}%`, r.best.outSample.avgPct > 0 ? 'up' : 'down'),
+        statRow('衰减', r.best.decayPct == null ? '—' : `${r.best.decayPct}%`, (r.best.decayPct || 0) > -50 ? 'up' : 'down'),
+      ].join('');
+      // 稳健候选：验证期表现最好的那组（常与训练期第 1 名不同）
+      if (r.robustPick && r.robustPick !== r.best) {
+        const q = r.robustPick.params;
+        U.$('#btTypes').innerHTML = `<div class="bt-verdict up"><div class="btv-head"><b>稳健候选</b><span>${U.esc((q.signalTypes || ['全部']).join('+'))} 止损${q.stopPct}% 止盈${q.takePct}%</span></div>
+          <ul><li>训练期 ${r.robustPick.inSample.avgPct}%（${r.robustPick.inSample.trades} 笔）→ 验证期 <b>${r.robustPick.outSample.avgPct}%</b>（${r.robustPick.outSample.trades} 笔）</li>
+          <li>这组在训练期不是第 1 名，但验证期最稳 —— 少加参数比调参更可靠</li></ul></div>`;
+      } else {
+        U.$('#btTypes').innerHTML = '';
+      }
+      U.$('#btRows').innerHTML = `<table class="bt-tbl"><thead><tr><th>#</th><th>信号</th><th>止损</th><th>止盈</th><th>训练期</th><th>验证期</th><th>衰减</th></tr></thead><tbody>${
+        r.tested.map((t, i) => {
+          const q = t.params;
+          return `<tr class="${i === 0 ? 'best' : ''}"><td>${i + 1}</td><td>${(q.signalTypes || ['全部']).join('+')}</td><td>${q.stopPct}%</td><td>${q.takePct}%</td>
+            <td>${t.inSample.avgPct}% <span class="sq2">(${t.inSample.trades}笔)</span></td>
+            <td class="${t.outSample.avgPct > 0 ? 'up' : 'down'}">${t.outSample.avgPct}% <span class="sq2">(${t.outSample.trades}笔)</span></td>
+            <td class="${(t.decayPct || 0) > -50 ? 'up' : 'down'}">${t.decayPct}%</td></tr>`;
+        }).join('')
+      }</tbody></table>`;
+      U.$('#btRowsHint').textContent = '训练期 vs 验证期对比';
+      U.$('#btTrades').innerHTML = '';
+      drawCurve(null);
+      U.$('#btCurveHint').textContent = '样本外模式不画资金曲线';
+    } catch (e) {
+      U.$('#btStats').innerHTML = `<div class="loading">${U.esc(e.message)}</div>`;
+      renderVerdict(null);
     }
   }
 
@@ -231,5 +299,5 @@
     if (lastBatch) drawCurve(null);
   }
 
-  window.PageBacktest = { renderPage, runSingle, runBatch, runSweep };
+  window.PageBacktest = { renderPage, runSingle, runBatch, runSweep, runOos };
 })();

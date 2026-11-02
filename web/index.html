@@ -369,12 +369,22 @@
           <button class="btn sm" id="btRun">跑单标的</button>
           <button class="btn sm primary" id="btBatch">跑批量</button>
           <button class="btn sm" id="btSweep">参数扫描</button>
+          <button class="btn sm" id="btOos">样本外验证</button>
         </div>
       </div>
 
       <div class="card bt-config">
         <div class="bt-row">
-          <label>标的 <input id="btSymbols" class="inp" style="width:340px" placeholder="A:600519,US:NVDA,CR:BTCUSDT（留空=默认21个）"></label>
+          <label>标的 <input id="btSymbols" class="inp" style="width:300px" placeholder="A:600519,US:NVDA（留空=用下面的市场池）"></label>
+          <label>市场池 <select id="btMarkets" class="inp">
+            <option value="">全部 136 个</option>
+            <option value="A">A股 49</option>
+            <option value="US">美股 24</option>
+            <option value="CR">加密 16</option>
+            <option value="CNF">国内期货 35</option>
+            <option value="HK">港股 12</option>
+            <option value="A,US,CNF,HK">A股+美股+期货+港股（除加密）</option>
+          </select></label>
           <label>级别 <select id="btPeriod" class="inp">
             <option value="day">日线</option><option value="60m">60分</option><option value="30m">30分</option><option value="week">周线</option>
           </select></label>
