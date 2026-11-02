@@ -25,6 +25,7 @@
       <a class="nav-item" data-page="radar"><span class="ico">◎</span><span>买卖点雷达</span><em>Signals</em></a>
       <a class="nav-item" data-page="theory"><span class="ico">▤</span><span>缠论理论</span><em>Theory</em></a>
       <a class="nav-item" data-page="divination"><span class="ico">☯</span><span>算卦择时</span><em>I Ching</em></a>
+      <a class="nav-item" data-page="backtest"><span class="ico">◱</span><span>因子回测</span><em>Backtest</em></a>
       <a class="nav-item" data-page="sectors"><span class="ico">▦</span><span>商品板块</span><em>Sectors</em></a>
       <a class="nav-item" data-page="game"><span class="ico">◈</span><span>缠关 · 108</span><em>Game</em></a>
       <a class="nav-item" data-page="sources"><span class="ico">⇄</span><span>数据源</span><em>Sources</em></a>
@@ -358,6 +359,56 @@
     </section>
 
     <!-- ================= 商品板块 ================= -->
+    <section class="page" id="page-backtest">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">缠论因子回测 <span class="tag-live">逐根推进 · 次日开盘成交 · 无未来函数</span></h1>
+          <p class="page-desc">把分型/笔/中枢/买卖点当作因子，在历史数据上跑完整资金曲线。可自选标的、级别、信号类型、止损止盈，结果自动给出「能不能信」的判定。</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn sm" id="btRun">跑单标的</button>
+          <button class="btn sm primary" id="btBatch">跑批量</button>
+          <button class="btn sm" id="btSweep">参数扫描</button>
+        </div>
+      </div>
+
+      <div class="card bt-config">
+        <div class="bt-row">
+          <label>标的 <input id="btSymbols" class="inp" style="width:340px" placeholder="A:600519,US:NVDA,CR:BTCUSDT（留空=默认21个）"></label>
+          <label>级别 <select id="btPeriod" class="inp">
+            <option value="day">日线</option><option value="60m">60分</option><option value="30m">30分</option><option value="week">周线</option>
+          </select></label>
+          <label>方向 <select id="btEntry" class="inp">
+            <option value="both">双向</option><option value="buy">只做多</option><option value="sell">只做空</option>
+          </select></label>
+          <label>信号 <select id="btSignals" class="inp">
+            <option value="">全部</option>
+            <option value="3B">仅三买 3B</option>
+            <option value="3B,2B">三买+二买</option>
+            <option value="1B,2B,3B">所有买点</option>
+            <option value="1S,2S,3S">所有卖点</option>
+          </select></label>
+        </div>
+        <div class="bt-row">
+          <label>笔标准 <select id="btBiStyle" class="inp"><option value="new">新笔</option><option value="old">老笔</option></select></label>
+          <label>止损% <input id="btStop" class="inp" type="number" value="0" style="width:76px"></label>
+          <label>止盈% <input id="btTake" class="inp" type="number" value="0" style="width:76px"></label>
+          <label>手续费bps <input id="btFee" class="inp" type="number" value="8" style="width:76px"></label>
+          <label>滑点bps <input id="btSlip" class="inp" type="number" value="4" style="width:76px"></label>
+          <label>确认延迟≤ <input id="btLag" class="inp" type="number" value="3" style="width:64px" title="信号出现后最多等几根才成交；超过视为事后修正、不交易"></label>
+        </div>
+      </div>
+
+      <div id="btVerdict"></div>
+      <div class="bt-grid">
+        <div class="card"><div class="card-head"><h3>汇总指标</h3></div><div id="btStats" class="kv"></div></div>
+        <div class="card"><div class="card-head"><h3>资金曲线</h3><span class="hint" id="btCurveHint"></span></div><div class="bt-curve"><canvas id="btCurve"></canvas></div></div>
+      </div>
+      <div class="card"><div class="card-head"><h3>分信号类型</h3><span class="hint">跨标合并统计</span></div><div id="btTypes"></div></div>
+      <div class="card"><div class="card-head"><h3>分标的明细</h3><span class="hint" id="btRowsHint"></span></div><div id="btRows"></div></div>
+      <div class="card"><div class="card-head"><h3>逐笔交易</h3><span class="hint" id="btTradesHint"></span></div><div id="btTrades"></div></div>
+    </section>
+
     <section class="page" id="page-sectors">
       <div class="page-head">
         <div>
@@ -470,6 +521,7 @@
 <script src="/js/pages/radar.js?v=__ASSET_V__"></script>
 <script src="/js/pages/theory.js?v=__ASSET_V__"></script>
 <script src="/js/pages/divination.js?v=__ASSET_V__"></script>
+<script src="/js/pages/backtest.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sectors.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sources.js?v=__ASSET_V__"></script>
 <script src="/js/app.js?v=__ASSET_V__"></script>

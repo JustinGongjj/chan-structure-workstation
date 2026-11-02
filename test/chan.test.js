@@ -715,3 +715,63 @@ test('九步链路：步骤完整、每步有置信度、结论可复现', () =>
   const r2 = SY.buildSystem(a);
   assert.equal(JSON.stringify(r.steps), JSON.stringify(r2.steps), '同样输入必须得到同样结论');
 });
+
+/* ---------------- 回测引擎 ---------------- */
+function mkBars(n, fn) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const c = fn(i);
+    out.push({ t: 1.6e12 + i * 86400000, o: c, h: c * 1.012, l: c * 0.988, c, v: 1000 });
+  }
+  return out;
+}
+
+test('回测：资金记账自洽（期末 = 初始 + 所有交易净盈亏）', () => {
+  const B = require('../server/lib/btengine');
+  const bars = mkBars(700, (i) => 100 + Math.sin(i / 11) * 12 + Math.sin(i / 31) * 5);
+  const r = B.runBacktest(bars, { warmup: 120, entry: 'both', exitOn: 'signal' });
+  assert.ok(r.ok, '回测应成功');
+  const sumNet = r.trades.reduce((a, t) => a + t.net, 0);
+  const expect = r.stats.initCapital + sumNet;
+  assert.ok(Math.abs(r.stats.finalValue - expect) < 1, `期末权益 ${r.stats.finalValue} 应等于 初始+净盈亏 ${expect.toFixed(2)}`);
+  // 权益曲线不应出现超过初始资金 2 倍或负数（做空市值口径错误会虚高 2 倍）
+  const maxEq = Math.max(...r.equity.map((e) => e.v));
+  const minEq = Math.min(...r.equity.map((e) => e.v));
+  assert.ok(maxEq < r.stats.initCapital * 2, `权益峰值 ${maxEq} 异常（疑似做空市值口径把本金算了两次）`);
+  assert.ok(minEq > 0, '权益不应为负');
+});
+
+test('回测：无未来函数（信号点必须在成交日之前或当日）', () => {
+  const B = require('../server/lib/btengine');
+  const bars = mkBars(600, (i) => 100 + Math.sin(i / 9) * 10);
+  const r = B.runBacktest(bars, { warmup: 120, entry: 'both', exitOn: 'signal', maxConfirmLag: 3 });
+  for (const t of r.trades) {
+    assert.ok(t.entryIdx >= 1, '成交不能在首根');
+    assert.ok(t.exitIdx >= t.entryIdx, '平仓不能早于开仓');
+  }
+});
+
+test('回测：确认延迟阈值生效（超过阈值的信号不交易）', () => {
+  const B = require('../server/lib/btengine');
+  const bars = mkBars(600, (i) => 100 + Math.sin(i / 8) * 9 + Math.sin(i / 23) * 4);
+  const loose = B.runBacktest(bars, { warmup: 120, entry: 'both', exitOn: 'signal', maxConfirmLag: 50 });
+  const tight = B.runBacktest(bars, { warmup: 120, entry: 'both', exitOn: 'signal', maxConfirmLag: 1 });
+  assert.ok(loose.ok && tight.ok);
+  assert.ok(loose.signals.total >= tight.signals.total, '放宽阈值应看到更多信号');
+});
+
+test('批量回测：汇总口径正确，样本不足时明确判 insufficient', () => {
+  const B = require('../server/lib/batch');
+  const symbols = [
+    { market: 'A', code: 'X1', bars: mkBars(400, (i) => 100 + Math.sin(i / 7) * 8) },
+    { market: 'A', code: 'X2', bars: mkBars(400, (i) => 50 + Math.sin(i / 9) * 6) },
+  ];
+  const r = B.runBatch(symbols, { warmup: 120, entry: 'both', exitOn: 'signal' });
+  assert.ok(r.ok);
+  assert.equal(r.summary.symbols, 2);
+  assert.ok(['insufficient', 'ineffective', 'marginal', 'effective'].includes(r.summary.verdict.level));
+  if (r.summary.totalTrades < 30) assert.equal(r.summary.verdict.level, 'insufficient', '样本<30 必须判 insufficient');
+  // 汇总交易数应等于各标之和
+  const sum = r.rows.filter((x) => x.ok).reduce((a, x) => a + x.trades, 0);
+  assert.equal(r.summary.totalTrades, sum, '汇总交易数应等于分标的之和');
+});

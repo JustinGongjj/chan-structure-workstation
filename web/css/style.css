@@ -869,3 +869,28 @@ button{font-family:inherit}
 .sys-step .sadv{color:var(--gold);font-size:10.5px;margin-top:2px}
 .sys-pit{margin-top:8px;padding:8px 10px;border-radius:8px;background:color-mix(in srgb, var(--gold) 8%, transparent);font-size:11px;line-height:1.6;color:var(--muted)}
 .sys-pit b{color:var(--gold)}
+
+/* ---------- 因子回测页 ---------- */
+.bt-config{padding:12px 14px;margin-bottom:12px}
+.bt-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.bt-row:last-child{margin-bottom:0}
+.bt-row label{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted)}
+.bt-row .inp{background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--text);padding:4px 8px;font-size:12px}
+.bt-grid{display:grid;grid-template-columns:300px 1fr;gap:12px;margin-bottom:12px}
+.bt-curve{height:220px;padding:6px 8px}
+.bt-curve canvas{width:100%;height:100%}
+.bt-verdict{border-radius:10px;padding:11px 14px;margin-bottom:12px;border:1px solid var(--line2);background:var(--panel2)}
+.bt-verdict.up{border-color:var(--up);background:color-mix(in srgb,var(--up) 8%,transparent)}
+.bt-verdict.down{border-color:var(--down);background:color-mix(in srgb,var(--down) 8%,transparent)}
+.bt-verdict.gold{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 8%,transparent)}
+.btv-head{display:flex;gap:10px;align-items:baseline;font-size:12.5px;margin-bottom:5px}
+.btv-head b{font-size:13px}
+.btv-head span{color:var(--muted)}
+.bt-verdict ul{margin:0;padding-left:16px;font-size:11.5px;color:var(--muted);line-height:1.7}
+.bt-tbl{width:100%;border-collapse:collapse;font-size:11.5px}
+.bt-tbl th{text-align:left;color:var(--faint);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line2);font-size:11px}
+.bt-tbl td{padding:5px 8px;border-bottom:1px solid var(--line)}
+.bt-tbl tr.best td{background:color-mix(in srgb,var(--gold) 10%,transparent)}
+.bt-caveats{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line2);font-size:10.5px;color:var(--gold);line-height:1.7}
+.kv-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--line)}
+.kv-row .up{color:var(--up)}.kv-row .down{color:var(--down)}

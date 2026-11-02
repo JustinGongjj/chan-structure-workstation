@@ -17,6 +17,8 @@ const NESTED = require('./lib/nested');
 const SYSTEM = require('./lib/system');
 const EXPANSION = require('./lib/expansion');
 const DECOMP = require('./lib/decomposition');
+const BTENGINE = require('./lib/btengine');
+const BTBATCH = require('./lib/batch');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -513,6 +515,40 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+/* ---------------- 回测：默认标的池与参数解析 ---------------- */
+const BT_DEFAULT_SYMBOLS = [
+  { market: 'A', code: '600519' }, { market: 'A', code: '000001' }, { market: 'A', code: '300750' },
+  { market: 'A', code: '601899' }, { market: 'A', code: '002594' }, { market: 'A', code: '600036' },
+  { market: 'A', code: '000858' },
+  { market: 'US', code: 'NVDA' }, { market: 'US', code: 'AAPL' }, { market: 'US', code: 'TSLA' },
+  { market: 'US', code: 'MSFT' },
+  { market: 'CR', code: 'BTCUSDT' }, { market: 'CR', code: 'ETHUSDT' }, { market: 'CR', code: 'SOLUSDT' },
+  { market: 'CNF', code: 'RB0' }, { market: 'CNF', code: 'IF0' }, { market: 'CNF', code: 'AU0' },
+  { market: 'CNF', code: 'CU0' },
+  { market: 'HK', code: '00700' }, { market: 'HK', code: '09988' }, { market: 'HK', code: '03690' },
+];
+
+function btOptsFromQuery(u) {
+  const q = (k, d) => (u.searchParams.has(k) ? Number(u.searchParams.get(k)) : d);
+  const entry = ['buy', 'sell', 'both'].includes(u.searchParams.get('entry')) ? u.searchParams.get('entry') : 'both';
+  const sigRaw = (u.searchParams.get('signalTypes') || '').trim();
+  const signalTypes = sigRaw ? sigRaw.split(',').map((x) => x.trim()).filter(Boolean) : null;
+  return {
+    entry,
+    signalTypes,
+    exitOn: u.searchParams.get('exitOn') === 'hold' ? 'hold' : 'signal',
+    holdBars: q('holdBars', 20),
+    stopPct: q('stopPct', 0),
+    takePct: q('takePct', 0),
+    feeBps: q('feeBps', 8),
+    slipBps: q('slipBps', 4),
+    positionPct: q('positionPct', 100),
+    warmup: q('warmup', 120),
+    maxConfirmLag: q('maxConfirmLag', 3),
+    biStyle: u.searchParams.get('biStyle') === 'old' ? 'old' : 'new',
+  };
+}
+
 /* ---------------- 手绘线存储 ----------------
    结构：{ "A:600519:day": { updatedAt, drawings: [...] } }
    用原子写，避免进程被杀造成半个文件；单文件够用（几 KB），不做数据库。 */
@@ -609,6 +645,72 @@ const routes = {
     const kl = await S.klines({ market, code, period, limit: 600 });
     const a = C.analyze(kl.bars, { period, market, code });
     return { ...EXPANSION.analyzeStructure(a), flow: DECOMP.analyzeFlow(a) };
+  },
+  /* ---------- 缠论因子回测 ---------- */
+  // 单标的回测：资金曲线 + 逐笔明细 + 风险指标
+  '/api/bt/run': async (u) => {
+    const market = String(u.searchParams.get('market') || 'A').toUpperCase();
+    const code = u.searchParams.get('code') || '600519';
+    const period = u.searchParams.get('period') || 'day';
+    const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
+    const kl = await S.klines({ market, code, period, limit });
+    const opts = btOptsFromQuery(u);
+    const r = BTENGINE.runBacktest(kl.bars, { ...opts, period });
+    return { ...r, market, code: S.normCode(market, code), period, source: kl.source };
+  },
+  // 批量回测：多标的汇总，判断因子普适性
+  '/api/bt/batch': async (u) => {
+    const list = String(u.searchParams.get('symbols') || '').trim();
+    const period = u.searchParams.get('period') || 'day';
+    const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
+    let items = [];
+    if (list) {
+      // 格式：A:600519,US:NVDA,CR:BTCUSDT
+      items = list.split(',').map((x) => {
+        const [m, c] = x.split(':');
+        return { market: (m || 'A').toUpperCase(), code: (c || '').trim() };
+      }).filter((x) => x.code);
+    } else {
+      items = BT_DEFAULT_SYMBOLS;
+    }
+    if (items.length > 40) return { ok: false, error: '标的数量超过 40 上限' };
+    const symbols = [];
+    for (const it of items) {
+      try {
+        const kl = await S.klines({ market: it.market, code: it.code, period, limit });
+        symbols.push({ market: it.market, code: it.code, bars: kl.bars });
+      } catch (e) { /* 跳过取不到数据的标的 */ }
+    }
+    if (!symbols.length) return { ok: false, error: '没有任何标的取到数据' };
+    const opts = btOptsFromQuery(u);
+    const r = BTBATCH.runBatch(symbols, { ...opts, period });
+    return { ...r, period, requested: items.length, fetched: symbols.length };
+  },
+  // 参数扫描：找出更优规则组合
+  '/api/bt/sweep': async (u) => {
+    const period = u.searchParams.get('period') || 'day';
+    const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
+    const symbols = [];
+    for (const it of BT_DEFAULT_SYMBOLS) {
+      try { const kl = await S.klines({ market: it.market, code: it.code, period, limit }); symbols.push({ ...it, bars: kl.bars }); } catch (e) {}
+    }
+    const grid = { signalTypes: [['3B'], ['3B', '2B'], null], stopPct: [0, 8], takePct: [0, 20] };
+    const out = [];
+    for (const st of grid.signalTypes) for (const sp of grid.stopPct) for (const tp of grid.takePct) {
+      const opts = { period, exitOn: 'signal', entry: 'buy', signalTypes: st, stopPct: sp, takePct: tp, maxConfirmLag: 3 };
+      let n = 0, win = 0, sumPct = 0, beat = 0;
+      for (const s of symbols) {
+        const r = BTENGINE.runBacktest(s.bars, opts);
+        if (!r.ok) continue;
+        n += r.stats.trades;
+        win += r.trades.filter((t) => t.net > 0).length;
+        sumPct += r.trades.reduce((a, t) => a + t.netPct, 0);
+        if (r.stats.excessPct > 0) beat++;
+      }
+      out.push({ signals: st ? st.join('+') : '全部', stopPct: sp, takePct: tp, trades: n, winRate: n ? +(win / n * 100).toFixed(1) : 0, avgNetPct: n ? +(sumPct / n).toFixed(2) : 0, beat });
+    }
+    out.sort((a, b) => b.avgNetPct - a.avgNetPct);
+    return { ok: true, symbols: symbols.length, rows: out };
   },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景

@@ -14,7 +14,7 @@
     },
     pages: {},
     go(page, opts) {
-      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'sectors', 'game', 'sources'].includes(page)) page = 'overview';
+      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'backtest', 'sectors', 'game', 'sources'].includes(page)) page = 'overview';
       this.state.page = page;
       U.$$('.page').forEach((el) => el.classList.toggle('active', el.id === 'page-' + page));
       U.$$('#nav .nav-item').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
@@ -48,6 +48,7 @@
         else if (page === 'radar') await PageRadar.render();
         else if (page === 'theory') PageTheory.render();
         else if (page === 'divination') await PageDivination.render();
+        else if (page === 'backtest') await PageBacktest.renderPage();
         else if (page === 'sectors') await PageSectors.render();
         else if (page === 'game') {
           // 延迟加载：只有真正进来才给 iframe 设 src，别拖慢首页
