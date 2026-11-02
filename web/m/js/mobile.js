@@ -519,6 +519,39 @@
     go('structure');
   }
 
+  /* ---------- 递归区间套（手机版） ---------- */
+  async function loadNest(market, code) {
+    const box = $('#nestBox');
+    const hint = $('#nestHint');
+    if (!box) return;
+    box.innerHTML = '<div class="empty">递归计算中…</div>';
+    try {
+      const t = await API.get(`/api/nest?market=${encodeURIComponent(market)}&code=${encodeURIComponent(code)}`);
+      const okLayers = (t.flat || []).filter((l) => l.ok);
+      if (hint) hint.textContent = `递归 ${okLayers.length} 层：${(t.chain || []).join(' → ')}`;
+      const cls = t.verdictLevel === 'buy' ? 'up' : t.verdictLevel === 'sell' ? 'down' : '';
+      const head = `<div class="card" style="margin:0 0 8px;padding:10px 12px"><div style="font-size:12.5px;line-height:1.65" class="${cls}">${U.esc(t.verdict || '')}</div></div>`;
+      const rows = okLayers.map((l) => {
+        const pad = 6 + l.depth * 12;
+        const sig = l.signal ? `<span class="chip ${l.signal.type.endsWith('B') ? 'green' : 'red'}" style="font-size:10px">${U.SIG_SHORT?.[l.signal.type] || l.signal.type}</span>` : '';
+        const bei = l.beichi ? `<span class="chip gold" style="font-size:10px">${U.esc(l.beichi.kind)}${l.beichi.dir > 0 ? '·顶' : '·底'}</span>` : '';
+        const cov = l.coverage === 'full' ? '' : `<span class="chip ${l.coverage === 'insufficient' ? 'red' : 'gold'}" style="font-size:10px">覆盖${Math.round((l.coverRatio || 0) * 100)}%</span>`;
+        const piv = l.pivot ? `中枢 ${l.pivot.zd.toFixed(2)}~${l.pivot.zg.toFixed(2)}` : '无中枢';
+        const blocked = l.descendBlocked ? `<div class="hint" style="font-size:10.5px;margin-top:2px">↳ ${U.esc(l.descendBlocked)}</div>` : '';
+        return `<div style="padding:6px 8px;padding-left:${pad}px;border-left:2px solid ${l.depth === 0 ? 'var(--line)' : 'var(--gold-tint2, var(--line))'};margin-bottom:3px">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <b style="font-size:12px">${l.depth > 0 ? '└ ' : ''}${U.esc(l.levelName || l.period)}</b>${sig}${bei}${cov}
+          </div>
+          <div class="hint" style="font-size:10.5px;margin-top:2px">${piv} · ${U.esc(l.trend || '')}</div>
+          ${blocked}
+        </div>`;
+      }).join('');
+      box.innerHTML = head + rows;
+    } catch (e) {
+      box.innerHTML = `<div class="empty">加载失败：${U.esc(e.message)}</div>`;
+    }
+  }
+
   async function renderStructure() {
     const market = state.market;
     const code = state.symbol[market];
@@ -561,6 +594,11 @@
         <div id="dVerifyBox"></div>
       </div>
       <div class="section">
+        <div class="section-head"><h3>递归区间套</h3><button class="chip" id="nestToggle">展开 →</button></div>
+        <div class="hint" style="margin-bottom:6px" id="nestHint">大级别中枢 → 逐层下钻次级别</div>
+        <div id="nestBox" style="display:none"></div>
+      </div>
+      <div class="section">
         <div class="section-head"><h3>教学标注</h3><span class="hint">在图上圈出对应结构</span></div>
         <div class="hscroll">
           ${(() => {
@@ -591,6 +629,21 @@
     );
     const ss = $('#sSearch');
     if (ss) ss.addEventListener('click', openSearch);
+
+    // 递归区间套：默认折叠（手机屏幕小），点开才请求，避免每次进页面都多跑 5 个级别的分析
+    const nt = $('#nestToggle');
+    if (nt) nt.addEventListener('click', async () => {
+      const box = $('#nestBox');
+      if (!box) return;
+      if (box.style.display === 'none') {
+        box.style.display = '';
+        nt.textContent = '收起 ↑';
+        await loadNest(market, code);
+      } else {
+        box.style.display = 'none';
+        nt.textContent = '展开 →';
+      }
+    });
     U.$$('#sPeriod .sq').forEach((b) =>
       b.addEventListener('click', () => {
         state.period = b.dataset.p;

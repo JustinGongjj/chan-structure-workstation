@@ -417,7 +417,9 @@ test('区间套：递归结构完整，层级递进且每层有中枢或明确�
   }).then((t) => {
     assert.ok(t.chain.length >= 2, '递归链至少 2 级');
     assert.ok(t.flat.length >= 2, '至少递归 2 层');
-    assert.ok(t.verdict && typeof t.verdict.text === 'string' && t.verdict.text.length > 0, '必须有结论');
+    // 重构后 verdict 是字符串（另带 verdictLevel / nested / evidence）
+    assert.ok(typeof t.verdict === 'string' && t.verdict.length > 0, '必须有结论');
+    assert.ok(['buy', 'sell', 'single', 'none'].includes(t.verdictLevel), 'verdictLevel 取值合法');
     // 深度必须严格递增（0,1,2...），不能跳级
     const depths = t.flat.map((l) => l.depth).sort((a, b) => a - b);
     depths.forEach((d, i) => assert.equal(d, i, '递归深度应从 0 连续递增'));
@@ -449,11 +451,81 @@ test('区间套：结论不能因为最深层没中枢就说"各层都无中枢"
       source: 'fixture',
     }),
   }).then((t) => {
-    assert.ok(t.verdict.text, '必须有结论');
+    assert.ok(t.verdict, '必须有结论');
     // 上层有中枢时，不能说"各层均未形成有效中枢"
     const hasUpperPivot = t.flat.some((l) => l.ok && l.pivot);
     if (hasUpperPivot) {
-      assert.ok(!/各层均未形成有效中枢/.test(t.verdict.text), '上层有中枢时不该报"各层无中枢"');
+      assert.ok(!/各层均未形成有效中枢/.test(t.verdict), '上层有中枢时不该报"各层无中枢"');
     }
   });
+});
+
+/* ---------------- 递归区间套：细化后的关键行为 ---------------- */
+test('区间套：窗口逐层收窄，且优先选择次级别可覆盖的中枢', async () => {
+  const N = require('../server/lib/nested');
+  const mk = (n, amp, t0, dt) => Array.from({ length: n }, (_, i) => {
+    const c = 100 + Math.sin(i / 6) * amp;
+    return { t: t0 + i * dt, o: c, h: c + amp * 0.4, l: c - amp * 0.4, c, v: 100 };
+  });
+  const t = await N.buildNest({
+    market: 'A', code: 'WIN',
+    fetchLevel: async (p) => ({
+      bars: mk(500, p === 'month' ? 20 : p === 'week' ? 12 : p === 'day' ? 7 : 4, 1.6e12, p === 'day' ? 86400000 : 86400000 * 7),
+      source: 'fixture',
+    }),
+  });
+  const win = t.flat.map((l) => l.window).filter(Boolean);
+  // 子窗必须落在父窗之内（单调收窄）
+  for (let i = 1; i < win.length; i++) {
+    assert.ok(win[i][0] >= win[i - 1][0] - 1, '子窗起点不得早于父窗');
+    assert.ok(win[i][1] <= win[i - 1][1] + 1, '子窗终点不得晚于父窗');
+  }
+  // 每层都要说明选中枢的理由
+  for (const l of t.flat) {
+    if (l.ok && l.pivot) assert.ok(l.pivotReason && l.pivotReason.length > 0, '必须有选中枢的理由');
+  }
+});
+
+test('区间套：同一层的信号+背驰不算跨层共振', async () => {
+  const N = require('../server/lib/nested');
+  // 构造：只有 day 级别有信号，且同层也有背驰 → 不应判为 buy/sell
+  const mk = (n, amp, dt) => Array.from({ length: n }, (_, i) => {
+    const c = 100 + Math.sin(i / 5) * amp;
+    return { t: 1.6e12 + i * dt, o: c, h: c + amp * 0.5, l: c - amp * 0.5, c, v: 100 };
+  });
+  const t = await N.buildNest({
+    market: 'US', code: 'SAME', // US 链只有 week→day
+    fetchLevel: async (p) => ({ bars: mk(400, p === 'week' ? 10 : 6, p === 'week' ? 604800000 : 86400000), source: 'fixture' }),
+  });
+  // 若判定为 buy/sell，证据里必须体现跨层（不同 period）
+  if (t.verdictLevel === 'buy' || t.verdictLevel === 'sell') {
+    const ev = t.evidence || {};
+    const sigs = [...(ev.buys || []), ...(ev.sells || [])].map((x) => x.period);
+    const beis = (ev.bei || []).map((x) => x.period);
+    const cross = sigs.length >= 2 || beis.some((b) => !sigs.includes(b));
+    assert.ok(cross, '判为区间套时必须存在跨层证据');
+  }
+});
+
+test('区间套：覆盖不足的层被排除在结论之外', async () => {
+  const N = require('../server/lib/nested');
+  const mk = (n, amp, dt) => Array.from({ length: n }, (_, i) => {
+    const c = 100 + Math.sin(i / 5) * amp;
+    return { t: 1.6e12 + i * dt, o: c, h: c + amp * 0.5, l: c - amp * 0.5, c, v: 100 };
+  });
+  const t = await N.buildNest({
+    market: 'A', code: 'COV',
+    fetchLevel: async (p) => ({
+      // 最小级别只给极短时间跨度 → 必然覆盖不足
+      bars: p === '30m' ? mk(120, 3, 60000) : mk(500, p === 'month' ? 20 : 10, p === 'day' ? 86400000 : 604800000),
+      source: 'fixture',
+    }),
+  });
+  const dropped = (t.evidence && t.evidence.dropped) || [];
+  const insufficient = t.flat.filter((l) => l.ok && l.coverage === 'insufficient').map((l) => l.period);
+  // 每个覆盖不足的层都必须出现在 dropped 里（或被如实标注）
+  for (const p of insufficient) {
+    const layer = t.flat.find((l) => l.period === p);
+    assert.ok(dropped.includes(p) || layer.descendBlocked, `覆盖不足的 ${p} 必须被排除或说明原因`);
+  }
 });

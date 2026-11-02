@@ -1,29 +1,24 @@
 'use strict';
 /**
- * 递归区间套（Interval Nesting / 区间套的递归实现）
- * ==================================================================
- * 缠论原文的"区间套"是三段递归：
- *   ① 大级别进入背驰段 →
- *   ② 在该段的**时间范围**里，到次级别去找对应的中枢/背驰 →
- *   ③ 次级别里再找更次级别……
- * 直到最小级别出现明确买卖点。这才是"精确制导"，而不是把 6 个周期各算一遍再数个数。
+ * 递归区间套（Interval Nesting）—— 缠论"区间套"的真实递归实现
+ * =====================================================================
+ * 缠论原文的区间套判定逻辑：
+ *   ① 本级别出现**背驰**（趋势力度衰竭）→ 该背驰所在的走势段就是"候选段"；
+ *   ② 到这个候选段的**时间范围**里，去次级别找**中枢**；
+ *   ③ 次级别中枢里若出现**买卖点**，且该买卖点与大级别背驰同向 → 区间套成立；
+ *   ④ 若不成立，可在次级别的这个中枢里继续下钻（递归），直到最小级别。
  *
- * 本模块的递归定义：
- *   nest(level i) = {
- *     period, pivot(s),   // 本级中枢
- *     zone: [t0, t1],     // 本级中枢/背驰段的时间窗
- *     children: [ nest(level i+1) 限制在 zone 内 ]   ← 递归
- *   }
- *
- * 关键约束（也是之前实现失败的原因）：
- *   小级别必须覆盖到大级别的时间窗。600 根 5 分钟线只有 2~18 天，
- *   根本盖不住一个日线中枢（几十天）。所以这里会**如实报告截断**，
- *   而不是假装递归成功。
+ * 关键设计（相比此前的实现）：
+ *   · 窗口不再取"最近一个中枢"，而是取**背驰段 / 最后一个未完成走势**的真实范围；
+ *   · 窗内中枢用"重心落在窗内"判定，而不是"有交集"（避免把跨窗的大中枢误纳）；
+ *   · 每下降一级，窗口收紧到**该级窗内中枢的时间范围**，逐层收窄；
+ *   · 数据覆盖不足时尝试**降级到更粗的级别**，而不是直接失败；
+ *   · 每层都记录"为什么下降 / 为什么停止"，可解释、可追溯。
  */
 
 const C = require('./chan');
 
-/* 级别从大到小，用于递归下降 */
+/** 级别链：从大到小。只列数据源确实提供的级别。 */
 const LEVEL_CHAIN = {
   A: ['month', 'week', 'day', '60m', '30m'],
   HK: ['week', 'day'],
@@ -34,23 +29,34 @@ const LEVEL_CHAIN = {
 };
 
 const MAX_DEPTH = 4;
+/** 窗口内中枢的"重心"必须落在此区间内才算属于该窗口 */
+const CENTER_TOL = 0.15;
+/** 数据覆盖率阈值 */
+const COVER_OK = 0.95;
+const COVER_PARTIAL = 0.5;
+/** 背驰/信号"新鲜度"：距离末尾多少根以内算当前有效 */
+const FRESH_BARS = { month: 3, week: 6, day: 20, '60m': 40, '30m': 40 };
+
+function freshWithin(period) {
+  return FRESH_BARS[period] || 20;
+}
 
 /**
  * @param {object} opts
- * @param {function} opts.fetchLevel  async (period) => { bars, source }
- * @param {string}   opts.market
- * @param {string}   opts.code
- * @returns {Promise<object>} 递归树
+ * @param {(period:string)=>Promise<{bars:Array,source:string}>} opts.fetchLevel
+ * @param {string} opts.market
+ * @param {string} opts.code
  */
 async function buildNest({ fetchLevel, market, code }) {
   const chain = LEVEL_CHAIN[String(market || 'A').toUpperCase()] || ['day'];
   const cache = new Map();
+
   const load = async (period) => {
     if (cache.has(period)) return cache.get(period);
     let v;
     try {
       const raw = await fetchLevel(period);
-      if (!raw || !raw.bars || raw.bars.length < 60) throw new Error('数据不足（<60 根）');
+      if (!raw || !raw.bars || raw.bars.length < 60) throw new Error(`数据不足（${raw && raw.bars ? raw.bars.length : 0} 根）`);
       const res = C.analyze(raw.bars, { period, market, code });
       v = { ok: true, res, source: raw.source };
     } catch (e) {
@@ -60,156 +66,286 @@ async function buildNest({ fetchLevel, market, code }) {
     return v;
   };
 
-  /*
-    递归：在 [t0, t1] 时间窗内，用 period 级别找中枢
-    depth 防止无限递归；每下降一级就把窗口收紧到"最近一个中枢"
-  */
-  async function recurse(depth, window) {
-    if (depth >= chain.length || depth >= MAX_DEPTH) return null;
+  /**
+   * 在某一级别里，为一个时间窗挑选"最该被递归的中枢"
+   *
+   * 优先级（这就是"区间套"的精髓：不是随便挑一个中枢）：
+   *   ① 窗口内有未完成的走势（最后一个中枢延伸到末尾）→ 取它，因为区间套找的就是"正在走的这一段"
+   *   ② 否则取重心最靠近窗口末尾的中枢
+   *   ③ 若窗口内无中枢，退而取与窗口重叠最多的中枢（并标注它是"跨窗"的）
+   */
+  function pickFocus(res, window, period, childCover) {
+    const pivots = res.pivots || [];
+    if (!pivots.length) return { focus: null, reason: '本级无中枢' };
+
+    /*
+      核心约束：选出癿中枢必须**能被次级别数据覆盖**。
+      否则会出现"月线挑了个 2022 年的中枢 → 日线只有 2024 年以后的数据 → 覆盖 0%"这种空递归。
+      childCover = [次级别最早时间, 次级别最新时间]（未知则不限）
+    */
+    const usable = (p) => {
+      if (!childCover) return true;
+      const need = p.t1 - p.t0;
+      const have = Math.min(p.t1, childCover[1]) - Math.max(p.t0, childCover[0]);
+      return need > 0 && have / need >= COVER_PARTIAL;
+    };
+
+    const span = window ? Math.max(1, window[1] - window[0]) : null;
+    const scored = pivots.map((p) => {
+      const center = (p.t0 + p.t1) / 2;
+      const inWin = !window || (center >= window[0] - span * CENTER_TOL && center <= window[1] + span * CENTER_TOL);
+      const overlap = !window ? 1 : Math.max(0, Math.min(window[1], p.t1) - Math.max(window[0], p.t0)) / span;
+      const distToEnd = window ? Math.abs(p.t1 - window[1]) / span : 0;
+      // 正在延伸 = 中枢末端贴近本级最后一根 K 线
+      const lastT = res.bars[res.bars.length - 1].t;
+      const firstT = res.bars[0].t;
+      const ongoing = p.t1 >= lastT - (lastT - firstT) * 0.05;
+      return { p, inWin, overlap, distToEnd, ongoing, usable: usable(p) };
+    });
+
+    // 优先只在"次级别可覆盖"的中枢里挑
+    const candidates = scored.filter((s) => (window ? s.inWin && s.overlap > 0 : true));
+    const usableCands = candidates.filter((s) => s.usable);
+    if (usableCands.length) {
+      const ongoing = usableCands.filter((s) => s.ongoing);
+      const pool = ongoing.length ? ongoing : usableCands;
+      pool.sort((a, b) => a.distToEnd - b.distToEnd);
+      return {
+        focus: pool[0].p,
+        reason: ongoing.length ? '窗内正在延伸、且次级别可覆盖的中枢' : '窗内最靠近末尾、且次级别可覆盖的中枢',
+        inWindow: true,
+      };
+    }
+    // 窗内有中枢但次级别覆盖不到 → 明确告知，不要硬递归
+    if (candidates.length) {
+      return { focus: candidates[candidates.length - 1].p, reason: '窗内有中枢但次级别数据覆盖不足（结果仅供参考）', inWindow: true, weak: true };
+    }
+    // 跨窗兜底
+    scored.sort((a, b) => b.overlap - a.overlap);
+    if (scored[0] && scored[0].overlap > 0) {
+      return { focus: scored[0].p, reason: '窗口内无中枢，取与窗口重叠最多的（跨窗）', inWindow: false };
+    }
+    return { focus: null, reason: '窗口内无任何中枢' };
+  }
+
+  /** 计算某级别数据对窗口的覆盖率 */
+  function coverageOf(res, window) {
+    const bars = res.bars;
+    const from = bars[0].t;
+    const to = bars[bars.length - 1].t;
+    if (!window) return { coverRatio: 1, coverage: 'full', coverRange: [from, to] };
+    const need = window[1] - window[0];
+    const have = Math.min(window[1], to) - Math.max(window[0], from);
+    const ratio = need > 0 ? Math.max(0, Math.min(1, have / need)) : 1;
+    return {
+      coverRatio: +ratio.toFixed(3),
+      coverage: ratio >= COVER_OK ? 'full' : ratio >= COVER_PARTIAL ? 'partial' : 'insufficient',
+      coverRange: [from, to],
+    };
+  }
+
+  /** 找本级"当前有效"的信号与背驰 */
+  function recentSignal(res, period) {
+    const n = res.bars.length;
+    const lim = freshWithin(period);
+    const s = [...(res.signals || [])].reverse().find((x) => x.barIdx >= n - lim);
+    if (!s) return null;
+    return { type: s.type, name: s.name, price: +s.price.toFixed(4), barIdx: s.barIdx, agoBars: n - 1 - s.barIdx, t: res.bars[s.barIdx].t };
+  }
+  function recentBeichi(res, period) {
+    const n = res.bars.length;
+    const lim = freshWithin(period);
+    const b = [...(res.beichi || [])].reverse().find((x) => x.barIdx >= n - lim);
+    if (!b) return null;
+    return { kind: b.kind, dir: b.dir, areaRatio: b.areaRatio, barIdx: b.barIdx, agoBars: n - 1 - b.barIdx, t: res.bars[b.barIdx].t };
+  }
+
+  /**
+   * 递归核心
+   * @param {number} depth      当前深度
+   * @param {[number,number]|null} window 上一级给的时间窗
+   * @param {object|null} parent 上一级节点（用于继承方向）
+   */
+  async function recurse(depth, window, parent) {
+    if (depth >= chain.length || depth >= MAX_DEPTH) {
+      return { stop: '已达最大递归深度', depth };
+    }
     const period = chain[depth];
     const got = await load(period);
     if (!got.ok) {
-      return { period, depth, ok: false, error: got.error };
+      return { period, depth, ok: false, error: got.error, stop: got.error };
     }
     const { res } = got;
-    const bars = res.bars;
-
-    // 数据能否覆盖上级给的时间窗？覆盖不到就要如实标注
-    const coverFrom = bars[0].t;
-    const coverTo = bars[bars.length - 1].t;
-    let coverage = 'full';
-    let coverRatio = 1;
-    if (window) {
-      const need = window[1] - window[0];
-      const have = Math.min(window[1], coverTo) - Math.max(window[0], coverFrom);
-      coverRatio = need > 0 ? Math.max(0, Math.min(1, have / need)) : 1;
-      if (coverRatio < 0.5) coverage = 'insufficient';
-      else if (coverRatio < 0.95) coverage = 'partial';
+    const cov = coverageOf(res, window);
+    const sig = recentSignal(res, period);
+    const bei = recentBeichi(res, period);
+    // 预先取次级别的数据范围，用于判断"这个中枢值不值得下钻"
+    let childCover = null;
+    if (depth + 1 < chain.length && depth + 1 < MAX_DEPTH) {
+      const nxt = await load(chain[depth + 1]);
+      if (nxt.ok) {
+        const b2 = nxt.res.bars;
+        childCover = [b2[0].t, b2[b2.length - 1].t];
+      }
     }
-
-    // 本级中枢：落在时间窗内的那些（没有窗口就取最近一个）
-    const inWindow = (p) => !window || (p.t1 >= window[0] && p.t0 <= window[1]);
-    const pivots = (res.pivots || []).filter(inWindow);
-    const focus = pivots.length ? pivots[pivots.length - 1] : null;
+    const { focus, reason, inWindow, weak } = pickFocus(res, window, period, childCover);
 
     const node = {
       period,
       depth,
       ok: true,
-      levelName: res.level && res.level.levelName,
-      bars: bars.length,
+      levelName: (res.level && res.level.levelName) || period,
+      bars: res.bars.length,
       source: got.source,
-      coverage,
-      coverRatio: +coverRatio.toFixed(3),
+      ...cov,
       window: window ? [window[0], window[1]] : null,
-      coverRange: [coverFrom, coverTo],
       pivot: focus
-        ? { zg: focus.zg, zd: focus.zd, count: focus.count, t0: focus.t0, t1: focus.t1, upgraded: !!focus.upgraded }
+        ? {
+            zg: +focus.zg.toFixed(4),
+            zd: +focus.zd.toFixed(4),
+            count: focus.count,
+            t0: focus.t0,
+            t1: focus.t1,
+            upgraded: !!focus.upgraded,
+            overlapWithWindow: inWindow,
+          }
         : null,
-      pivotCount: pivots.length,
+      pivotCount: (res.pivots || []).length,
+      pivotReason: reason,
+      weakFocus: !!weak,
       price: res.stats.price,
       position: focus ? (res.stats.price > focus.zg ? 'above' : res.stats.price < focus.zd ? 'below' : 'inside') : 'none',
       trend: res.trend && res.trend.type,
-      signal: pickRecentSignal(res),
-      beichi: pickRecentBeichi(res),
+      signal: sig,
+      beichi: bei,
+      /* 与上级背驰是否同向 —— 区间套成立的必要条件 */
+      agreeWithParent: parent && parent.beichi && bei ? Math.sign(parent.beichi.dir) === Math.sign(bei.dir) : null,
       children: [],
     };
 
-    /*
-      递归下降条件（严格）：
-        ① 本级确实有中枢（没中枢就没有区间套的意义）
-        ② 数据覆盖足够（<50% 就别硬递归，会给出错误结论）
-        ③ 还有更小级别
-      窗口收紧到本级中枢的时间范围——这正是缠论"在背驰段里找次级别中枢"的做法
-    */
-    const canDescend = focus && coverage !== 'insufficient' && depth + 1 < chain.length && depth + 1 < MAX_DEPTH;
-    if (canDescend) {
-      const child = await recurse(depth + 1, [focus.t0, focus.t1]);
-      if (child) node.children = [child];
-    } else if (focus && coverage === 'insufficient') {
-      node.descendBlocked = `次级别数据只覆盖本级的 ${(coverRatio * 100).toFixed(0)}%，无法递归`;
+    // 停止条件：数据不足 / 无中枢 / 到达最末级
+    if (cov.coverage === 'insufficient') {
+      node.descendBlocked = `次级别数据只覆盖本窗的 ${(cov.coverRatio * 100).toFixed(0)}%（${period} 需要覆盖 ${new Date(window[0]).toISOString().slice(0, 10)} 起）`;
+      node.stopReason = 'coverage';
+      return node;
     }
+    if (!focus) {
+      node.descendBlocked = `本级窗口内没有中枢（${reason}），无需继续下钻`;
+      node.stopReason = 'no-pivot';
+      return node;
+    }
+    if (depth + 1 >= chain.length || depth + 1 >= MAX_DEPTH) {
+      node.stopReason = 'max-depth';
+      return node;
+    }
+
+    /*
+      窗口收紧：从"本级中枢的完整范围"改为
+        · 若本级出现了信号 → 收紧到信号附近（前后各 1/3 中枢跨度），更精准
+        · 否则 → 收紧到本级中枢的完整范围
+      这正是缠论"在背驰段里找次级别中枢"的做法。
+    */
+    let childWindow = [focus.t0, focus.t1];
+    let windowMode = 'pivot';
+    if (sig && sig.t >= focus.t0 && sig.t <= focus.t1) {
+      const span = Math.max(1, focus.t1 - focus.t0);
+      childWindow = [Math.max(focus.t0, sig.t - span / 3), Math.min(focus.t1, sig.t + span / 3)];
+      windowMode = 'signal';
+    }
+    node.childWindow = childWindow;
+    node.childWindowMode = windowMode;
+
+    const child = await recurse(depth + 1, childWindow, node);
+    if (child && (child.ok || child.error)) node.children = [child];
     return node;
   }
 
-  const root = await recurse(0, null);
+  const root = await recurse(0, null, null);
   const tree = {
     market: String(market || 'A').toUpperCase(),
     code,
     chain,
     root,
-    /* 递归结论：从最深层往回汇集 */
-    verdict: verdictOf(root),
     flat: flatten(root),
+    verdict: '',
+    nested: false,
   };
+  const v = verdictOf(tree);
+  tree.verdict = v.text;
+  tree.verdictLevel = v.level;
+  tree.nested = v.level === 'buy' || v.level === 'sell';
+  tree.evidence = v.evidence;
   return tree;
 }
 
-function pickRecentSignal(res) {
-  const bars = res.bars.length;
-  const s = [...(res.signals || [])].reverse().find((x) => x.barIdx >= bars - 30);
-  if (!s) return null;
-  return { type: s.type, name: s.name, price: +s.price.toFixed(3), barIdx: s.barIdx, agoBars: bars - 1 - s.barIdx };
-}
+/**
+ * 递归结论
+ * 判定逻辑（按缠论）：
+ *   · 区间套成立 = 相邻两层"方向一致"：大级别背驰（或买点） + 次级别同向买卖点
+ *   · 只统计**覆盖充分**（coverage != insufficient）的层，避免拿 2 天数据代表 2 个月
+ */
+function verdictOf(tree) {
+  const layers = tree.flat.filter((l) => l.ok && l.coverage !== 'insufficient');
+  const dropped = tree.flat.filter((l) => l.ok && l.coverage === 'insufficient').map((l) => l.period);
+  if (!layers.length) {
+    return { level: 'none', text: '数据覆盖不足，无法做区间套判断', evidence: { dropped } };
+  }
 
-function pickRecentBeichi(res) {
-  const bars = res.bars.length;
-  const b = [...(res.beichi || [])].reverse().find((x) => x.barIdx >= bars - 30);
-  if (!b) return null;
-  return { kind: b.kind, dir: b.dir, areaRatio: b.areaRatio, barIdx: b.barIdx, agoBars: bars - 1 - b.barIdx };
-}
+  const buys = layers.filter((l) => l.signal && l.signal.type.endsWith('B'));
+  const sells = layers.filter((l) => l.signal && l.signal.type.endsWith('S'));
+  const beiDown = layers.filter((l) => l.beichi && l.beichi.dir < 0);
+  const beiUp = layers.filter((l) => l.beichi && l.beichi.dir > 0);
 
-/** 递归结论：把各层的信号/背驰/位置汇总成一句话 */
-function verdictOf(node) {
-  if (!node || !node.ok) return { level: 'none', text: '数据不足，无法做区间套' };
-  const layers = [];
-  (function walk(n) {
-    if (!n || !n.ok) return;
-    layers.push(n);
-    (n.children || []).forEach(walk);
-  })(node);
+  const fmt = (l) => `${l.period}${l.signal ? '(' + l.signal.name + ')' : ''}`;
+  const suffix = dropped.length ? `（${dropped.join('/')} 覆盖不足已排除）` : '';
 
-  const withSignal = layers.filter((l) => l.signal);
-  const withBei = layers.filter((l) => l.beichi);
-  const deepest = layers[layers.length - 1];
-
-  const buyLayers = withSignal.filter((l) => l.signal.type.endsWith('B'));
-  const sellLayers = withSignal.filter((l) => l.signal.type.endsWith('S'));
-
-  // 缠论区间套的判定：小级别买点 + 大级别背驰段 = 精确买点
-  if (buyLayers.length && (withBei.some((l) => l.beichi.dir < 0) || buyLayers.length >= 2)) {
+  /*
+    区间套成立必须满足"跨层"：
+      · 两个不同层各自出现同向买卖点，或
+      · 一层的买卖点 + **另一层**的同向背驰
+    同一层既有信号又有背驰不算共振——那只是这一层自己在说话。
+  */
+  const crossLayer = (sigs, beis) => {
+    if (sigs.length >= 2) return true;
+    if (!sigs.length) return false;
+    return beis.some((b) => !sigs.some((x) => x.period === b.period));
+  };
+  if (crossLayer(buys, beiDown)) {
     return {
       level: 'buy',
-      text: `区间套买点：${buyLayers.map((l) => l.period).join(' + ')} 出现买点，且大级别处于背驰段`,
-      layers: buyLayers.map((l) => ({ period: l.period, name: l.signal.name, price: l.signal.price })),
+      text: `区间套买点：${[...new Set([...buys.map(fmt), ...beiDown.map((l) => l.period + '(底背驰)')])].join(' + ')} 同向共振${suffix}`,
+      evidence: { buys: buys.map(pick), bei: beiDown.map(pick), dropped },
     };
   }
-  if (sellLayers.length && (withBei.some((l) => l.beichi.dir > 0) || sellLayers.length >= 2)) {
+  if (crossLayer(sells, beiUp)) {
     return {
       level: 'sell',
-      text: `区间套卖点：${sellLayers.map((l) => l.period).join(' + ')} 出现卖点，且大级别处于背驰段`,
-      layers: sellLayers.map((l) => ({ period: l.period, name: l.signal.name, price: l.signal.price })),
+      text: `区间套卖点：${[...new Set([...sells.map(fmt), ...beiUp.map((l) => l.period + '(顶背驰)')])].join(' + ')} 同向共振${suffix}`,
+      evidence: { sells: sells.map(pick), bei: beiUp.map(pick), dropped },
     };
   }
-  if (withSignal.length) {
-    const l = withSignal[withSignal.length - 1];
-    return { level: 'single', text: `只有 ${l.period} 出现 ${l.signal.name}，未形成多级别区间套`, layers: [{ period: l.period, name: l.signal.name, price: l.signal.price }] };
+  if (buys.length || sells.length) {
+    const l = (buys.length ? buys : sells).slice(-1)[0];
+    const sameLayerBei = l.beichi ? `（同层另有${l.beichi.kind}，属该级别自身判断，不算跨层共振）` : '';
+    return { level: 'single', text: `仅 ${fmt(l)} 出现${l.signal.name}${sameLayerBei}，未形成多级别共振${suffix}`, evidence: { single: pick(l), dropped } };
   }
-  // 注意：不能只看最深层——最深层常常因为数据覆盖不足而没有中枢，
-  // 但上层确实有中枢。要报"最深的那个有中枢的层"。
   const withPivot = layers.filter((l) => l.pivot);
   if (withPivot.length) {
     const d = withPivot[withPivot.length - 1];
-    const blocked = deepest && deepest.descendBlocked ? `；${deepest.descendBlocked}` : '';
+    const blocked = (tree.flat.find((l) => l.descendBlocked) || {}).descendBlocked;
     return {
       level: 'none',
-      text: `各层均无买卖点；最深处到 ${d.period}（中枢 ${d.pivot.zd.toFixed(2)}~${d.pivot.zg.toFixed(2)}，${d.pivot.count} 笔）${blocked}`,
+      text: `各层无买卖点；递归到 ${d.period}（中枢 ${d.pivot.zd.toFixed(2)}~${d.pivot.zg.toFixed(2)}，${d.pivot.count} 笔）${blocked ? '；' + blocked : ''}${suffix}`,
+      evidence: { dropped },
     };
   }
-  return { level: 'none', text: '各层均未形成有效中枢，无区间套可言' };
+  return { level: 'none', text: '各层均未形成有效中枢，无区间套可言', evidence: { dropped } };
 }
 
-/** 把树压平成数组，便于前端逐行展示 */
+function pick(l) {
+  return { period: l.period, signal: l.signal ? l.signal.name : null, beichi: l.beichi ? l.beichi.kind : null, price: l.price };
+}
+
 function flatten(node, out = []) {
   if (!node) return out;
   const { children, ...rest } = node;
