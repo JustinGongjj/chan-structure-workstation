@@ -539,6 +539,11 @@
         const bei = l.beichi ? `<span class="chip gold" style="font-size:10px">${U.esc(l.beichi.kind)}${l.beichi.dir > 0 ? '·顶' : '·底'}</span>` : '';
         const cov = l.coverage === 'full' ? '' : `<span class="chip ${l.coverage === 'insufficient' ? 'red' : 'gold'}" style="font-size:10px">覆盖${Math.round((l.coverRatio || 0) * 100)}%</span>`;
         const piv = l.pivot ? `中枢 ${l.pivot.zd.toFixed(2)}~${l.pivot.zg.toFixed(2)}` : '无中枢';
+        // 有完整背驰比较对才给"图上定位"（否则下标对不上）
+        const canJump = !!(l.beichi && l.beichi.cur && l.beichi.prev);
+        const jumpBtn = canJump
+          ? `<button class="chip nest-jump" data-depth="${l.depth}" style="font-size:10px;padding:2px 7px">图上定位</button>`
+          : '';
         let blocked = l.descendBlocked ? `<div class="hint" style="font-size:10.5px;margin-top:2px">↳ ${U.esc(l.descendBlocked)}</div>` : '';
         if (l.beichi && l.beichi.segment) {
           const fd = (t) => (t ? new Date(t).toISOString().slice(0, 10) : '—');
@@ -546,13 +551,42 @@
         }
         return `<div style="padding:6px 8px;padding-left:${pad}px;border-left:2px solid ${l.depth === 0 ? 'var(--line)' : 'var(--gold-tint2, var(--line))'};margin-bottom:3px">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <b style="font-size:12px">${l.depth > 0 ? '└ ' : ''}${U.esc(l.levelName || l.period)}</b>${sig}${bei}${cov}
+            <b style="font-size:12px">${l.depth > 0 ? '└ ' : ''}${U.esc(l.levelName || l.period)}</b>${sig}${bei}${cov}${jumpBtn}
           </div>
           <div class="hint" style="font-size:10.5px;margin-top:2px">${piv} · ${U.esc(l.trend || '')}</div>
           ${blocked}
         </div>`;
       }).join('');
       box.innerHTML = head + rows;
+      // 手机上也要能"图上定位"：点击后在主图高亮该层背驰段（周期不同则先切换）
+      U.$$('#nestBox .nest-jump').forEach((btn) =>
+        btn.addEventListener('click', async () => {
+          const d = Number(btn.dataset.depth);
+          const l = okLayers.find((x) => x.depth === d);
+          if (!l || !l.beichi || !l.beichi.cur || !l.beichi.prev) return;
+          if (state.period !== l.period) {
+            state.period = l.period;
+            await renderStructure();
+            await new Promise((r) => setTimeout(r, 2500));
+          }
+          const ch = state.chart;
+          if (!ch) return;
+          const prev = l.beichi.prev, cur = l.beichi.cur;
+          const bars = (state.chart && state.chart.data && state.chart.data.bars) || [];
+          const hi = bars.length ? Math.max(...bars.map((b) => b.h)) : null;
+          const lo = bars.length ? Math.min(...bars.map((b) => b.l)) : null;
+          ch.setHighlight({
+            title: `${l.levelName || l.period} 背驰段`,
+            range: [prev.i0, cur.i1],
+            bands: [
+              { from: prev.i0, to: prev.i1, color: 'seg', label: `前段 ${prev.area}`, zd: lo, zg: hi },
+              { from: cur.i0, to: cur.i1, color: 'gold', label: `背驰段 ${cur.area}`, zd: lo, zg: hi },
+            ],
+            marks: [{ idx: cur.i1, price: cur.p1, color: 'gold', text: '背驰确认', pos: 'below' }],
+          });
+          toast(`已高亮 ${l.levelName || l.period} 背驰段：面积 ${prev.area} → ${cur.area}`);
+        })
+      );
     } catch (e) {
       box.innerHTML = `<div class="empty">加载失败：${U.esc(e.message)}</div>`;
     }

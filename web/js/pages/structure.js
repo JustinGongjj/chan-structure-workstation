@@ -342,12 +342,15 @@
     大级别中枢 → 在它的时间窗里找次级别中枢 → 再往下，逐层缩窄。
     缩进就是递归深度，一层比一层窄，这才是缠论区间套的样子。
   */
+  let lastNest = null; // 缓存递归结果，供"点击某层→图上高亮背驰段"使用
+
   async function loadSuite(market, code) {
     const box = U.$('#suiteTbl');
     if (!box) return;
     box.innerHTML = '<div class="loading" style="height:60px">递归计算多级别区间套…</div>';
     try {
       const t = await API.get(`/api/nest?market=${encodeURIComponent(market)}&code=${encodeURIComponent(code)}`);
+      lastNest = t;
       const hint = U.$('#suiteHint');
       if (hint) hint.textContent = `递归 ${t.flat.filter((l) => l.ok).length} 层：${(t.chain || []).join(' → ')}`;
 
@@ -390,17 +393,77 @@
         if (l.childWindowMode === 'beichi') {
           blocked += `<div class="nest-ds">↳ 下钻窗口已按背驰段收紧：${U.esc(l.childWindowNote || '')}${l.childWindowClipped ? '（已裁剪到次级别可覆盖范围）' : ''}</div>`;
         }
-        return `<div class="nest-row ${hl}" style="padding-left:${l.depth * 18}px">
+        const canDraw = !!(l.beichi && l.beichi.cur && l.beichi.prev);
+        const drawBtn = canDraw
+          ? `<button class="nest-draw" data-depth="${l.depth}" title="在图上高亮这个背驰段">图上定位</button>`
+          : '';
+        return `<div class="nest-row ${hl}" style="padding-left:${l.depth * 18}px" data-depth="${l.depth}">
           <span class="nest-lv">${l.depth > 0 ? '└ ' : ''}${U.esc(l.levelName || l.period)}</span>
-          ${sig}${bei}${cov}
+          ${sig}${bei}${cov}${drawBtn}
           <span class="nest-ds">${piv} · 位于中枢${U.POS_TXT[l.position] || ''} · ${U.esc(l.trend || '')}</span>
           ${blocked}
         </div>`;
       }).join('');
 
       box.innerHTML = head + rows;
+      U.$$('#suiteTbl .nest-draw').forEach((btn) =>
+        btn.addEventListener('click', () => highlightBeichi(Number(btn.dataset.depth)))
+      );
     } catch (e) {
       box.innerHTML = '<div class="loading">' + U.esc(e.message) + '</div>';
+    }
+  }
+
+  /*
+    把某一层的"背驰段"画到图上：
+      · 前段（参照段）—— 灰蓝色底
+      · 本段（背驰段）—— 金色底（这才是"力度衰竭"的那一段）
+      · 背驰确认点—— 竖线 + 标签
+    窗口之外压暗，让注意力集中在背驰段。
+    注意：这些下标是该层自己的 K 线索引；只有当用户当前看的周期 == 该层周期时才对得上，
+    否则自动切到该层的周期再画。
+  */
+  function highlightBeichi(depth) {
+    if (!lastNest) return;
+    const l = (lastNest.flat || []).find((x) => x.depth === depth);
+    if (!l || !l.beichi || !l.beichi.cur || !l.beichi.prev) return;
+    const need = l.period;
+    if (App.state.period !== need) {
+      // 周期不一致：先切过去，等刷新完再画
+      App.state.period = need;
+      refresh();
+      setTimeout(() => highlightBeichi(depth), 4500);
+      return;
+    }
+    const cur = l.beichi.cur;
+    const prev = l.beichi.prev;
+    const bars = (lastData && lastData.bars) || [];
+    const priceHi = bars.length ? Math.max(...bars.map((b) => b.h)) : null;
+    const priceLo = bars.length ? Math.min(...bars.map((b) => b.l)) : null;
+    const ch = PageStructure.getChart();
+    if (!ch) return;
+    ch.setHighlight({
+      title: `${l.levelName || l.period} 背驰段`,
+      range: [prev.i0, cur.i1],
+      bands: [
+        { from: prev.i0, to: prev.i1, color: 'seg', label: `前段 面积${prev.area}`, zd: priceLo, zg: priceHi },
+        { from: cur.i0, to: cur.i1, color: 'gold', label: `背驰段 面积${cur.area}（比值${l.beichi.areaRatio}）`, zd: priceLo, zg: priceHi },
+      ],
+      marks: [{ idx: cur.i1, price: cur.p1 || (bars[cur.i1] ? bars[cur.i1].c : null), color: 'gold', text: '背驰确认', pos: 'below' }],
+      steps: [
+        `前段：${new Date(prev.t0).toISOString().slice(0, 10)} ~ ${new Date(prev.t1).toISOString().slice(0, 10)}，MACD 面积 ${prev.area}`,
+        `本段：${new Date(cur.t0).toISOString().slice(0, 10)} ~ ${new Date(cur.t1).toISOString().slice(0, 10)}，MACD 面积 ${cur.area}`,
+        `面积比 ${l.beichi.areaRatio}（<1 表示力度衰竭）→ 段背驰`,
+      ],
+    });
+    // setHighlight 已自动把视图聚焦到 range，不要再 resetView（会把聚焦覆盖掉）
+    const fd = (t) => new Date(t).toISOString().slice(0, 10);
+    const note = U.$('#chartNote');
+    if (note) {
+      note.innerHTML = `已高亮 <b>${U.esc(l.levelName || l.period)}</b> 背驰段：` +
+        `<span style="color:var(--seg)">前段 ${fd(prev.t0)}~${fd(prev.t1)} 面积 ${prev.area}</span> → ` +
+        `<span style="color:var(--gold)">本段 ${fd(cur.t0)}~${fd(cur.t1)} 面积 ${cur.area}</span>，` +
+        `面积比 ${l.beichi.areaRatio}（<1 即力度衰竭）`;
     }
   }
 

@@ -190,8 +190,8 @@ async function buildNest({ fetchLevel, market, code }) {
       segment: { t0, t1, bars: span ? Math.round(span / Math.max(1, (res.bars[1].t - res.bars[0].t))) : null },
       /* 参照段：面积对比的另一段 */
       refSegment: pair && pair.prev ? { t0: pair.prev.t0, t1: pair.prev.t1, area: pair.prev.area } : null,
-      cur: pair && pair.cur ? { area: pair.cur.area, t0: pair.cur.t0, t1: pair.cur.t1, p0: pair.cur.p0, p1: pair.cur.p1 } : null,
-      prev: pair && pair.prev ? { area: pair.prev.area, t0: pair.prev.t0, t1: pair.prev.t1, p0: pair.prev.p0, p1: pair.prev.p1 } : null,
+      cur: pair && pair.cur ? { area: pair.cur.area, t0: pair.cur.t0, t1: pair.cur.t1, p0: pair.cur.p0, p1: pair.cur.p1, i0: pair.cur.i0, i1: pair.cur.i1 } : null,
+      prev: pair && pair.prev ? { area: pair.prev.area, t0: pair.prev.t0, t1: pair.prev.t1, p0: pair.prev.p0, p1: pair.prev.p1, i0: pair.prev.i0, i1: pair.prev.i1 } : null,
     };
   }
 
