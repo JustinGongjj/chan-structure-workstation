@@ -829,3 +829,23 @@ button{font-family:inherit}
 /* ---------- 缠关 108（站内内嵌） ---------- */
 .game-frame-wrap{height:calc(100vh - 210px);min-height:560px;border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:var(--bg)}
 .game-frame{width:100%;height:100%;border:0;display:block}
+
+/* ---------- 递归区间套 ---------- */
+/* 递归树要纵向排布：结论独占一行，各层按缩进排列（不能沿用 .suite 的 auto-fit 网格） */
+#suiteTbl{display:block}
+#suiteTbl .nest-verdict{display:block;margin-bottom:10px}
+.nest-verdict{
+  padding:9px 12px;border-radius:9px;font-size:12.5px;line-height:1.6;margin-bottom:10px;
+  border:1px solid var(--line2);background:var(--panel2);
+}
+.nest-verdict.green{border-color:var(--up);color:var(--up);background:color-mix(in srgb, var(--up) 8%, transparent)}
+.nest-verdict.red{border-color:var(--down);color:var(--down);background:color-mix(in srgb, var(--down) 8%, transparent)}
+.nest-verdict.gold{border-color:var(--line2);color:var(--muted)}
+.nest-row{
+  display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;
+  padding:7px 10px;border-left:2px solid var(--line2);margin-bottom:4px;
+  border-radius:0 7px 7px 0;font-size:12px;
+}
+.nest-row.hl{border-left-color:var(--gold);background:color-mix(in srgb, var(--gold) 7%, transparent)}
+.nest-lv{font-weight:600;color:var(--text);font-size:12.5px;min-width:74px}
+.nest-ds{color:var(--faint);font-size:11.5px}

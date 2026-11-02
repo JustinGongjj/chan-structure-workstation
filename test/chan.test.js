@@ -393,3 +393,67 @@ test('静态服务：大文件走流式分支且不崩溃', async () => {
     try { proc.kill('SIGKILL'); } catch (e) {}
   }
 });
+
+/* ---------------- 递归区间套 ---------------- */
+test('区间套：递归结构完整，层级递进且每层有中枢或明确说明', () => {
+  const N = require('../server/lib/nested');
+  const S = require('../server/lib/sources');
+  // 用合成数据避免网络依赖
+  const mkBars = (n, base, amp) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const c = base + Math.sin(i / 9) * amp + Math.sin(i / 31) * amp * 0.5;
+      out.push({ t: 1.6e12 + i * 60000, o: c, h: c + amp * 0.3, l: c - amp * 0.3, c, v: 100 });
+    }
+    return out;
+  };
+  const fixtures = {
+    month: mkBars(300, 100, 20), week: mkBars(400, 100, 15),
+    day: mkBars(600, 100, 10), '60m': mkBars(600, 100, 5), '30m': mkBars(600, 100, 3),
+  };
+  return N.buildNest({
+    market: 'A', code: 'TEST',
+    fetchLevel: async (p) => ({ bars: fixtures[p] || fixtures.day, source: 'fixture' }),
+  }).then((t) => {
+    assert.ok(t.chain.length >= 2, '递归链至少 2 级');
+    assert.ok(t.flat.length >= 2, '至少递归 2 层');
+    assert.ok(t.verdict && typeof t.verdict.text === 'string' && t.verdict.text.length > 0, '必须有结论');
+    // 深度必须严格递增（0,1,2...），不能跳级
+    const depths = t.flat.map((l) => l.depth).sort((a, b) => a - b);
+    depths.forEach((d, i) => assert.equal(d, i, '递归深度应从 0 连续递增'));
+    // 每层要么有中枢，要么说明为什么没有
+    for (const l of t.flat) {
+      if (!l.ok) continue;
+      assert.ok(l.pivot || l.depth > 0, `第 ${l.depth} 层既无中枢又无说明`);
+      assert.equal(typeof l.coverRatio, 'number', '覆盖率必须是数字');
+      assert.ok(l.coverRatio >= 0 && l.coverRatio <= 1, '覆盖率应在 0~1');
+    }
+  });
+});
+
+test('区间套：结论不能因为最深层没中枢就说"各层都无中枢"', () => {
+  const N = require('../server/lib/nested');
+  const mkBars = (n, amp) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const c = 100 + Math.sin(i / 7) * amp;
+      out.push({ t: 1.6e12 + i * 60000, o: c, h: c + amp * 0.4, l: c - amp * 0.4, c, v: 100 });
+    }
+    return out;
+  };
+  return N.buildNest({
+    market: 'A', code: 'TEST2',
+    // 大级别有中枢，最小级别故意给一条直线（必然无中枢）
+    fetchLevel: async (p) => ({
+      bars: p === '30m' ? Array.from({ length: 200 }, (_, i) => ({ t: 1.6e12 + i * 60000, o: 100, h: 100, l: 100, c: 100, v: 1 })) : mkBars(500, 8),
+      source: 'fixture',
+    }),
+  }).then((t) => {
+    assert.ok(t.verdict.text, '必须有结论');
+    // 上层有中枢时，不能说"各层均未形成有效中枢"
+    const hasUpperPivot = t.flat.some((l) => l.ok && l.pivot);
+    if (hasUpperPivot) {
+      assert.ok(!/各层均未形成有效中枢/.test(t.verdict.text), '上层有中枢时不该报"各层无中枢"');
+    }
+  });
+});

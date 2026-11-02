@@ -336,27 +336,54 @@
     }
   }
 
+  /*
+    递归区间套（/api/nest）
+    与旧版的区别：旧版是"6 个周期各算一遍再数个数"，这里是真正的递归——
+    大级别中枢 → 在它的时间窗里找次级别中枢 → 再往下，逐层缩窄。
+    缩进就是递归深度，一层比一层窄，这才是缠论区间套的样子。
+  */
   async function loadSuite(market, code) {
-    U.$('#suiteTbl').innerHTML = '<div class="loading" style="height:60px">计算多级别结构…</div>';
+    const box = U.$('#suiteTbl');
+    if (!box) return;
+    box.innerHTML = '<div class="loading" style="height:60px">递归计算多级别区间套…</div>';
     try {
-      const res = await API.suite({ market, code });
-      const levels = res.levels || [];
-      U.$('#suiteHint').textContent = res.resonance || '大级别定方向 → 小级别等买点';
-      U.$('#suiteTbl').innerHTML = levels
-        .map((l) => {
-          if (!l.ok) return `<div class="suite-card"><div class="lv"><span>${PNAME[l.period] || l.period}</span><span class="chip red">无数据</span></div><div class="ds">${U.esc(l.error || '')}</div></div>`;
-          const sig = l.signal ? `<span class="chip ${l.signal.type.endsWith('B') ? 'green' : 'red'}">${U.SIG_SHORT[l.signal.type]}</span>` : '';
-          const bei = l.beichi ? `<span class="chip gold">${l.beichi.kind}${l.beichi.dir > 0 ? '·顶' : '·底'}</span>` : '';
-          const hl = l.signal || l.beichi ? 'hl' : '';
-          return `<div class="suite-card ${hl}">
-          <div class="lv"><span>${l.levelName}</span>${sig}${bei}</div>
-          <div class="st">${l.trend} · ${U.POS_TXT[l.position] || ''}</div>
-          <div class="ds">${l.pivot ? `中枢 [${U.fmt(l.pivot.zd)}, ${U.fmt(l.pivot.zg)}]` : '无中枢'} · 末笔${l.lastBiDir > 0 ? '上' : '下'}</div>
+      const t = await API.get(`/api/nest?market=${encodeURIComponent(market)}&code=${encodeURIComponent(code)}`);
+      const hint = U.$('#suiteHint');
+      if (hint) hint.textContent = `递归 ${t.flat.filter((l) => l.ok).length} 层：${(t.chain || []).join(' → ')}`;
+
+      const vb = t.verdict || {};
+      const vcls = vb.level === 'buy' ? 'green' : vb.level === 'sell' ? 'red' : 'gold';
+      const head = `<div class="nest-verdict ${vcls}">${U.esc(vb.text || '')}</div>`;
+
+      const rows = (t.flat || []).map((l) => {
+        if (!l.ok) {
+          return `<div class="nest-row" style="padding-left:${l.depth * 18}px">
+            <span class="nest-lv">${PNAME[l.period] || l.period}</span>
+            <span class="chip red">无数据</span>
+            <span class="nest-ds">${U.esc(l.error || '')}</span></div>`;
+        }
+        const sig = l.signal
+          ? `<span class="chip ${l.signal.type.endsWith('B') ? 'green' : 'red'}">${U.SIG_SHORT[l.signal.type] || l.signal.type}</span>`
+          : '';
+        const bei = l.beichi ? `<span class="chip gold">${U.esc(l.beichi.kind)}${l.beichi.dir > 0 ? '·顶' : '·底'}</span>` : '';
+        const cov = l.coverage === 'full' ? '' : `<span class="chip ${l.coverage === 'insufficient' ? 'red' : 'gold'}">覆盖${(l.coverRatio * 100).toFixed(0)}%</span>`;
+        const piv = l.pivot ? `中枢 ${U.fmt(l.pivot.zd)}~${U.fmt(l.pivot.zg)} · ${l.pivot.count}笔` : '无中枢';
+        const hl = l.signal || l.beichi ? 'hl' : '';
+        let blocked = l.descendBlocked ? `<div class="nest-ds">↳ ${U.esc(l.descendBlocked)}</div>` : '';
+        if (!blocked && l.coverage !== 'full' && l.depth > 0) {
+          blocked = `<div class="nest-ds">↳ 该级别 K 线只覆盖上级中枢时间窗的 ${(l.coverRatio * 100).toFixed(0)}%，结论仅供参考</div>`;
+        }
+        return `<div class="nest-row ${hl}" style="padding-left:${l.depth * 18}px">
+          <span class="nest-lv">${l.depth > 0 ? '└ ' : ''}${U.esc(l.levelName || l.period)}</span>
+          ${sig}${bei}${cov}
+          <span class="nest-ds">${piv} · 位于中枢${U.POS_TXT[l.position] || ''} · ${U.esc(l.trend || '')}</span>
+          ${blocked}
         </div>`;
-        })
-        .join('');
+      }).join('');
+
+      box.innerHTML = head + rows;
     } catch (e) {
-      U.$('#suiteTbl').innerHTML = '<div class="loading">' + U.esc(e.message) + '</div>';
+      box.innerHTML = '<div class="loading">' + U.esc(e.message) + '</div>';
     }
   }
 

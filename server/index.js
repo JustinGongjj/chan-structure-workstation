@@ -13,6 +13,7 @@ const { URL } = require('url');
 
 const S = require('./lib/sources');
 const SECTORS = require('./lib/sectors');
+const NESTED = require('./lib/nested');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -561,6 +562,20 @@ const routes = {
     periods: S.PERIOD_NAME,
     suite: SUITE_PERIODS,
   }),
+  // 递归区间套：大级别中枢 → 次级别中枢 → … 逐层下降（不是把多个周期各算一遍）
+  '/api/nest': async (u) => {
+    const market = String(u.searchParams.get('market') || 'A').toUpperCase();
+    const code = u.searchParams.get('code') || '600519';
+    return NESTED.buildNest({
+      market,
+      code: S.normCode(market, code),
+      fetchLevel: async (period) => {
+        const limit = ['day', 'week', 'month'].includes(period) ? 600 : 600;
+        const kl = await S.klines({ market, code, period, limit });
+        return { bars: kl.bars, source: kl.source };
+      },
+    });
+  },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景
   '/api/macro': async () => {
