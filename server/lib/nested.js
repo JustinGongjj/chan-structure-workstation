@@ -34,11 +34,18 @@ const CENTER_TOL = 0.15;
 /** 数据覆盖率阈值 */
 const COVER_OK = 0.95;
 const COVER_PARTIAL = 0.5;
-/** 背驰/信号"新鲜度"：距离末尾多少根以内算当前有效 */
-const FRESH_BARS = { month: 3, week: 6, day: 20, '60m': 40, '30m': 40 };
+/*
+  背驰/信号的"新鲜度"按**时间**判定而不是按根数。
+  按根数的坑：周线 18 根≈4 个月，用"6 根"去卡会把 4 个月前的有效背驰判成过期；
+  而 30 分钟的 40 根只有 3 天。同一个数字在不同级别含义完全不同。
+  这里统一用"最多多久以前算当前有效"，各级别语义一致。
+*/
+const FRESH_DAYS = { month: 400, week: 150, day: 45, '60m': 14, '30m': 7 };
 
-function freshWithin(period) {
-  return FRESH_BARS[period] || 20;
+function freshCutoff(res, period) {
+  const days = FRESH_DAYS[period] || 45;
+  const lastT = res.bars[res.bars.length - 1].t;
+  return lastT - days * 86400000;
 }
 
 /**
@@ -147,17 +154,45 @@ async function buildNest({ fetchLevel, market, code }) {
   /** 找本级"当前有效"的信号与背驰 */
   function recentSignal(res, period) {
     const n = res.bars.length;
-    const lim = freshWithin(period);
-    const s = [...(res.signals || [])].reverse().find((x) => x.barIdx >= n - lim);
+    const cutoff = freshCutoff(res, period);
+    const s = [...(res.signals || [])].reverse().find((x) => res.bars[x.barIdx].t >= cutoff);
     if (!s) return null;
-    return { type: s.type, name: s.name, price: +s.price.toFixed(4), barIdx: s.barIdx, agoBars: n - 1 - s.barIdx, t: res.bars[s.barIdx].t };
+    return {
+      type: s.type, name: s.name, price: +s.price.toFixed(4),
+      barIdx: s.barIdx, agoBars: n - 1 - s.barIdx, t: res.bars[s.barIdx].t,
+      agoDays: Math.round((res.bars[n - 1].t - res.bars[s.barIdx].t) / 86400000),
+    };
   }
   function recentBeichi(res, period) {
     const n = res.bars.length;
-    const lim = freshWithin(period);
-    const b = [...(res.beichi || [])].reverse().find((x) => x.barIdx >= n - lim);
+    const cutoff = freshCutoff(res, period);
+    const b = [...(res.beichi || [])].reverse().find((x) => res.bars[x.barIdx].t >= cutoff);
     if (!b) return null;
-    return { kind: b.kind, dir: b.dir, areaRatio: b.areaRatio, barIdx: b.barIdx, agoBars: n - 1 - b.barIdx, t: res.bars[b.barIdx].t };
+    const pair = b.pair || null;
+    /*
+      背驰段的精确窗口：
+        缠论里"背驰段"指的是**力度衰竭的那一段本身**（本段），
+        前段只是参照物。所以窗口 = [本段起点, 本段终点(背驰确认点)]。
+      若没有 pair（旧数据结构），退化为 [barIdx 往前推一段, barIdx]。
+    */
+    const span = pair && pair.cur ? pair.cur.t1 - pair.cur.t0 : 0;
+    const t0 = pair && pair.cur ? pair.cur.t0 : res.bars[Math.max(0, b.barIdx - 20)].t;
+    const t1 = pair && pair.cur ? pair.cur.t1 : res.bars[b.barIdx].t;
+    return {
+      kind: b.kind,
+      dir: b.dir,
+      areaRatio: b.areaRatio,
+      barIdx: b.barIdx,
+      agoBars: n - 1 - b.barIdx,
+      agoDays: Math.round((res.bars[n - 1].t - res.bars[b.barIdx].t) / 86400000),
+      t: res.bars[b.barIdx].t,
+      /* 精确窗口：本段起止 */
+      segment: { t0, t1, bars: span ? Math.round(span / Math.max(1, (res.bars[1].t - res.bars[0].t))) : null },
+      /* 参照段：面积对比的另一段 */
+      refSegment: pair && pair.prev ? { t0: pair.prev.t0, t1: pair.prev.t1, area: pair.prev.area } : null,
+      cur: pair && pair.cur ? { area: pair.cur.area, t0: pair.cur.t0, t1: pair.cur.t1, p0: pair.cur.p0, p1: pair.cur.p1 } : null,
+      prev: pair && pair.prev ? { area: pair.prev.area, t0: pair.prev.t0, t1: pair.prev.t1, p0: pair.prev.p0, p1: pair.prev.p1 } : null,
+    };
   }
 
   /**
@@ -225,7 +260,15 @@ async function buildNest({ fetchLevel, market, code }) {
 
     // 停止条件：数据不足 / 无中枢 / 到达最末级
     if (cov.coverage === 'insufficient') {
-      node.descendBlocked = `次级别数据只覆盖本窗的 ${(cov.coverRatio * 100).toFixed(0)}%（${period} 需要覆盖 ${new Date(window[0]).toISOString().slice(0, 10)} 起）`;
+      const needFrom = new Date(window[0]).toISOString().slice(0, 10);
+      const haveFrom = new Date(cov.coverRange[0]).toISOString().slice(0, 10);
+      const haveTo = new Date(cov.coverRange[1]).toISOString().slice(0, 10);
+      // 区分两种"覆盖不足"：完全不重叠 vs 只覆盖一部分，给的建议不同
+      const disjoint = cov.coverRange[1] < window[0] || cov.coverRange[0] > window[1];
+      node.descendBlocked = disjoint
+        ? `数据源只提供 ${period} 级别近期的 ${haveFrom}~${haveTo}，与本窗（${needFrom} 起）无重叠，无法递归到该级别`
+        : `次级别数据只覆盖本窗的 ${(cov.coverRatio * 100).toFixed(0)}%（本窗需覆盖 ${needFrom} 起，实际只有 ${haveFrom}~${haveTo}）`;
+      node.descendBlockedHint = disjoint ? '可用更大周期（如日线/周线）看图，或换标的重试' : '结论仅供参考';
       node.stopReason = 'coverage';
       return node;
     }
@@ -245,15 +288,56 @@ async function buildNest({ fetchLevel, market, code }) {
         · 否则 → 收紧到本级中枢的完整范围
       这正是缠论"在背驰段里找次级别中枢"的做法。
     */
+    /*
+      下钻窗口的三级优先（这就是"背驰段精确定位"的落地）：
+        ① 有背驰 → 用**背驰段的精确范围**（本段起点~背驰确认点），并与中枢范围取交集
+        ② 否则有信号 → 用信号附近
+        ③ 否则 → 用中枢范围
+      缠论原文强调"背驰段的起点"，所以 ① 优先。
+    */
     let childWindow = [focus.t0, focus.t1];
     let windowMode = 'pivot';
-    if (sig && sig.t >= focus.t0 && sig.t <= focus.t1) {
+    let windowNote = '本级中枢范围';
+    if (bei && bei.segment && bei.segment.t0 && bei.segment.t1) {
+      // 与中枢范围取交集，避免背驰段跑到中枢之外
+      const lo = Math.max(focus.t0, bei.segment.t0);
+      const hi = Math.min(focus.t1 + (focus.t1 - focus.t0) * 0.5, bei.segment.t1);
+      if (hi > lo) {
+        childWindow = [lo, hi];
+        windowMode = 'beichi';
+        windowNote = `背驰段 ${new Date(lo).toISOString().slice(0, 10)} 起，至背驰确认点`;
+      }
+    }
+    if (windowMode === 'pivot' && sig && sig.t >= focus.t0 && sig.t <= focus.t1) {
       const span = Math.max(1, focus.t1 - focus.t0);
       childWindow = [Math.max(focus.t0, sig.t - span / 3), Math.min(focus.t1, sig.t + span / 3)];
       windowMode = 'signal';
+      windowNote = '信号发生位置附近';
+    }
+    /*
+      窗口裁剪：若次级别数据覆盖不到整个窗口，就裁剪到**两者交集**。
+      例如周线中枢 2019~2023，而日线只有 2024 年以后的数据 →
+      与其报"覆盖 0%"直接停摆，不如在 2024 年以后这段里继续找次级别中枢，
+      并明确标注"窗口已裁剪到次级别可覆盖范围"。
+    */
+    let clipped = false;
+    if (childCover) {
+      const [cFrom, cTo] = childCover;
+      const lo = Math.max(childWindow[0], cFrom);
+      const hi2 = Math.min(childWindow[1], cTo);
+      const need = childWindow[1] - childWindow[0];
+      const keep = hi2 - lo;
+      // 至少保留 30% 才值得裁剪，否则说明是真的没数据
+      if (keep > 0 && keep < need && need > 0 && keep / need >= 0.3) {
+        childWindow = [lo, hi2];
+        clipped = true;
+        windowNote += '（已裁剪到次级别可覆盖范围）';
+      }
     }
     node.childWindow = childWindow;
     node.childWindowMode = windowMode;
+    node.childWindowNote = windowNote;
+    node.childWindowClipped = clipped;
 
     const child = await recurse(depth + 1, childWindow, node);
     if (child && (child.ok || child.error)) node.children = [child];
@@ -310,17 +394,25 @@ function verdictOf(tree) {
     if (!sigs.length) return false;
     return beis.some((b) => !sigs.some((x) => x.period === b.period));
   };
+  /* 文案：同一级别只提一次，避免出现 "week(二买) + week(底背驰)" 这种重复 */
+  const summarize = (sigs, beis) => {
+    const byPeriod = new Map();
+    for (const l of sigs) byPeriod.set(l.period, l.signal.name);
+    const extra = beis.filter((b) => !byPeriod.has(b.period)).map((b) => `${b.period}(背驰)`);
+    const main = [...byPeriod.entries()].map(([p, n]) => `${p}(${n})`);
+    return [...main, ...extra].join(' + ');
+  };
   if (crossLayer(buys, beiDown)) {
     return {
       level: 'buy',
-      text: `区间套买点：${[...new Set([...buys.map(fmt), ...beiDown.map((l) => l.period + '(底背驰)')])].join(' + ')} 同向共振${suffix}`,
+      text: `区间套买点：${summarize(buys, beiDown)} 同向共振${suffix}`,
       evidence: { buys: buys.map(pick), bei: beiDown.map(pick), dropped },
     };
   }
   if (crossLayer(sells, beiUp)) {
     return {
       level: 'sell',
-      text: `区间套卖点：${[...new Set([...sells.map(fmt), ...beiUp.map((l) => l.period + '(顶背驰)')])].join(' + ')} 同向共振${suffix}`,
+      text: `区间套卖点：${summarize(sells, beiUp)} 同向共振${suffix}`,
       evidence: { sells: sells.map(pick), bei: beiUp.map(pick), dropped },
     };
   }

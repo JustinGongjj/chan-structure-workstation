@@ -466,6 +466,16 @@ function detectBeichi(bis, segs, pivots, macdData, bars) {
       peakRatio,
       segIdx: i,
       note: `前段面积 ${ea.area.toFixed(1)} → 本段 ${eb.area.toFixed(1)}`,
+      /*
+        背驰"比较对"：区间套要拿这个精确窗口，而不是整个中枢范围。
+        from = 前段起点（背驰段真正开始的地方）
+        to   = 本段终点（背驰确认点）
+        缠论原文：背驰段 = 从进入前一个同向段结束、到本段极值这一段。
+      */
+      pair: {
+        prev: { segIdx: i - 2, i0: a.i0, i1: a.i1, t0: bars[a.i0].t, t1: bars[a.i1].t, p0: a.p0, p1: a.p1, area: +ea.area.toFixed(1), peak: +ea.peak.toFixed(3) },
+        cur: { segIdx: i, i0: b.i0, i1: b.i1, t0: bars[b.i0].t, t1: bars[b.i1].t, p0: b.p0, p1: b.p1, area: +eb.area.toFixed(1), peak: +eb.peak.toFixed(3) },
+      },
     });
   }
 
@@ -498,6 +508,10 @@ function detectBeichi(bis, segs, pivots, macdData, bars) {
       price: b.p1,
       t: bars[b.i1].t,
       areaRatio,
+      pair: {
+        prev: { biIdx: j, i0: a.i0, i1: a.i1, t0: bars[a.i0].t, t1: bars[a.i1].t, p0: a.p0, p1: a.p1, area: +ea.area.toFixed(1), peak: +ea.peak.toFixed(3) },
+        cur: { biIdx: i, i0: b.i0, i1: b.i1, t0: bars[b.i0].t, t1: bars[b.i1].t, p0: b.p0, p1: b.p1, area: +eb.area.toFixed(1), peak: +eb.peak.toFixed(3) },
+      },
       peakRatio,
       segIdx: null,
       note: `跨中枢力度衰减（面积比 ${areaRatio}）`,

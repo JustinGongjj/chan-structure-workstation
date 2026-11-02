@@ -529,3 +529,52 @@ test('区间套：覆盖不足的层被排除在结论之外', async () => {
     assert.ok(dropped.includes(p) || layer.descendBlocked, `覆盖不足的 ${p} 必须被排除或说明原因`);
   }
 });
+
+/* ---------------- 背驰段精确定位 ---------------- */
+test('背驰记录必须带「比较对」：前段与本段的时段与 MACD 面积', async () => {
+  const C = require('../server/lib/chan');
+  const S = require('../server/lib/sources');
+  // 合成数据很难稳定造出真背驰（需要长走势的力度衰减），这里用真实数据验证结构
+  const kl = await S.klines({ market: 'A', code: '600519', period: 'week', limit: 600 }).catch(() => null);
+  if (!kl || !kl.bars || kl.bars.length < 100) {
+    // 无网络时跳过结构断言（不把网络问题算成代码缺陷）
+    return;
+  }
+  const a = C.analyze(kl.bars, { period: 'week' });
+  if (!a.beichi.length) return; // 当前行情无背驰，跳过
+  for (const b of a.beichi) {
+    assert.ok(b.pair, '背驰必须带 pair（比较对）');
+    assert.ok(b.pair.prev && b.pair.cur, 'pair 必须含 prev 与 cur');
+    for (const k of ['prev', 'cur']) {
+      const seg = b.pair[k];
+      assert.ok(Number.isFinite(seg.t0) && Number.isFinite(seg.t1), `${k} 必须有起止时间`);
+      assert.ok(seg.t1 >= seg.t0, `${k} 结束时间不得早于开始`);
+      assert.ok(Number.isFinite(seg.area), `${k} 必须有 MACD 面积`);
+      assert.ok(Number.isFinite(seg.peak), `${k} 必须有 MACD 峰值`);
+    }
+    assert.ok(b.pair.cur.t0 >= b.pair.prev.t0, '本段不应早于前段');
+    const ratio = b.pair.cur.area / b.pair.prev.area;
+    assert.ok(Math.abs(ratio - b.areaRatio) < 0.01, `面积比应与 pair 一致（${ratio} vs ${b.areaRatio}）`);
+  }
+});
+
+test('背驰段窗口：优先用背驰段而不是整个中枢范围', async () => {
+  const N = require('../server/lib/nested');
+  const S = require('../server/lib/sources');
+  // 用真实数据验证：若某层有背驰，其下钻窗口模式应为 beichi
+  const t = await N.buildNest({
+    market: 'A', code: '600519',
+    fetchLevel: async (p) => { const k = await S.klines({ market: 'A', code: '600519', period: p, limit: 600 }); return { bars: k.bars, source: k.source }; },
+  });
+  const beichiLayers = t.flat.filter((l) => l.beichi && l.childWindow);
+  for (const l of beichiLayers) {
+    // 若背驰段与中枢有交集，窗口模式必须是 beichi
+    if (l.beichi.segment && l.pivot) {
+      const overlap = Math.min(l.pivot.t1, l.beichi.segment.t1) - Math.max(l.pivot.t0, l.beichi.segment.t0);
+      if (overlap > 0) {
+        assert.equal(l.childWindowMode, 'beichi', `${l.period} 有背驰且与中枢相交，窗口应优先用背驰段`);
+        assert.ok(l.childWindowNote, '必须说明收窗理由');
+      }
+    }
+  }
+});

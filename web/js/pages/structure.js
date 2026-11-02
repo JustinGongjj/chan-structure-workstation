@@ -351,9 +351,11 @@
       const hint = U.$('#suiteHint');
       if (hint) hint.textContent = `递归 ${t.flat.filter((l) => l.ok).length} 层：${(t.chain || []).join(' → ')}`;
 
-      const vb = t.verdict || {};
-      const vcls = vb.level === 'buy' ? 'green' : vb.level === 'sell' ? 'red' : 'gold';
-      const head = `<div class="nest-verdict ${vcls}">${U.esc(vb.text || '')}</div>`;
+      // verdict 现在是字符串（服务端另有 verdictLevel），兼容旧的 {text} 结构
+      const vtxt = typeof t.verdict === 'string' ? t.verdict : (t.verdict && t.verdict.text) || '';
+      const vlevel = t.verdictLevel || (t.verdict && t.verdict.level) || 'none';
+      const vcls = vlevel === 'buy' ? 'green' : vlevel === 'sell' ? 'red' : 'gold';
+      const head = `<div class="nest-verdict ${vcls}">${U.esc(vtxt)}</div>`;
 
       const rows = (t.flat || []).map((l) => {
         if (!l.ok) {
@@ -371,7 +373,22 @@
         const hl = l.signal || l.beichi ? 'hl' : '';
         let blocked = l.descendBlocked ? `<div class="nest-ds">↳ ${U.esc(l.descendBlocked)}</div>` : '';
         if (!blocked && l.coverage !== 'full' && l.depth > 0) {
-          blocked = `<div class="nest-ds">↳ 该级别 K 线只覆盖上级中枢时间窗的 ${(l.coverRatio * 100).toFixed(0)}%，结论仅供参考</div>`;
+          blocked += `<div class="nest-ds">↳ 该级别 K 线只覆盖上级中枢时间窗的 ${(l.coverRatio * 100).toFixed(0)}%，结论仅供参考</div>`;
+        }
+        /*
+          背驰段精确定位：把参与比较的两段（面积、日期）和收窗理由直接展示出来。
+          这样用户能看到"窗口为什么收在这里"，而不是黑盒。
+        */
+        if (l.beichi && l.beichi.segment) {
+          const fd = (t) => (t ? new Date(t).toISOString().slice(0, 10) : '—');
+          const seg = l.beichi.segment;
+          const pa = l.beichi.prev ? l.beichi.prev.area : null;
+          const ca = l.beichi.cur ? l.beichi.cur.area : null;
+          const ratioTxt = pa != null && ca != null ? `前段面积 ${pa} → 本段 ${ca}（比值 ${l.beichi.areaRatio}）` : '';
+          blocked += `<div class="nest-ds">↳ 背驰段 ${fd(seg.t0)}~${fd(seg.t1)} · ${U.esc(l.beichi.kind)} · ${ratioTxt} · 距今 ${l.beichi.agoDays} 天</div>`;
+        }
+        if (l.childWindowMode === 'beichi') {
+          blocked += `<div class="nest-ds">↳ 下钻窗口已按背驰段收紧：${U.esc(l.childWindowNote || '')}${l.childWindowClipped ? '（已裁剪到次级别可覆盖范围）' : ''}</div>`;
         }
         return `<div class="nest-row ${hl}" style="padding-left:${l.depth * 18}px">
           <span class="nest-lv">${l.depth > 0 ? '└ ' : ''}${U.esc(l.levelName || l.period)}</span>
