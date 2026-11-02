@@ -856,3 +856,16 @@ button{font-family:inherit}
   background:transparent;color:var(--gold);font-size:10.5px;cursor:pointer;white-space:nowrap;
 }
 .nest-draw:hover{background:color-mix(in srgb, var(--gold) 14%, transparent)}
+
+/* ---------- 理论→实践链路 ---------- */
+.sys-steps{display:flex;flex-direction:column;gap:5px}
+.sys-step{padding:6px 9px;border-left:2px solid var(--line2);border-radius:0 7px 7px 0;font-size:11.5px;line-height:1.55}
+.sys-step.conf-high{border-left-color:var(--up)}
+.sys-step.conf-medium{border-left-color:var(--gold)}
+.sys-step.conf-low{border-left-color:var(--down)}
+.sys-step .sn{font-weight:600;color:var(--text);font-size:12px}
+.sys-step .sq2{color:var(--faint);font-size:10.5px}
+.sys-step .sa{color:var(--muted);margin-top:2px}
+.sys-step .sadv{color:var(--gold);font-size:10.5px;margin-top:2px}
+.sys-pit{margin-top:8px;padding:8px 10px;border-radius:8px;background:color-mix(in srgb, var(--gold) 8%, transparent);font-size:11px;line-height:1.6;color:var(--muted)}
+.sys-pit b{color:var(--gold)}

@@ -55,6 +55,16 @@
         refresh();
       })
     );
+    // 笔标准切换（新笔/老笔）：改了要重算全部结构，所以直接 refresh
+    U.$$('#biStyleSeg .sq').forEach((el) => {
+      el.classList.toggle('active', el.dataset.style === App.state.biStyle);
+      el.addEventListener('click', () => {
+        if (App.state.biStyle === el.dataset.style) return;
+        App.state.biStyle = el.dataset.style;
+        U.$$('#biStyleSeg .sq').forEach((x) => x.classList.toggle('active', x.dataset.style === App.state.biStyle));
+        refresh();
+      });
+    });
   }
 
   async function refresh(opts) {
@@ -68,7 +78,7 @@
     if (sel) sel.value = App.state.hl || '';
     U.$('#structTitle').textContent = `${market} · ${code} · ${PNAME[period] || period}`;
     try {
-      const res = await API.chan({ market, code, period, limit: 600 });
+      const res = await API.chan({ market, code, period, limit: 600, biStyle: App.state.biStyle || 'new' });
       lastData = res;
       if (!res.ok) {
         U.$('#chartNote').innerHTML = '<span style="color:var(--up)">' + U.esc(res.reason || '数据不足') + '</span>';
@@ -91,6 +101,7 @@
         .map((t) => `<span>${t}</span>`)
         .join('');
       loadSuite(market, code);
+      loadSystem(market, code);
       loadBacktest(market, code, period);
       applyHighlight(res);
     } catch (e) {
@@ -280,7 +291,7 @@
     const code = App.state.symbol[market];
     const period = App.state.period;
     try {
-      const res = await API.chan({ market, code, period, limit: 600 });
+      const res = await API.chan({ market, code, period, limit: 600, biStyle: App.state.biStyle || 'new' });
       if (!res.ok || !chart) return;
       lastData = res;
       chart.setData(res, { keepView: true });
@@ -297,6 +308,7 @@
         }
       }
       if (++liveN % 3 === 0) loadSuite(market, code);
+      if (nSystem === 0 || ++nSystem % 6 === 0) loadSystem(market, code);
     } catch (e) {
       /* 静默 */
     } finally {
@@ -343,6 +355,36 @@
     缩进就是递归深度，一层比一层窄，这才是缠论区间套的样子。
   */
   let lastNest = null; // 缓存递归结果，供"点击某层→图上高亮背驰段"使用
+  let nSystem = 0;
+
+  /*
+    理论→实践链路（/api/system）：九步推导，每步给出问题/答案/置信度/建议。
+    这个面板存在的意义：缠论最难的是"知道自己现在的判断有多可靠"。
+    所以每一步都带置信度（high/medium/low），低置信度会显红色边框 + 挖坑提示。
+  */
+  async function loadSystem(market, code) {
+    const box = U.$('#structSystem');
+    if (!box) return;
+    box.innerHTML = '<div class="loading" style="height:50px">推导中…</div>';
+    try {
+      const r = await API.get(`/api/system?market=${encodeURIComponent(market)}&code=${encodeURIComponent(code)}&period=${encodeURIComponent(App.state.period)}&biStyle=${encodeURIComponent(App.state.biStyle || 'new')}`);
+      const head = U.$('#sysHeadline');
+      if (head) head.textContent = r.headline || '';
+      const steps = (r.steps || []).map((st) => `
+        <div class="sys-step conf-${U.esc(st.confidence || 'medium')}">
+          <div class="sn">${st.step}. ${U.esc(st.name)}</div>
+          <div class="sq2">${U.esc(st.question || '')}</div>
+          <div class="sa">${U.esc(st.answer || '')}</div>
+          ${st.advice ? `<div class="sadv">→ ${U.esc(st.advice)}</div>` : ''}
+        </div>`).join('');
+      const pits = (r.pitfalls || []).length
+        ? `<div class="sys-pit"><b>⚠ 当前需要注意（${r.pitfalls.length}）</b><br>${r.pitfalls.map((p) => '· ' + U.esc(p.text)).join('<br>')}</div>`
+        : '';
+      box.innerHTML = steps + pits;
+    } catch (e) {
+      box.innerHTML = '<div class="loading">' + U.esc(e.message) + '</div>';
+    }
+  }
 
   async function loadSuite(market, code) {
     const box = U.$('#suiteTbl');

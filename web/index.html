@@ -154,6 +154,10 @@
             </optgroup>
           </select>
           <div class="seg" id="periodSeg"></div>
+          <div class="seg tiny" id="biStyleSeg" title="笔的划分标准：新笔=2007年博文修订（顶底之间≥3根K线）；老笔=108课早期（顶底之间至少1根独立K线）">
+            <button class="sq active" data-style="new">新笔</button>
+            <button class="sq" data-style="old">老笔</button>
+          </div>
         </div>
       </div>
 
@@ -212,6 +216,10 @@
           <div class="card side-block">
             <div class="card-head"><h3>信号历史表现</h3><span class="hint" id="btHint">回测中…</span></div>
             <div id="btBody" class="bt-body"><div class="loading" style="height:60px">计算中…</div></div>
+          </div>
+          <div class="card side-block">
+            <div class="card-head"><h3>理论 → 实践链路</h3><span class="hint" id="sysHeadline">—</span></div>
+            <div id="structSystem" class="sys-steps"><div class="loading" style="height:60px">推导中…</div></div>
           </div>
           <div class="card side-block">
             <div class="card-head"><h3>体系解读</h3></div>

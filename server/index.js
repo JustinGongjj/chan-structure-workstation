@@ -14,6 +14,9 @@ const { URL } = require('url');
 const S = require('./lib/sources');
 const SECTORS = require('./lib/sectors');
 const NESTED = require('./lib/nested');
+const SYSTEM = require('./lib/system');
+const EXPANSION = require('./lib/expansion');
+const DECOMP = require('./lib/decomposition');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -212,10 +215,10 @@ async function getQuoteMap(items) {
   return map;
 }
 
-async function analyzeOne({ market, code, period, limit, withQuote = true }) {
+async function analyzeOne({ market, code, period, limit, withQuote = true, biStyle = 'new' }) {
   const m = String(market || 'A').toUpperCase();
   const kl = await S.klines({ market: m, code, period: period || 'day', limit: limit || 600 });
-  const res = C.analyze(kl.bars, { period: kl.period, market: m, code: S.normCode(m, code) });
+  const res = C.analyze(kl.bars, { period: kl.period, market: m, code: S.normCode(m, code), biStyle });
   res.quote = null;
   res.source = kl.source;
   res.stale = !!kl.stale;
@@ -576,6 +579,37 @@ const routes = {
       },
     });
   },
+  // 理论—实践完整链路（九步）：数据→划分→结构→演化→完美度→级别→买卖点→共振→复核
+  '/api/system': async (u) => {
+    const market = String(u.searchParams.get('market') || 'A').toUpperCase();
+    const code = u.searchParams.get('code') || '600519';
+    const period = u.searchParams.get('period') || 'day';
+    const biStyle = u.searchParams.get('biStyle') === 'old' ? 'old' : 'new';
+    const kl = await S.klines({ market, code, period, limit: 600 });
+    const a = C.analyze(kl.bars, { period, market, code, biStyle });
+    // 可选：带上区间套（默认带，命中率更完整；?resonance=0 可关）
+    let resonance = null;
+    if (u.searchParams.get('resonance') !== '0') {
+      try {
+        resonance = await NESTED.buildNest({
+          market, code: S.normCode(market, code),
+          fetchLevel: async (p2) => {
+            const k2 = await S.klines({ market, code, period: p2, limit: 600 });
+            return { bars: k2.bars, source: k2.source };
+          },
+        });
+      } catch (e) { resonance = null; }
+    }
+    return SYSTEM.buildSystem(a, { resonance, dataStale: !!kl.staleData, source: kl.source });
+  },
+  '/api/expansion': async (u) => {
+    const market = String(u.searchParams.get('market') || 'A').toUpperCase();
+    const code = u.searchParams.get('code') || '600519';
+    const period = u.searchParams.get('period') || 'day';
+    const kl = await S.klines({ market, code, period, limit: 600 });
+    const a = C.analyze(kl.bars, { period, market, code });
+    return { ...EXPANSION.analyzeStructure(a), flow: DECOMP.analyzeFlow(a) };
+  },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景
   '/api/macro': async () => {
@@ -643,7 +677,8 @@ const routes = {
     const code = u.searchParams.get('code') || u.searchParams.get('symbol');
     const period = u.searchParams.get('period') || 'day';
     const limit = Math.min(Number(u.searchParams.get('limit') || 600), 1000);
-    return await analyzeOne({ market, code, period, limit, withQuote: true });
+    const biStyle = u.searchParams.get('biStyle') === 'old' ? 'old' : 'new';
+    return await analyzeOne({ market, code, period, limit, withQuote: true, biStyle });
   },
   '/api/suite': async (u) => suite({ market: u.searchParams.get('market'), code: u.searchParams.get('code') || u.searchParams.get('symbol') }),
   '/api/radar': async (u) =>

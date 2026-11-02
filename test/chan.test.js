@@ -578,3 +578,140 @@ test('背驰段窗口：优先用背驰段而不是整个中枢范围', async ()
     }
   }
 });
+
+/* ---------------- 笔标准：新笔 vs 老笔 ---------------- */
+test('笔标准：新笔比老笔宽松，且两种标准都能产出合法笔', () => {
+  const C = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 600; i++) {
+    const c = 100 + Math.sin(i / 7) * 8 + Math.sin(i / 23) * 3;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c, h: c + 1.5, l: c - 1.5, c, v: 1000 });
+  }
+  const merged = C.mergeBars(bars);
+  const fr = C.findFractals(merged, bars);
+  const oldBis = C.buildBis(fr, { style: 'old' });
+  const newBis = C.buildBis(fr, { style: 'new' });
+  assert.ok(newBis.length >= oldBis.length, '新笔数量应 >= 老笔（新笔更宽松）');
+  for (const bis of [oldBis, newBis]) {
+    assert.ok(bis.length > 0, '必须能画出笔');
+    for (const b of bis) {
+      assert.ok(b.i1 > b.i0, '笔的终点必须在起点之后');
+      assert.ok([1, -1].includes(b.dir), '笔方向合法');
+      assert.ok(b.from !== b.to, '笔必须是顶底交替');
+    }
+    // 相邻笔必须首尾相接
+    for (let i = 1; i < bis.length; i++) assert.equal(bis[i].i0, bis[i - 1].i1, '相邻笔必须首尾相接');
+  }
+});
+
+test('划分校验报告：给出两种标准的差异并量化', () => {
+  const C = require('../server/lib/chan');
+  const bars = [];
+  for (let i = 0; i < 500; i++) {
+    const c = 200 + Math.sin(i / 6) * 10 + Math.sin(i / 19) * 4;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c, h: c + 2, l: c - 2, c, v: 900 });
+  }
+  const a = C.analyze(bars);
+  assert.ok(a.audit, '必须返回 audit');
+  assert.ok(['new', 'old'].includes(a.audit.style), 'style 取值合法');
+  assert.equal(typeof a.audit.biCount.old, 'number');
+  assert.equal(typeof a.audit.biCount.new, 'number');
+  assert.equal(typeof a.audit.styleDivergence, 'number');
+  assert.ok(a.audit.styleDivergence >= 0, '差异率不能为负');
+  assert.ok(a.audit.fractalGaps, '必须给出分型间隔分布');
+});
+
+/* ---------------- 中枢扩展 / 扩张 ---------------- */
+test('中枢扩张：用波动区间 dd~gg 判定，并区分"仅波动重叠"', () => {
+  const E = require('../server/lib/expansion');
+  // 造两个中枢：中枢区间不重叠，但波动区间重叠
+  const pivots = [
+    { zd: 100, zg: 110, dd: 90, gg: 125, count: 3, startBi: 0, endBi: 2, leaveBi: 3, t0: 1, t1: 2 },
+    { zd: 115, zg: 130, dd: 105, gg: 140, count: 3, startBi: 4, endBi: 6, leaveBi: 7, t0: 3, t1: 4 },
+  ];
+  const r = E.detectExpansion(pivots);
+  assert.equal(r.pairs.length, 1);
+  const p = r.pairs[0];
+  assert.equal(p.type, 'expansion', '波动区间 90~125 与 105~140 重叠 → 扩张');
+  assert.ok(p.onlyWaveOverlap, '中枢区间 100~110 与 115~130 不重叠 → 仅波动重叠');
+  assert.equal(p.zoneOverlap <= 0, true, '中枢区间重叠量应 <= 0');
+});
+
+test('中枢扩张：波动区间也不重叠时应判为趋势', () => {
+  const E = require('../server/lib/expansion');
+  const pivots = [
+    { zd: 100, zg: 110, dd: 95, gg: 115, count: 3, startBi: 0, endBi: 2, leaveBi: 3, t0: 1, t1: 2 },
+    { zd: 200, zg: 210, dd: 195, gg: 215, count: 3, startBi: 4, endBi: 6, leaveBi: 7, t0: 3, t1: 4 },
+  ];
+  const r = E.detectExpansion(pivots);
+  assert.equal(r.pairs[0].type, 'trend', '完全不重叠 → 趋势');
+  assert.equal(r.lastExpansion, null);
+});
+
+/* ---------------- 同级别分解 & 走势必完美 ---------------- */
+test('同级别分解：相邻同向段必须合并（唯一性）', () => {
+  const D = require('../server/lib/decomposition');
+  const pivots = [];
+  // 造 6 个不重叠且逐级抬高的中枢 → 应合并成一段上涨
+  for (let i = 0; i < 6; i++) {
+    const base = 100 + i * 30;
+    pivots.push({ zd: base, zg: base + 10, dd: base - 3, gg: base + 13, count: 3, startBi: i * 3, endBi: i * 3 + 2, leaveBi: i * 3 + 3, t0: i * 10, t1: i * 10 + 9 });
+  }
+  const r = D.decomposeByPivots(pivots);
+  assert.ok(r.segments.length >= 1, '至少 1 段');
+  assert.equal(r.unique, true, '不应有相邻同向段（同向必须合并）');
+  assert.equal(r.segments[0].type, 'up', '逐级抬高应为上涨段');
+});
+
+test('走势必完美：无中枢时判未完成；有中枢+离开段+信号判完成', () => {
+  const D = require('../server/lib/decomposition');
+  const none = D.perfection({ pivots: [], bis: [], signals: [] });
+  assert.equal(none.complete, false);
+  assert.equal(none.status, 'no-structure');
+
+  const done = D.perfection({
+    pivots: [{ zd: 100, zg: 110, dd: 95, gg: 115, count: 3, startBi: 0, endBi: 2, leaveBi: 3 }],
+    bis: [{ dir: 1, p1: 120, i1: 9 }],
+    signals: [{ type: '3B', name: '第三类买点', price: 118 }],
+    beichi: [],
+    stats: { price: 120 },
+  });
+  assert.equal(done.complete, true);
+  assert.equal(done.status, 'complete');
+
+  const extending = D.perfection({
+    pivots: [{ zd: 100, zg: 110, dd: 95, gg: 115, count: 3, leaveBi: null }],
+    bis: [{ dir: 1, p1: 105, i1: 9 }],
+    signals: [],
+    beichi: [],
+    stats: { price: 105 },
+  });
+  assert.equal(extending.complete, false);
+  assert.equal(extending.status, 'extending');
+});
+
+/* ---------------- 理论→实践九步链路 ---------------- */
+test('九步链路：步骤完整、每步有置信度、结论可复现', () => {
+  const C = require('../server/lib/chan');
+  const SY = require('../server/lib/system');
+  const bars = [];
+  for (let i = 0; i < 600; i++) {
+    const c = 100 + Math.sin(i / 8) * 9 + Math.sin(i / 27) * 4;
+    bars.push({ t: 1.6e12 + i * 86400000, o: c, h: c + 1.8, l: c - 1.8, c, v: 1000 });
+  }
+  const a = C.analyze(bars);
+  const r = SY.buildSystem(a);
+  assert.ok(Array.isArray(r.steps), '必须有 steps');
+  assert.ok(r.steps.length >= 8, `至少 8 个步骤，实际 ${r.steps.length}`);
+  for (const st of r.steps) {
+    assert.ok(st.step > 0 && st.name, '每步必须有编号与名称');
+    assert.ok(['high', 'medium', 'low'].includes(st.confidence), `第 ${st.step} 步置信度取值非法：${st.confidence}`);
+    assert.ok(st.answer, `第 ${st.step} 步必须有结论`);
+    assert.ok('evidence' in st, `第 ${st.step} 步必须有证据`);
+  }
+  assert.ok(r.headline, '必须有总览');
+  assert.ok(Array.isArray(r.disclaimers) && r.disclaimers.length >= 2, '必须有免责说明');
+  // 结论可复现：同样输入两次结果一致
+  const r2 = SY.buildSystem(a);
+  assert.equal(JSON.stringify(r.steps), JSON.stringify(r2.steps), '同样输入必须得到同样结论');
+});

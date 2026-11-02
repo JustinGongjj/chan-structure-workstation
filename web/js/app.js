@@ -9,6 +9,7 @@
       live: false, // 实时刷新
       symbol: { A: '600519', HK: '00700', US: 'NVDA', CR: 'BTCUSDT', CNF: 'RB0', USF: 'ES' },
       pickedSymbol: false,
+      biStyle: 'new', // 笔标准：new=2007博文修订 / old=108课早期
       pickerShown: false,
     },
     pages: {},

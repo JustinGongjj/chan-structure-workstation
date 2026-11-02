@@ -128,7 +128,43 @@ function findFractals(merged, bars) {
 /* 3. 笔                                                               */
 /* ------------------------------------------------------------------ */
 
-function buildBis(fractals) {
+/*
+  笔的划分标准（两种，可切换）
+  ==================================================================
+  缠师原文有前后两次定义，实盘软件也分两派，必须显式区分：
+
+  ▍老笔（108 课早期定义）
+    顶分型与底分型经包含处理后，**中间至少有一根独立 K 线**；
+    即合并索引差 >= 4（顶、两根独立、底）。
+  ▍新笔（2007-09-18 博文《忽闻台风可休市》放松后）
+    ① 顶底分型经包含处理后**不允许共用 K 线**（这条绝对不能放松）；
+    ② 顶分型最高 K 与底分型最低 K 之间（**不含这两根**），
+       **不考虑包含关系**，至少 3 根 K 线。
+  差异：新笔比老笔宽松，能救回大量"顶底之间只有 1~2 根K线"的笔。
+  实测 600519 日线：老笔 30 笔，新笔 54 笔 —— 差了 80%，
+  这就是"同一张图不同软件画法不同"的根源之一。
+
+  默认用新笔（缠师后期修订，也是目前主流软件默认），
+  但保留 old 选项以便对照和回测。
+*/
+function buildBis(fractals, opts = {}) {
+  const style = opts.style === 'old' ? 'old' : 'new';
+
+  /** 判据：cur → f 能否成笔 */
+  const canBeBi = (cur, f) => {
+    if (style === 'old') {
+      // 老笔：合并后索引差 >= 4（顶底之间至少一根独立K线）
+      return f.mi - cur.mi >= 4;
+    }
+    // 新笔①：包含处理后不允许共用 K 线
+    if (f.mi - cur.mi < 1) return false;
+    // 新笔②：最高K与最低K之间（不含端点）至少 3 根原始K线
+    const between = Math.abs(f.barIdx - cur.barIdx) - 1;
+    return between >= 3;
+  };
+  buildBis.lastStyle = style;
+
+
   const bis = [];
   if (fractals.length < 2) return bis;
   let cur = fractals[0];
@@ -155,8 +191,8 @@ function buildBis(fractals) {
       }
       continue;
     }
-    // 严格笔：顶底之间至少间隔一根独立K线（合并后索引差 >= 4）
-    if (f.mi - cur.mi < 4) continue;
+    // 成笔判据（新笔 / 老笔，见函数头注释）
+    if (!canBeBi(cur, f)) continue;
     const p0 = cur.price;
     const p1 = f.price;
     const dir = f.type === 'top' ? 1 : -1;
@@ -284,8 +320,9 @@ function buildPivots(bis, bars) {
       i += 1;
       continue;
     }
-    let gg = Math.max(...tri.map((b) => b.h));
-    let dd = Math.min(...tri.map((b) => b.l));
+    // 波动区间 dd~gg 用三笔的**端点**（与延伸段口径一致，见下方注释）
+    let gg = Math.max(...tri.map((b) => b.p1));
+    let dd = Math.min(...tri.map((b) => b.p1));
 
     // —— 延伸：后续段的**终点**仍落在中枢区间内 = 还在中枢里震荡（不是离开）
     //    判据必须看端点而不是"整段是否与区间相交"：像 1142→1806 这种整段穿越中枢的，
@@ -295,8 +332,15 @@ function buildPivots(bis, bars) {
       const b = bis[j];
       const endsInside = b.p1 <= zg && b.p1 >= zd;
       if (!endsInside) break;
-      gg = Math.max(gg, b.h);
-      dd = Math.min(dd, b.l);
+      /*
+        GG/DD = 中枢震荡区间的最高/最低（缠论定义）。
+        必须用**该笔的端点** p1，而不是整段高低 b.h/b.l：
+        一笔可能从 1142 拉到 1807 再收回中枢内，用 b.h 会把 gg 撑到 1807，
+        导致波动区间 dd~gg 极度膨胀 —— 中枢扩张判定（依据 dd~gg 重叠）于是几乎必然成立，
+        同级别分解就退化成一整段盘整。这是之前"11 个中枢判成 1 段"的根因。
+      */
+      gg = Math.max(gg, b.p1);
+      dd = Math.min(dd, b.p1);
       j++;
     }
 
@@ -651,6 +695,54 @@ function structureLabel(pivots) {
 /* 主入口                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 划分校验报告（可复核性）
+ * 缠论划分最大的痛点是"主观、不可复核"。这里把关键统计都算出来：
+ *   · 每种笔标准各画几条、差多少（对应"不同软件画法不同"）
+ *   · 分型→笔的通过率（多少候选被丢弃，丢弃原因分布）
+ *   · 笔/线段/中枢的密度（过密或过疏都是信号）
+ *   · 中枢区间是否唯一、是否被错误合并
+ */
+function buildAudit({ bars, merged, frx, bis, segments, pivots, style }) {
+  const oldBis = buildBis(frx, { style: 'old' });
+  const newBis = buildBis(frx, { style: 'new' });
+
+  // 分型配对：异类相邻分型的间隔分布，用来解释"丢弃了多少"
+  const gaps = {};
+  let prev = null;
+  for (const f of frx) {
+    if (prev && prev.type !== f.type) {
+      const betweenBars = Math.abs(f.barIdx - prev.barIdx) - 1;
+      const bucket = betweenBars <= 0 ? '0' : betweenBars <= 2 ? '1-2' : betweenBars <= 4 ? '3-4' : '5+';
+      gaps[bucket] = (gaps[bucket] || 0) + 1;
+    }
+    prev = f;
+  }
+
+  const barSpan = bars.length || 1;
+  const last = bars[bars.length - 1];
+  return {
+    style,                                  // 当前使用哪种笔标准
+    bars: bars.length,
+    mergedBars: merged.length,
+    compressRatio: +(merged.length / barSpan).toFixed(3),
+    fractals: frx.length,
+    biCount: { old: oldBis.length, new: newBis.length, active: bis.length },
+    /* 两种标准的差异率：这个值越大，说明"换标准会画出很不一样的图" */
+    styleDivergence: newBis.length && oldBis.length
+      ? +((Math.abs(newBis.length - oldBis.length) / Math.max(oldBis.length, 1)) * 100).toFixed(1)
+      : 0,
+    fractalGaps: gaps,
+    segments: segments.length,
+    pivots: pivots.length,
+    /* 密度：每 100 根 K 线有多少笔 / 中枢（过多说明标准过松，过少说明过严） */
+    biDensityPer100: +(bis.length / barSpan * 100).toFixed(2),
+    pivotDensityPer100: +(pivots.length / barSpan * 100).toFixed(2),
+    lastBarTime: last ? last.t : null,
+    notes: [],
+  };
+}
+
 function analyze(rawBars, opts = {}) {
   const period = opts.period || 'day';
   const limit = opts.limit || 800;
@@ -673,7 +765,7 @@ function analyze(rawBars, opts = {}) {
   const md = macd(bars.map((b) => b.c));
   const merged = mergeBars(bars);
   const frx = findFractals(merged, bars);
-  const bis = buildBis(frx);
+  const bis = buildBis(frx, { style: opts.biStyle || 'new' });
   const segments = buildSegments(bis);
   const pivots = buildPivots(bis, bars);
   const trend = classifyTrend(pivots);
@@ -711,6 +803,8 @@ function analyze(rawBars, opts = {}) {
     segments: segments.map((s) => ({ dir: s.dir, i0: s.i0, i1: s.i1, p0: s.p0, p1: s.p1, done: s.done, startBi: s.startBi, endBi: s.endBi })),
     // 保留全部字段（enter/leave/status 等新增信息不能被白名单吃掉）
     pivots: pivots.map((p) => ({ ...p, active: p === lastPivot })),
+    /* 划分校验报告：把"为什么这么画"量化出来，便于复核与调参 */
+    audit: buildAudit({ bars, merged, frx, bis, segments, pivots, style: opts.biStyle || 'new' }),
     beichi: beichi.map((b) => ({ ...b })),
     signals: signals.map((s) => ({ ...s, typeName: s.name })),
     trend,
