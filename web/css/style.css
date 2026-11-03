@@ -894,3 +894,7 @@ button{font-family:inherit}
 .bt-caveats{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line2);font-size:10.5px;color:var(--gold);line-height:1.7}
 .kv-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--line)}
 .kv-row .up{color:var(--up)}.kv-row .down{color:var(--down)}
+
+/* 同类资产基准 */
+.peer-box{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line2)}
+.peer-head{font-size:11.5px;color:var(--gold);margin-bottom:6px}

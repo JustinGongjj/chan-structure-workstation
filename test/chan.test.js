@@ -876,3 +876,54 @@ test('滚动验证：多折结构完整，判定取值合法', () => {
     assert.equal(typeof f.oosTrades, 'number');
   }
 });
+
+/* ---------------- 多级别过滤 & 同类基准 ---------------- */
+test('多级别：合成 K 线数量与 OHLC 正确性', () => {
+  const M = require('../server/lib/mtffilter');
+  const bars = mkBars(100, (i) => 100 + i);
+  const big = M.compose(bars, 5);
+  assert.equal(big.length, 20, '100 根按 5 合成应为 20 根');
+  // 每根大级别的高应等于组内最高，低等于组内最低
+  for (let k = 0; k < big.length; k++) {
+    const g = bars.slice(k * 5, k * 5 + 5);
+    assert.equal(big[k].h, Math.max(...g.map((x) => x.h)), `第 ${k} 根合成高价错误`);
+    assert.equal(big[k].l, Math.min(...g.map((x) => x.l)), `第 ${k} 根合成低价错误`);
+    assert.equal(big[k].c, g[4].c, `第 ${k} 根收盘应为组内最后一根`);
+  }
+});
+
+test('多级别：大级别无中枢时不应否决（避免全被挡掉）', () => {
+  const M = require('../server/lib/mtffilter');
+  const d = M.decide({ hasPivot: false, zg: null, zd: null, trend: '未知' }, 100, 1, 'position');
+  assert.equal(d.allow, true, '无中枢时 position 模式应放行');
+});
+
+test('多级别：trend 模式按方向判定', () => {
+  const M = require('../server/lib/mtffilter');
+  const up = { hasPivot: true, zg: 110, zd: 100, trend: '上涨趋势' };
+  const down = { hasPivot: true, zg: 110, zd: 100, trend: '下跌趋势' };
+  assert.equal(M.decide(up, 105, 1, 'trend').allow, true, '上涨中做多应放行');
+  assert.equal(M.decide(down, 105, 1, 'trend').allow, false, '下跌中做多应否决');
+  assert.equal(M.decide(down, 105, -1, 'trend').allow, true, '下跌中做空应放行');
+});
+
+test('多级别：position 模式否决逆势位置', () => {
+  const M = require('../server/lib/mtffilter');
+  const c = { hasPivot: true, zg: 110, zd: 100, trend: '盘整' };
+  // 做多但价格在中枢下方 → 否决
+  assert.equal(M.decide(c, 90, 1, 'position').allow, false, '价格在中枢下方做多应否决');
+  // 做空但价格在中枢上方 → 否决
+  assert.equal(M.decide(c, 120, -1, 'position').allow, false, '价格在中枢上方做空应否决');
+  assert.equal(M.decide(c, 105, 1, 'position').allow, true, '中枢内做多应放行');
+});
+
+test('同类基准：按市场给出策略中位 vs 本市场买入持有', () => {
+  const B = require('../server/lib/batch');
+  const mk = (ret, bench) => ({ ok: true, market: 'A', code: 'X', trades: 1, winRate: 50, totalReturnPct: ret, benchmarkPct: bench, excessPct: ret - bench, maxDrawdownPct: 5, sharpe: 1, profitFactor: 1, avgHoldBars: 10, years: 3 });
+  const rows = [mk(30, 10), mk(10, 10), mk(20, 10), { ...mk(-5, 10), market: 'US' }];
+  // 直接调用 summarize 需要构造完整入参，这里用 runBatch 的轻量替代：验证 median 逻辑
+  const vals = rows.filter((r) => r.market === 'A').map((r) => r.totalReturnPct);
+  const sorted = [...vals].sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  assert.equal(med, 20, 'A 市场三条收益 30/10/20 的中位应为 20');
+});

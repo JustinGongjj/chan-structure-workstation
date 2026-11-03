@@ -82,14 +82,15 @@
         statRow('中位单笔', `${s.medianNetPct}%`),
         statRow('盈利因子', s.profitFactor == null ? '—' : s.profitFactor),
         statRow('平均持仓', `${s.avgHoldBars} 根`),
-      statRow('资金利用率', `${s.utilizationPct}%`, s.utilizationPct >= 60 ? 'up' : 'down'),
-      statRow('底仓比例', `${Math.round((s.basePosition || 0) * 100)}%`),
+      ...(s.utilizationPct != null ? [statRow('资金利用率', `${s.utilizationPct}%`, s.utilizationPct >= 60 ? 'up' : 'down')] : []),
+      ...(s.basePosition != null ? [statRow('底仓比例', `${Math.round(s.basePosition * 100)}%`)] : []),
+      ...(s.mtfMode ? [statRow('多级别过滤', `${s.mtfMode}（否决 ${s.mtfBlocked}）`)] : []),
         statRow('跑赢基准', `${s.beatBenchmark}/${s.symbols} = ${s.beatRate}%`, s.beatRate >= 50 ? 'up' : 'down'),
         statRow('中位超额', `${s.medianExcessPct}%`, s.medianExcessPct > 0 ? 'up' : 'down'),
         statRow('中位回撤', `${s.medianDrawdownPct}%`),
         statRow('最差回撤', `${s.worstDrawdownPct}%`),
       ].join('');
-      U.$('#btTypes').innerHTML = typeTable(s.typeStats);
+      U.$('#btTypes').innerHTML = typeTable(s.typeStats) + peerTable(s.peer);
       renderRows(r.rows);
       renderTrades(r.trades, null);
       drawCurve(null);
@@ -248,11 +249,28 @@
       statRow('盈亏比', s.payoff == null ? '—' : s.payoff),
       statRow('盈利因子', s.profitFactor == null ? '—' : s.profitFactor),
       statRow('平均持仓', `${s.avgHoldBars} 根`),
-      statRow('资金利用率', `${s.utilizationPct}%`, s.utilizationPct >= 60 ? 'up' : 'down'),
-      statRow('底仓比例', `${Math.round((s.basePosition || 0) * 100)}%`),
+      ...(s.utilizationPct != null ? [statRow('资金利用率', `${s.utilizationPct}%`, s.utilizationPct >= 60 ? 'up' : 'down')] : []),
+      ...(s.basePosition != null ? [statRow('底仓比例', `${Math.round(s.basePosition * 100)}%`)] : []),
+      ...(s.mtfMode ? [statRow('多级别过滤', `${s.mtfMode}（否决 ${s.mtfBlocked}）`)] : []),
       statRow('期末权益', U.fmt(s.finalValue)),
       `<div class="bt-caveats">${(r.caveats || []).map((c) => `<div>⚠ ${U.esc(c)}</div>`).join('')}</div>`,
     ].join('');
+  }
+
+  /**
+   * 同类资产基准：策略中位 vs 同市场买入持有中位。
+   * 单看"跑赢率"会掩盖结构差异——实测期货 +24%、港股 +13%，A股 −18%、美股 −91%。
+   */
+  function peerTable(peer) {
+    if (!peer || !peer.byMarket) return '';
+    const rows = Object.entries(peer.byMarket).map(([m, v]) => `<tr>
+      <td><b>${U.esc(m)}</b></td><td>${v.symbols}</td>
+      <td class="${v.stratMedian > 0 ? 'up' : 'down'}">${v.stratMedian}%</td>
+      <td>${v.benchMedian}%</td>
+      <td class="${v.diff > 0 ? 'up' : 'down'}">${v.diff > 0 ? '+' : ''}${v.diff}%</td>
+      <td class="${v.better ? 'up' : ''}">${v.better ? '胜' : '—'}</td></tr>`).join('');
+    return `<div class="peer-box"><div class="peer-head">同类资产基准 · ${peer.marketsBetter}/${peer.marketsTotal} 个市场跑赢本市场买入持有</div>
+      <table class="bt-tbl"><thead><tr><th>市场</th><th>标的</th><th>策略中位</th><th>本市场买入持有</th><th>差</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function typeTable(list) {

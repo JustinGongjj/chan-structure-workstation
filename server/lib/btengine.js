@@ -23,6 +23,7 @@
  */
 
 const C = require('./chan');
+const MTF = require('./mtffilter');
 
 /* ------------------------- 参数默认值 ------------------------- */
 const DEFAULTS = {
@@ -34,6 +35,16 @@ const DEFAULTS = {
   requireNest: false,  // 是否要求多级别共振（慢，默认关）
   /* 信号方向反转：true 时把买点当卖点处理、卖点当买点（用于检验"反向指标"） */
   invertSignal: false,
+  /*
+    多级别共振过滤：
+      ''/'off'   = 不过滤（原行为）
+      'trend'    = 只按大级别趋势方向（做多要求大级别非下跌）
+      'position' = 只按价格在大级别中枢的相对位置
+      'both'     = 趋势 + 位置都要过
+    ratio = 合成比例（默认 5 根小级别合成 1 根大级别）
+  */
+  mtfMode: '',
+  mtfRatio: 5,
   /* 出场规则 */
   exitOn: 'signal',    // signal=反向信号平仓；hold=固定持有
   holdBars: 20,        // exitOn=hold 时持有根数
@@ -81,6 +92,15 @@ function runBacktest(bars, opts = {}) {
   if (!Array.isArray(bars) || bars.length < P.warmup + 30) {
     return { ok: false, error: `K 线不足（需 ≥ ${P.warmup + 30} 根，实际 ${bars ? bars.length : 0} 根）` };
   }
+
+  /* 多级别上下文（循环外一次构建，内部逐根查询；严格无未来函数） */
+  let mtfLookup = null;
+  if (P.mtfMode && P.mtfMode !== 'off') {
+    try {
+      mtfLookup = MTF.buildContext(bars, { ratio: num(P.mtfRatio, 5), mode: P.mtfMode });
+    } catch (e) { mtfLookup = null; }
+  }
+  let mtfBlocked = 0;
 
   /* ---------- 逐根推进：严格因果 ----------
      关键：缠论信号是**逐根确认**的，不能一次性算完全历史再取信号。
@@ -186,6 +206,16 @@ function runBacktest(bars, opts = {}) {
 
           if (typeOk && ((isBuy && wantLong) || (!isBuy && wantShort))) {
             const dir = isBuy ? 1 : -1;
+            /* 多级别共振过滤：不通过就跳过这次开仓 */
+            if (mtfLookup) {
+              const c = mtfLookup(i);
+              const d = MTF.decide(c, sig.price, dir, P.mtfMode);
+              if (!d.allow) {
+                mtfBlocked++;
+                signalsSeen[signalsSeen.length - 1].mtfBlocked = d.reason;
+                continue;
+              }
+            }
             // 已有同向持仓 → 不加仓；有反向持仓 → 先平
             if (pos && pos.dir !== dir) {
               cash = closePosition(cash, pos, bars[i + 1] ? bars[i + 1].o : bar.c, i + 1, bars[i + 1] ? bars[i + 1].t : bar.t, 'reverse', costPerSide, trades);
@@ -261,6 +291,8 @@ function runBacktest(bars, opts = {}) {
 
   const stats = computeStats({ trades, equity, initCapital, bars, opts: P });
   stats.basePosition = basePct;
+  stats.mtfMode = P.mtfMode || '';
+  stats.mtfBlocked = mtfBlocked;
   stats.baseNet = +baseNet.toFixed(2);
   /* 资金利用率：持仓根数 / 总根数 */
   const heldBars = trades.reduce((a, t) => a + t.bars, 0);

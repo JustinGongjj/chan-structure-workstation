@@ -541,6 +541,8 @@ function btOptsFromQuery(u) {
     maxConfirmLag: q('maxConfirmLag', 3),
     biStyle: u.searchParams.get('biStyle') === 'old' ? 'old' : 'new',
     basePosition: Number(u.searchParams.get('basePosition') || 0),
+    mtfMode: ['trend', 'position', 'both'].includes(u.searchParams.get('mtfMode')) ? u.searchParams.get('mtfMode') : '',
+    mtfRatio: Number(u.searchParams.get('mtfRatio') || 5),
     invertSignal: u.searchParams.get('invertSignal') === '1',
   };
 }
