@@ -189,6 +189,56 @@
     }
   }
 
+  /* ---------------- 防守回测（减仓模式） ---------------- */
+  async function runDefense() {
+    const p = P();
+    const first = (p.symbols.split(',')[0] || 'A:600519').split(':');
+    const market = (first[0] || 'A').toUpperCase();
+    const code = first[1] || '600519';
+    const sell = U.$('#dfSell')?.value || '2S';
+    const keep = U.$('#dfKeep')?.value || '0.5';
+    U.$('#btStats').innerHTML = '<div class="loading">防守回测中…</div>';
+    try {
+      const r = await API.get(`/api/bt/defense?market=${market}&code=${encodeURIComponent(code)}&period=${p.period}&sellSignals=${encodeURIComponent(sell)}&keepPct=${keep}&biStyle=${p.biStyle}`);
+      if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
+      const s = r.stats;
+      const good = s.ddReductionPct > 0;
+      U.$('#btVerdict').innerHTML = `<div class="bt-verdict ${good ? 'gold' : 'down'}">
+        <div class="btv-head"><b>防守效果：回撤减少 ${s.ddReductionPct} 个百分点</b>
+        <span>代价：收益 ${s.returnCostPct > 0 ? '+' : ''}${s.returnCostPct} 个百分点</span></div>
+        <ul>
+          <li>策略：收益 <b>${s.totalReturnPct}%</b> · 最大回撤 <b>${s.maxDrawdownPct}%</b> · Calmar ${s.calmar}</li>
+          <li>买入持有：收益 ${s.benchmarkPct}% · 最大回撤 ${s.benchmarkMaxDDPct}% · Calmar ${s.benchmarkCalmar}</li>
+          <li>调仓：减仓 ${s.cuts} 次 · 加回 ${s.adds} 次 · 平均仓位 ${s.avgPositionPct}%</li>
+          <li>${s.calmar != null && s.benchmarkCalmar != null && s.calmar > s.benchmarkCalmar ? 'Calmar 优于买入持有' : 'Calmar 未优于买入持有 —— 减仓的回撤收益不足以抵消少赚的部分'}</li>
+        </ul></div>`;
+      U.$('#btStats').innerHTML = [
+        statRow('标的', `${r.market}:${r.code} · ${r.period}`),
+        statRow('策略收益', `${s.totalReturnPct}%`, s.totalReturnPct > 0 ? 'up' : 'down'),
+        statRow('基准收益', `${s.benchmarkPct}%`),
+        statRow('收益代价', `${s.returnCostPct}pp`, s.returnCostPct > 0 ? 'up' : 'down'),
+        statRow('策略回撤', `${s.maxDrawdownPct}%`, 'down'),
+        statRow('基准回撤', `${s.benchmarkMaxDDPct}%`),
+        statRow('回撤减少', `${s.ddReductionPct}pp`, good ? 'up' : 'down'),
+        statRow('Calmar(策略)', s.calmar),
+        statRow('Calmar(基准)', s.benchmarkCalmar),
+        statRow('减仓次数', s.cuts),
+        statRow('平均仓位', `${s.avgPositionPct}%`),
+        statRow('跨度', `${s.years} 年`),
+      ].join('');
+      U.$('#btTypes').innerHTML = '';
+      U.$('#btRows').innerHTML = `<table class="bt-tbl"><thead><tr><th>#</th><th>动作</th><th>仓位变化</th><th>价格</th><th>触发</th></tr></thead><tbody>${
+        (r.actions || []).map((a) => `<tr><td>${a.i}</td><td class="${a.type === 'cut' ? 'down' : 'up'}">${a.type === 'cut' ? '减仓' : a.type === 'add' ? '加回' : '建仓'}</td><td>${a.fromPct}% → ${a.toPct}%</td><td>${a.price}</td><td>${U.esc(a.why)}</td></tr>`).join('')
+      }</tbody></table>`;
+      U.$('#btRowsHint').textContent = `${(r.actions || []).length} 次调仓`;
+      U.$('#btTrades').innerHTML = '';
+      drawCurve(null);
+      U.$('#btCurveHint').textContent = '防守模式不画资金曲线（请看调仓表）';
+    } catch (e) {
+      U.$('#btStats').innerHTML = `<div class="loading">${U.esc(e.message)}</div>`;
+    }
+  }
+
   /* ---------------- 滚动 walk-forward ---------------- */
   async function runRolling() {
     const p = P();
@@ -354,15 +404,31 @@
 
   /* ---------------- 路由 ---------------- */
   async function renderPage() {
-    const b1 = U.$('#btRun'), b2 = U.$('#btBatch'), b3 = U.$('#btSweep');
-    if (b1 && !b1._bound) { b1._bound = 1; b1.addEventListener('click', runSingle); }
-    if (b2 && !b2._bound) { b2._bound = 1; b2.addEventListener('click', runBatch); }
-    if (b3 && !b3._bound) { b3._bound = 1; b3.addEventListener('click', runSweep); }
-    if (!lastBatch && !U.$('#btStats').innerHTML.trim()) {
-      U.$('#btStats').innerHTML = '<div class="loading">点上方按钮开始回测</div>';
+    /*
+      统一绑定：之前 btOos / btRolling / btDefense 的绑定因字符串替换没匹配上而丢失，
+      导致按钮点了没反应。这里改成表驱动，新增按钮只要加一行。
+    */
+    const bindings = [
+      ['#btRun', runSingle],
+      ['#btBatch', runBatch],
+      ['#btSweep', runSweep],
+      ['#btOos', runOos],
+      ['#btRolling', runRolling],
+      ['#btDefense', runDefense],
+    ];
+    for (const [sel, fn] of bindings) {
+      const el = U.$(sel);
+      if (el && !el._bound) {
+        el._bound = 1;
+        el.addEventListener('click', fn);
+      }
+    }
+    const stats = U.$('#btStats');
+    if (stats && !stats.innerHTML.trim()) {
+      stats.innerHTML = '<div class="loading">点上方按钮开始回测</div>';
     }
     if (lastBatch) drawCurve(null);
   }
 
-  window.PageBacktest = { renderPage, runSingle, runBatch, runSweep, runOos, runRolling };
+  window.PageBacktest = { renderPage, runSingle, runBatch, runSweep, runOos, runRolling, runDefense };
 })();

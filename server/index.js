@@ -22,6 +22,7 @@ const BTBATCH = require('./lib/batch');
 const UNIV = require('./lib/universe');
 const OOS = require('./lib/oos');
 const ROLLWF = require('./lib/rollwf');
+const DEFENSE = require('./lib/defense');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -751,6 +752,29 @@ const routes = {
     const base = btOptsFromQuery(u);
     const grid = { signalTypes: [['3B'], ['3B', '2B'], null], stopPct: [0, 8], takePct: [0, 20] };
     return { ...ROLLWF.rollingWalkForward(symbols, { ...base, period, entry: 'buy' }, grid, { folds }), fetched: symbols.length };
+  },
+  /*
+    防守型回测（减仓模式）：始终满仓，卖点信号出现时降低仓位。
+    评价标准不是收益，而是"回撤减少 vs 收益代价"。
+  */
+  '/api/bt/defense': async (u) => {
+    const market = String(u.searchParams.get('market') || 'A').toUpperCase();
+    const code = u.searchParams.get('code') || '600519';
+    const period = u.searchParams.get('period') || 'day';
+    const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
+    const sellRaw = (u.searchParams.get('sellSignals') || '2S').trim();
+    const sellSignals = sellRaw ? sellRaw.split(',').map((x) => x.trim()).filter(Boolean) : ['2S'];
+    const keepPct = Math.min(1, Math.max(0, Number(u.searchParams.get('keepPct') || 0)));
+    const kl = await S.klines({ market, code, period, limit });
+    const r = DEFENSE.runDefense(kl.bars, {
+      period,
+      sellSignals,
+      keepPct,
+      floorPct: Number(u.searchParams.get('floorPct') || 0),
+      autoRestoreBars: Number(u.searchParams.get('autoRestoreBars') || 0),
+      biStyle: u.searchParams.get('biStyle') === 'old' ? 'old' : 'new',
+    });
+    return { ...r, market, code: S.normCode(market, code), period, source: kl.source };
   },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景

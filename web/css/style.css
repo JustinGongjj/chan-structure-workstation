@@ -898,3 +898,8 @@ button{font-family:inherit}
 /* 同类资产基准 */
 .peer-box{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line2)}
 .peer-head{font-size:11.5px;color:var(--gold);margin-bottom:6px}
+
+/* 防守模式配置 */
+.bt-defcfg{border:1px solid var(--gold-tint2, var(--line2));background:color-mix(in srgb, var(--gold) 5%, transparent)}
+.bt-tag{font-size:11px;color:var(--gold);font-weight:600;padding:2px 8px;border-radius:5px;background:color-mix(in srgb, var(--gold) 14%, transparent)}
+.bt-hint{font-size:11px;color:var(--faint)}

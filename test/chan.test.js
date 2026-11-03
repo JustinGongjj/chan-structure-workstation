@@ -927,3 +927,54 @@ test('同类基准：按市场给出策略中位 vs 本市场买入持有', () =
   const med = sorted[Math.floor(sorted.length / 2)];
   assert.equal(med, 20, 'A 市场三条收益 30/10/20 的中位应为 20');
 });
+
+/* ---------------- 防守模式（减仓回测） ---------------- */
+test('防守模式：资金自洽（期末 = 初始 + 持仓市值 - 成本）', () => {
+  const D = require('../server/lib/defense');
+  const bars = mkBars(700, (i) => 100 + Math.sin(i / 10) * 12 + i * 0.02);
+  const r = D.runDefense(bars, { period: 'day', keepPct: 0.5 });
+  assert.ok(r.ok, '防守回测应成功');
+  const s = r.stats;
+  assert.ok(s.finalValue > 0, '期末权益应为正');
+  // 关键：策略收益不能荒谬地高于买入持有（曾经因 cash 未扣本金导致翻倍）
+  assert.ok(
+    s.totalReturnPct < s.benchmarkPct + 200,
+    `策略 ${s.totalReturnPct}% 不应远超基准 ${s.benchmarkPct}%（疑似资金记账错误）`
+  );
+});
+
+test('防守模式：买入持有基准与直接计算一致', () => {
+  const D = require('../server/lib/defense');
+  const bars = mkBars(600, (i) => 100 + i * 0.05);
+  const r = D.runDefense(bars, { period: 'day', keepPct: 0, sellSignals: ['2S'] });
+  assert.ok(r.ok);
+  // 预热 120 根；(末收盘/第120根收盘 - 1)*100 应接近 benchmarkPct
+  const expect = (bars[bars.length - 1].c / bars[120].c - 1) * 100;
+  assert.ok(Math.abs(r.stats.benchmarkPct - expect) < 1, `基准 ${r.stats.benchmarkPct}% 应接近 ${expect.toFixed(2)}%`);
+});
+
+test('防守模式：调仓动作结构完整，仓位在 0~1 之间', () => {
+  const D = require('../server/lib/defense');
+  const bars = mkBars(700, (i) => 100 + Math.sin(i / 8) * 14);
+  const r = D.runDefense(bars, { period: 'day', keepPct: 0.5, sellSignals: ['2S', '1S'] });
+  assert.ok(r.ok);
+  for (const a of r.actions) {
+    assert.ok(a.fromPct >= 0 && a.fromPct <= 100, `来源仓位 ${a.fromPct} 越界`);
+    assert.ok(a.toPct >= 0 && a.toPct <= 100, `目标仓位 ${a.toPct} 越界`);
+    assert.ok(['init', 'cut', 'add'].includes(a.type), `动作类型 ${a.type} 非法`);
+  }
+  assert.ok(r.actions.length >= 1, '至少应有建仓动作');
+});
+
+test('前端：回测页所有按钮都必须有绑定（防止替换丢失）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', 'backtest.js'), 'utf8');
+  // 只检查"回测页里真正的按钮"：<button ... id="btXxx">
+  const btnIds = [...html.matchAll(/<button[^>]*id="(bt[A-Z]\w*)"/g)].map((m) => m[1]);
+  assert.ok(btnIds.length >= 5, `回测页按钮数应 ≥5，实际 ${btnIds.length}`);
+  for (const id of btnIds) {
+    assert.ok(js.includes('#' + id), `按钮 #${id} 在 backtest.js 里没有绑定`);
+  }
+});

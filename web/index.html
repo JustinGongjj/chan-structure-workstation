@@ -371,9 +371,28 @@
           <button class="btn sm" id="btSweep">参数扫描</button>
           <button class="btn sm" id="btOos">样本外验证</button>
           <button class="btn sm" id="btRolling">滚动验证</button>
+          <button class="btn sm gold" id="btDefense">防守回测</button>
         </div>
       </div>
 
+      <div class="card bt-config bt-defcfg">
+        <div class="bt-row">
+          <span class="bt-tag">防守模式</span>
+          <label>减仓信号 <select id="dfSell" class="inp">
+            <option value="2S">仅 2S 二卖</option>
+            <option value="2S,1S">2S + 1S</option>
+            <option value="2S,1S,3S" selected>2S + 1S + 3S</option>
+            <option value="3S">仅 3S 三卖</option>
+            <option value="1S">仅 1S 一卖</option>
+          </select></label>
+          <label>减仓后保留 <select id="dfKeep" class="inp">
+            <option value="0">清仓 0%</option>
+            <option value="0.5" selected>减半 50%</option>
+            <option value="0.7">减到 70%</option>
+          </select></label>
+          <span class="bt-hint">始终满仓起步，只做减法：衡量「回撤减少 vs 收益代价」</span>
+        </div>
+      </div>
       <div class="card bt-config">
         <div class="bt-row">
           <label>标的 <input id="btSymbols" class="inp" style="width:300px" placeholder="A:600519,US:NVDA（留空=用下面的市场池）"></label>
