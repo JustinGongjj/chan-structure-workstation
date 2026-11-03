@@ -978,3 +978,45 @@ test('前端：回测页所有按钮都必须有绑定（防止替换丢失）',
     assert.ok(js.includes('#' + id), `按钮 #${id} 在 backtest.js 里没有绑定`);
   }
 });
+
+/* ---------------- 防守模式：恢复方式 ---------------- */
+test('防守模式：四种恢复方式都能跑通且仓位合法', () => {
+  const D = require('../server/lib/defense');
+  const bars = mkBars(700, (i) => 100 + Math.sin(i / 9) * 12);
+  for (const mode of ['signal', 'bars', 'price', 'never']) {
+    const r = D.runDefense(bars, {
+      period: 'day', sellSignals: ['2S', '1S', '3S'], keepPct: 0,
+      restoreMode: mode, autoRestoreBars: 20, recoverPct: 1.0,
+    });
+    assert.ok(r.ok, `${mode} 模式应成功`);
+    assert.equal(r.params.restoreMode, mode);
+    for (const a of r.actions) {
+      assert.ok(a.toPct >= 0 && a.toPct <= 100, `${mode} 仓位越界 ${a.toPct}`);
+    }
+  }
+});
+
+test('防守模式：never 模式不会出现加回动作', () => {
+  const D = require('../server/lib/defense');
+  const bars = mkBars(700, (i) => 100 + Math.sin(i / 8) * 14);
+  const r = D.runDefense(bars, { period: 'day', sellSignals: ['2S', '1S', '3S'], keepPct: 0, restoreMode: 'never' });
+  assert.ok(r.ok);
+  const adds = r.actions.filter((a) => a.type === 'add');
+  assert.equal(adds.length, 0, 'never 模式不应有加回动作');
+});
+
+test('防守模式：price 模式加回发生在价格修复之后', () => {
+  const D = require('../server/lib/defense');
+  const bars = mkBars(700, (i) => 100 + Math.sin(i / 10) * 16);
+  const r = D.runDefense(bars, { period: 'day', sellSignals: ['2S', '1S', '3S'], keepPct: 0, restoreMode: 'price', recoverPct: 1.0 });
+  assert.ok(r.ok);
+  // 有加回动作时，加回价应 >= 前一次减仓价（修复逻辑）
+  for (let i = 1; i < r.actions.length; i++) {
+    const a = r.actions[i];
+    if (a.type !== 'add') continue;
+    // 往前找最近一次 cut
+    let cut = null;
+    for (let k = i - 1; k >= 0; k--) { if (r.actions[k].type === 'cut') { cut = r.actions[k]; break; } }
+    if (cut) assert.ok(a.price >= cut.price * 0.999, `加回价 ${a.price} 应不低于减仓价 ${cut.price}`);
+  }
+});

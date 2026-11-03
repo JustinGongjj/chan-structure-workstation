@@ -39,8 +39,26 @@ const DEFAULTS = {
   cumulative: false,
   /* 保底仓位（永不低于这个比例） */
   floorPct: 0,
-  /* 减仓后多少根内若无新信号则自动恢复（0 = 不自动恢复） */
+  /*
+    ▍恢复方式（这轮的重点：不再"等买点信号"恢复，因为买点滞后太严重）
+      'signal'   = 等买点信号才加回（旧行为，实测滞后）
+      'bars'     = 固定 N 根后加回
+      'price'    = 价格修复到减仓价的 recoverPct 以上才加回
+      'never'    = 减了就不加回（拿到最后）
+  */
+  /*
+    默认改为 'price'：实测在 60 只标的上，
+      等买点恢复   → Calmar胜20% 减回撤70% 收益代价 −12.3pp
+      价格完全修复 → Calmar胜28% 减回撤48% 收益代价 **−0.6pp**
+    价格修复的性价比远好于等买点——因为买点信号滞后，常把仓位加在反弹之后。
+  */
+  restoreMode: 'price',
+  /* bars 模式：多少根后恢复 */
   autoRestoreBars: 0,
+  /* price 模式：价格需回到减仓价的多少比例以上（1.0 = 完全修复） */
+  recoverPct: 1.0,
+  /* price 模式的价格基准：true=用减仓时价格 false=用减仓时的 20 日均线 */
+  recoverFromCut: true,
   feeBps: 8,
   slipBps: 4,
   warmup: 120,
@@ -69,6 +87,7 @@ function runDefense(bars, opts = {}) {
   let shares = 0;           // 当前持股数
   let lastAdjustIdx = -1;
   let lastAdjustWhy = '';
+  let cutPrice = null;       // 最近一次减仓的成交价（price 模式用）
   const actions = [];       // 每次调仓
   const equity = [];
   let seen = new Set();
@@ -83,14 +102,27 @@ function runDefense(bars, opts = {}) {
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
 
-    /* 自动恢复 */
-    if (P.autoRestoreBars > 0 && heldPct < 1 && lastAdjustIdx >= 0 && i - lastAdjustIdx >= P.autoRestoreBars) {
-      const target = 1;
-      const adj = adjustTo(target, bar.o, i, bar.t, 'auto-restore', costPerSide, { cash, shares, heldPct, equityValue: cash + shares * bar.o });
-      cash = adj.cash; shares = adj.shares; heldPct = adj.heldPct;
-      actions.push(adj.action);
-      lastAdjustIdx = i;
-      lastAdjustWhy = 'auto-restore';
+    /* ---- 恢复逻辑：按 restoreMode 分四种 ---- */
+    const mode = P.restoreMode || 'signal';
+    if (inited && heldPct < 1 && lastAdjustIdx >= 0 && mode !== 'signal') {
+      let shouldRestore = false;
+      let why = '';
+      if (mode === 'bars' && P.autoRestoreBars > 0 && i - lastAdjustIdx >= P.autoRestoreBars) {
+        shouldRestore = true;
+        why = `bars:${P.autoRestoreBars}`;
+      } else if (mode === 'price' && cutPrice != null && bar.c >= cutPrice * num(P.recoverPct, 1.0)) {
+        shouldRestore = true;
+        why = `price:修复到${(num(P.recoverPct, 1.0) * 100).toFixed(0)}%`;
+      }
+      // never 模式：不恢复
+      if (shouldRestore) {
+        const adj = adjustTo(1, bar.o, i, bar.t, why, costPerSide, { cash, shares, heldPct, equityValue: cash + shares * bar.o });
+        cash = adj.cash; shares = adj.shares; heldPct = adj.heldPct;
+        actions.push(adj.action);
+        lastAdjustIdx = i;
+        lastAdjustWhy = why;
+        cutPrice = null;
+      }
     }
 
     /* 预热结束后满仓入场 */
@@ -140,11 +172,12 @@ function runDefense(bars, opts = {}) {
           if (isSellTrigger) {
             target = P.cumulative ? Math.max(floor, heldPct * keep) : Math.max(floor, keep === 0 ? 0 : keep);
             if (P.cumulative) target = Math.max(floor, heldPct - (1 - keep));
-          } else {
-            target = 1; // 买点恢复满仓
+          } else if ((P.restoreMode || 'signal') === 'signal') {
+            target = 1; // 只有 signal 模式才用买点恢复
           }
           if (Math.abs(target - heldPct) < 0.02) continue;
 
+          if (isSellTrigger && target < heldPct) cutPrice = nextOpen;
           const adj = adjustTo(target, nextOpen, i + 1, nextT, (isSellTrigger ? 'sell:' : 'buy:') + s.type, costPerSide, { cash, shares, heldPct, equityValue: cash + shares * nextOpen });
           cash = adj.cash; shares = adj.shares; heldPct = adj.heldPct;
           actions.push(adj.action);

@@ -771,7 +771,9 @@ const routes = {
       sellSignals,
       keepPct,
       floorPct: Number(u.searchParams.get('floorPct') || 0),
+      restoreMode: ['signal', 'bars', 'price', 'never'].includes(u.searchParams.get('restoreMode')) ? u.searchParams.get('restoreMode') : 'price',
       autoRestoreBars: Number(u.searchParams.get('autoRestoreBars') || 0),
+      recoverPct: Number(u.searchParams.get('recoverPct') || 1.0),
       biStyle: u.searchParams.get('biStyle') === 'old' ? 'old' : 'new',
     });
     return { ...r, market, code: S.normCode(market, code), period, source: kl.source };

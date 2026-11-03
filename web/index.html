@@ -386,9 +386,16 @@
             <option value="1S">仅 1S 一卖</option>
           </select></label>
           <label>减仓后保留 <select id="dfKeep" class="inp">
-            <option value="0">清仓 0%</option>
-            <option value="0.5" selected>减半 50%</option>
+            <option value="0" selected>清仓 0%</option>
+            <option value="0.5">减半 50%</option>
             <option value="0.7">减到 70%</option>
+          </select></label>
+          <label title="减仓后什么时候把仓位加回来">恢复方式 <select id="dfRestore" class="inp">
+            <option value="price" selected>价格修复即加回</option>
+            <option value="signal">等买点信号</option>
+            <option value="bars">固定 20 根后</option>
+            <option value="bars40">固定 40 根后</option>
+            <option value="never">永不加回</option>
           </select></label>
           <span class="bt-hint">始终满仓起步，只做减法：衡量「回撤减少 vs 收益代价」</span>
         </div>

@@ -196,10 +196,13 @@
     const market = (first[0] || 'A').toUpperCase();
     const code = first[1] || '600519';
     const sell = U.$('#dfSell')?.value || '2S';
-    const keep = U.$('#dfKeep')?.value || '0.5';
+    const keep = U.$('#dfKeep')?.value || '0';
+    const rs = U.$('#dfRestore')?.value || 'price';
+    const restoreMode = rs.startsWith('bars') ? 'bars' : rs;
+    const autoRestore = rs === 'bars40' ? 40 : rs === 'bars' ? 20 : 0;
     U.$('#btStats').innerHTML = '<div class="loading">防守回测中…</div>';
     try {
-      const r = await API.get(`/api/bt/defense?market=${market}&code=${encodeURIComponent(code)}&period=${p.period}&sellSignals=${encodeURIComponent(sell)}&keepPct=${keep}&biStyle=${p.biStyle}`);
+      const r = await API.get(`/api/bt/defense?market=${market}&code=${encodeURIComponent(code)}&period=${p.period}&sellSignals=${encodeURIComponent(sell)}&keepPct=${keep}&restoreMode=${restoreMode}&autoRestoreBars=${autoRestore}&biStyle=${p.biStyle}`);
       if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
       const s = r.stats;
       const good = s.ddReductionPct > 0;
@@ -210,7 +213,8 @@
           <li>策略：收益 <b>${s.totalReturnPct}%</b> · 最大回撤 <b>${s.maxDrawdownPct}%</b> · Calmar ${s.calmar}</li>
           <li>买入持有：收益 ${s.benchmarkPct}% · 最大回撤 ${s.benchmarkMaxDDPct}% · Calmar ${s.benchmarkCalmar}</li>
           <li>调仓：减仓 ${s.cuts} 次 · 加回 ${s.adds} 次 · 平均仓位 ${s.avgPositionPct}%</li>
-          <li>${s.calmar != null && s.benchmarkCalmar != null && s.calmar > s.benchmarkCalmar ? 'Calmar 优于买入持有' : 'Calmar 未优于买入持有 —— 减仓的回撤收益不足以抵消少赚的部分'}</li>
+          <li>${s.calmar != null && s.benchmarkCalmar != null && s.calmar > s.benchmarkCalmar ? 'Calmar 优于买入持有' : 'Calmar 未优于买入持有'}</li>
+          <li>性价比：${Math.abs(s.returnCostPct) < 1 && s.ddReductionPct > 2 ? '近乎零代价换回撤改善（推荐配置）' : Math.abs(s.returnCostPct) > Math.abs(s.ddReductionPct) ? '代价大于收益，不划算' : '代价与收益相当'}</li>
         </ul></div>`;
       U.$('#btStats').innerHTML = [
         statRow('标的', `${r.market}:${r.code} · ${r.period}`),
