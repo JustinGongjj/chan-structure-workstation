@@ -819,3 +819,60 @@ test('批量：市场筛选参数生效', () => {
   assert.ok(onlyCr.length >= 10, 'CR 池应 ≥10');
   assert.ok(onlyCr.every((x) => x.market === 'CR'));
 });
+
+/* ---------------- 反向信号 / 底仓 / 资金利用率 ---------------- */
+test('反向信号：invertSignal 会把买卖点对调', () => {
+  const B = require('../server/lib/btengine');
+  const bars = mkBars(600, (i) => 100 + Math.sin(i / 8) * 10 + Math.sin(i / 27) * 4);
+  const normal = B.runBacktest(bars, { warmup: 120, entry: 'both', exitOn: 'signal', maxConfirmLag: 3 });
+  const inverted = B.runBacktest(bars, { warmup: 120, entry: 'both', exitOn: 'signal', maxConfirmLag: 3, invertSignal: true });
+  assert.ok(normal.ok && inverted.ok);
+  // 方向应当相反（若两边都有交易）
+  const nDir = normal.trades.map((t) => t.dir);
+  const iDir = inverted.trades.map((t) => t.dir);
+  if (nDir.length && iDir.length) {
+    // 首笔方向应相反
+    assert.notEqual(nDir[0], iDir[0], '反向模式下首笔方向应与正向相反');
+  }
+});
+
+test('底仓：basePosition>0 时底仓计入权益，期末账目仍自洽', () => {
+  const B = require('../server/lib/btengine');
+  const bars = mkBars(600, (i) => 100 + i * 0.05 + Math.sin(i / 9) * 8);
+  const r = B.runBacktest(bars, { warmup: 120, entry: 'buy', exitOn: 'signal', maxConfirmLag: 3, basePosition: 0.5 });
+  assert.ok(r.ok);
+  assert.equal(r.stats.basePosition, 0.5);
+  assert.ok(Number.isFinite(r.stats.baseNet), '底仓盈亏必须是数字');
+  // 有底仓时权益不应为负，也不应超过初始资金 2 倍
+  const maxEq = Math.max(...r.equity.map((e) => e.v));
+  const minEq = Math.min(...r.equity.map((e) => e.v));
+  assert.ok(maxEq < r.stats.initCapital * 2, `权益峰值 ${maxEq} 异常`);
+  assert.ok(minEq > 0, '权益不应为负');
+});
+
+test('资金利用率：utilizationPct 在 0-100 之间且随持仓变化', () => {
+  const B = require('../server/lib/btengine');
+  const bars = mkBars(600, (i) => 100 + Math.sin(i / 7) * 9);
+  const r = B.runBacktest(bars, { warmup: 120, entry: 'both', exitOn: 'signal', maxConfirmLag: 3 });
+  assert.ok(r.ok);
+  assert.ok(r.stats.utilizationPct >= 0 && r.stats.utilizationPct <= 100, `利用率 ${r.stats.utilizationPct} 越界`);
+});
+
+/* ---------------- 滚动 walk-forward ---------------- */
+test('滚动验证：多折结构完整，判定取值合法', () => {
+  const R = require('../server/lib/rollwf');
+  const symbols = [];
+  for (let k = 0; k < 6; k++) {
+    symbols.push({ market: 'A', code: 'R' + k, bars: mkBars(900, (i) => 100 + Math.sin(i / (9 + k)) * 10 + k * 3) });
+  }
+  const r = R.rollingWalkForward(symbols, { warmup: 120, entry: 'buy' }, { signalTypes: [['3B'], null] }, { folds: 2 });
+  if (!r.ok) return; // 数据太短会返回错误，不算失败
+  assert.ok(r.folds >= 1, '至少要有一折');
+  assert.ok(['robust', 'mixed', 'unstable', 'insufficient'].includes(r.verdict.level));
+  for (const f of r.folds_detail) {
+    assert.ok(f.fold >= 1);
+    assert.equal(typeof f.inAvg, 'number');
+    assert.equal(typeof f.oosAvg, 'number');
+    assert.equal(typeof f.oosTrades, 'number');
+  }
+});

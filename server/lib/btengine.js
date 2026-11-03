@@ -32,6 +32,8 @@ const DEFAULTS = {
   entry: 'buy',        // buy=只做多买卖点中的买点；sell=只做空；both=双向
   signalTypes: null,   // null=全部；或 ['1B','2B','3B'] 之类
   requireNest: false,  // 是否要求多级别共振（慢，默认关）
+  /* 信号方向反转：true 时把买点当卖点处理、卖点当买点（用于检验"反向指标"） */
+  invertSignal: false,
   /* 出场规则 */
   exitOn: 'signal',    // signal=反向信号平仓；hold=固定持有
   holdBars: 20,        // exitOn=hold 时持有根数
@@ -43,6 +45,16 @@ const DEFAULTS = {
   /* 资金 */
   capital: 100000,
   positionPct: 100,    // 每次用多少比例资金
+  /*
+    ▍底仓模式（basePosition）：解决"资金利用率只有 17-33%"的问题
+      实测所有缠论策略长期空仓（A 股尤甚，中位持仓 105 根 / 800 根 ≈ 16%）。
+      空仓期间错过市场上涨，是"跑赢率 0%"的真正原因。
+      设 basePosition=1 表示始终持有 1 份底仓，缠论信号只在底仓上做加减仓。
+      = 0 表示纯信号模式（原行为）
+      = 1 表示满仓底仓（等于买入持有 + 信号加减仓）
+      实现：底仓单独记账，信号仓位在底仓之上叠加/减掉。
+  */
+  basePosition: 0,
   /* 统计 */
   warmup: 120,         // 预热根数（前 N 根只分析不下单）
   maxConfirmLag: 3,    // 信号最大确认延迟（根）。>此值的信号视为事后修正，不交易
@@ -88,6 +100,14 @@ function runBacktest(bars, opts = {}) {
   const equity = [];        // { t, v, price }
   const signalsSeen = [];   // 记录所有识别到的信号（含未成交）
   let skippedNoCash = 0;
+  /*
+    底仓：从预热结束那根开始买入并一直持有。
+    单独记账（baseShares/baseEntry），不参与信号仓位的进出，
+    只在计算权益时叠加其浮动盈亏。
+  */
+  const basePct = Math.max(0, Math.min(1, num(P.basePosition, 0)));
+  let baseShares = 0, baseEntry = 0, baseCost = 0;
+  let baseInit = false;
 
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
@@ -107,6 +127,18 @@ function runBacktest(bars, opts = {}) {
       if (exitPx != null) {
         cash = closePosition(cash, pos, exitPx, i, bar.t, exitWhy, costPerSide, trades);
         pos = null;
+      }
+    }
+
+    /* ①.5 建立底仓（在预热结束的那一刻用当根收盘价买入，之后不再变动） */
+    if (basePct > 0 && !baseInit && i >= P.warmup) {
+      const amt = cash * basePct;
+      if (amt > bar.c) {
+        baseShares = amt / bar.c;
+        baseEntry = bar.c;
+        baseCost = amt * costPerSide;
+        cash -= baseCost;
+        baseInit = true;
       }
     }
 
@@ -139,7 +171,14 @@ function runBacktest(bars, opts = {}) {
 
         const sig = fresh.length ? fresh[fresh.length - 1] : null;
         if (sig) {
-          const isBuy = sig.type.endsWith('B');
+          /*
+            信号方向 vs 交易方向：
+              invertSignal=true 时，买点当作做空信号、卖点当作做多信号。
+            用途：某个信号统计上明显为负（如 2S 胜率 35%、平均 -13%），
+            反过来做是否成立？这必须靠数据回答，不能拍脑袋。
+          */
+          const rawBuy = sig.type.endsWith('B');
+          const isBuy = P.invertSignal ? !rawBuy : rawBuy;
           const wantLong = P.entry === 'buy' || P.entry === 'both';
           const wantShort = P.entry === 'sell' || P.entry === 'both';
           const typeOk = !P.signalTypes || P.signalTypes.includes(sig.type);
@@ -195,8 +234,9 @@ function runBacktest(bars, opts = {}) {
     }
 
     /* ④ 记录资金曲线 */
-    // 权益 = 现金 + 浮动盈亏（本金留在 cash 里，不能重复计入）
-    const mv = equityOf(cash, pos, bar.c);
+    // 权益 = 现金 + 信号仓浮动盈亏 + 底仓浮动盈亏（本金均留在 cash 里）
+    const basePnl = baseShares > 0 ? (bar.c - baseEntry) * baseShares : 0;
+    const mv = equityOf(cash, pos, bar.c) + basePnl;
     equity.push({ t: bar.t, v: +mv.toFixed(2), price: bar.c });
   }
 
@@ -207,8 +247,24 @@ function runBacktest(bars, opts = {}) {
     pos = null;
     equity[equity.length - 1].v = +cash.toFixed(2);
   }
+  /* 结算底仓：平掉并计入净盈亏，让"期末权益 = 初始 + 所有盈亏"继续成立 */
+  let baseNet = 0;
+  if (baseShares > 0) {
+    const last = bars[bars.length - 1];
+    const gross = (last.c - baseEntry) * baseShares;
+    const exitCost = last.c * baseShares * costPerSide;
+    baseNet = gross - exitCost - baseCost;
+    cash += gross - exitCost;
+    equity[equity.length - 1].v = +cash.toFixed(2);
+    baseShares = 0;
+  }
 
   const stats = computeStats({ trades, equity, initCapital, bars, opts: P });
+  stats.basePosition = basePct;
+  stats.baseNet = +baseNet.toFixed(2);
+  /* 资金利用率：持仓根数 / 总根数 */
+  const heldBars = trades.reduce((a, t) => a + t.bars, 0);
+  stats.utilizationPct = +(heldBars / bars.length * 100).toFixed(1);
   return {
     ok: true,
     params: P,

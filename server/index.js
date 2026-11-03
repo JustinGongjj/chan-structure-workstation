@@ -21,6 +21,7 @@ const BTENGINE = require('./lib/btengine');
 const BTBATCH = require('./lib/batch');
 const UNIV = require('./lib/universe');
 const OOS = require('./lib/oos');
+const ROLLWF = require('./lib/rollwf');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -539,6 +540,8 @@ function btOptsFromQuery(u) {
     warmup: q('warmup', 120),
     maxConfirmLag: q('maxConfirmLag', 3),
     biStyle: u.searchParams.get('biStyle') === 'old' ? 'old' : 'new',
+    basePosition: Number(u.searchParams.get('basePosition') || 0),
+    invertSignal: u.searchParams.get('invertSignal') === '1',
   };
 }
 
@@ -728,6 +731,24 @@ const routes = {
       takePct: [0, 20],
     };
     return { ...OOS.walkForward(symbols, { ...base, period, entry: 'buy' }, grid, ratio), requested: items.length, fetched: symbols.length };
+  },
+  // 滚动 walk-forward：多折验证，比单次切分可靠
+  '/api/bt/rolling': async (u) => {
+    const period = u.searchParams.get('period') || 'day';
+    const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
+    const folds = Math.min(6, Math.max(2, Number(u.searchParams.get('folds') || 3)));
+    const mk = u.searchParams.get('markets');
+    const cap = Math.min(40, Math.max(5, Number(u.searchParams.get('maxSymbols') || 25)));
+    let items = mk ? UNIV.flatUniverse(mk.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean)) : BT_DEFAULT_SYMBOLS;
+    items = items.slice(0, cap); // 滚动很慢，限制标的数
+    const symbols = [];
+    for (const it of items) {
+      try { const kl = await S.klines({ market: it.market, code: it.code, period, limit }); if (kl.bars.length >= 500) symbols.push({ ...it, bars: kl.bars }); } catch (e) {}
+    }
+    if (symbols.length < 3) return { ok: false, error: `有效标的仅 ${symbols.length} 个` };
+    const base = btOptsFromQuery(u);
+    const grid = { signalTypes: [['3B'], ['3B', '2B'], null], stopPct: [0, 8], takePct: [0, 20] };
+    return { ...ROLLWF.rollingWalkForward(symbols, { ...base, period, entry: 'buy' }, grid, { folds }), fetched: symbols.length };
   },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景

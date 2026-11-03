@@ -82,6 +82,8 @@
         statRow('中位单笔', `${s.medianNetPct}%`),
         statRow('盈利因子', s.profitFactor == null ? '—' : s.profitFactor),
         statRow('平均持仓', `${s.avgHoldBars} 根`),
+      statRow('资金利用率', `${s.utilizationPct}%`, s.utilizationPct >= 60 ? 'up' : 'down'),
+      statRow('底仓比例', `${Math.round((s.basePosition || 0) * 100)}%`),
         statRow('跑赢基准', `${s.beatBenchmark}/${s.symbols} = ${s.beatRate}%`, s.beatRate >= 50 ? 'up' : 'down'),
         statRow('中位超额', `${s.medianExcessPct}%`, s.medianExcessPct > 0 ? 'up' : 'down'),
         statRow('中位回撤', `${s.medianDrawdownPct}%`),
@@ -186,6 +188,49 @@
     }
   }
 
+  /* ---------------- 滚动 walk-forward ---------------- */
+  async function runRolling() {
+    const p = P();
+    U.$('#btStats').innerHTML = '<div class="loading">滚动验证中（多折训练+验证，约 2-5 分钟）…</div>';
+    U.$('#btVerdict').innerHTML = '<div class="bt-verdict gold"><div class="btv-head"><b>滚动验证</b><span>把历史切成多折，每折单独调参再验证</span></div></div>';
+    try {
+      const q2 = { ...p, folds: 3, maxSymbols: 40 };
+      if (q2.symbols) delete q2.markets;
+      const r = await API.get(`/api/bt/rolling?${qs(q2)}`);
+      if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
+      const map = { robust: ['up', '多折一致为正'], mixed: ['gold', '部分折为正'], unstable: ['down', '多数折为负'], insufficient: ['muted', '样本不足'] };
+      const [cls, txt] = map[r.verdict.level] || ['muted', '待定'];
+      U.$('#btVerdict').innerHTML = `<div class="bt-verdict ${cls}">
+        <div class="btv-head"><b>滚动验证：${txt}</b><span>${U.esc(r.verdict.text || '')}</span></div>
+        <ul>${(r.verdict.reasons || []).map((x) => `<li>${U.esc(x)}</li>`).join('')}</ul>
+      </div>`;
+      U.$('#btStats').innerHTML = [
+        statRow('标的数', r.fetched),
+        statRow('折数', r.folds),
+        statRow('验证期总交易', `${r.totalTrades} 笔`),
+        statRow('为正的折', `${r.verdict.positives}/${r.verdict.total}`, r.verdict.positives / r.verdict.total >= 0.8 ? 'up' : 'down'),
+        statRow('验证均值', `${r.verdict.avgOos}%`, r.verdict.avgOos > 0 ? 'up' : 'down'),
+        statRow('最好一折', `${r.verdict.best}%`),
+        statRow('最差一折', `${r.verdict.worst}%`, 'down'),
+      ].join('');
+      U.$('#btTypes').innerHTML = '';
+      U.$('#btRows').innerHTML = `<table class="bt-tbl"><thead><tr><th>折</th><th>选中参数</th><th>训练期</th><th>验证期</th><th>验证笔数</th><th>验证胜率</th></tr></thead><tbody>${
+        r.folds_detail.map((f) => {
+          const q = f.params;
+          return `<tr><td>${f.fold}</td><td>${(q.signalTypes || ['全部']).join('+')} 止损${q.stopPct}% 止盈${q.takePct}%</td>
+            <td>${f.inAvg}%</td><td class="${f.oosAvg > 0 ? 'up' : 'down'}">${f.oosAvg}%</td>
+            <td>${f.oosTrades}</td><td>${f.oosWin}%</td></tr>`;
+        }).join('')
+      }</tbody></table>`;
+      U.$('#btRowsHint').textContent = '各折独立调参后验证';
+      U.$('#btTrades').innerHTML = '';
+      drawCurve(null);
+      U.$('#btCurveHint').textContent = '滚动模式不画资金曲线';
+    } catch (e) {
+      U.$('#btStats').innerHTML = `<div class="loading">${U.esc(e.message)}</div>`;
+    }
+  }
+
   /* ---------------- 渲染子块 ---------------- */
   function renderStats(r) {
     const s = r.stats;
@@ -203,6 +248,8 @@
       statRow('盈亏比', s.payoff == null ? '—' : s.payoff),
       statRow('盈利因子', s.profitFactor == null ? '—' : s.profitFactor),
       statRow('平均持仓', `${s.avgHoldBars} 根`),
+      statRow('资金利用率', `${s.utilizationPct}%`, s.utilizationPct >= 60 ? 'up' : 'down'),
+      statRow('底仓比例', `${Math.round((s.basePosition || 0) * 100)}%`),
       statRow('期末权益', U.fmt(s.finalValue)),
       `<div class="bt-caveats">${(r.caveats || []).map((c) => `<div>⚠ ${U.esc(c)}</div>`).join('')}</div>`,
     ].join('');
@@ -299,5 +346,5 @@
     if (lastBatch) drawCurve(null);
   }
 
-  window.PageBacktest = { renderPage, runSingle, runBatch, runSweep, runOos };
+  window.PageBacktest = { renderPage, runSingle, runBatch, runSweep, runOos, runRolling };
 })();

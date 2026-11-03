@@ -370,6 +370,7 @@
           <button class="btn sm primary" id="btBatch">跑批量</button>
           <button class="btn sm" id="btSweep">参数扫描</button>
           <button class="btn sm" id="btOos">样本外验证</button>
+          <button class="btn sm" id="btRolling">滚动验证</button>
         </div>
       </div>
 
@@ -406,6 +407,8 @@
           <label>手续费bps <input id="btFee" class="inp" type="number" value="8" style="width:76px"></label>
           <label>滑点bps <input id="btSlip" class="inp" type="number" value="4" style="width:76px"></label>
           <label>确认延迟≤ <input id="btLag" class="inp" type="number" value="3" style="width:64px" title="信号出现后最多等几根才成交；超过视为事后修正、不交易"></label>
+          <label title="始终持有的底仓比例，用于缓解长期空仓；0=纯信号模式">底仓 <input id="btBase" class="inp" type="number" value="0" min="0" max="100" step="10" style="width:60px">%</label>
+          <label title="把买点当卖点、卖点当买点，用于检验反向指标">反向信号 <input id="btInvert" type="checkbox" style="margin-left:2px"></label>
         </div>
       </div>
 
