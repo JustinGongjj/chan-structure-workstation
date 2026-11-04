@@ -259,6 +259,20 @@ UI 五条用 `chrome-headless-shell` + CDP over WebSocket（Node 22 内置 WebSo
 加 `--shots /tmp/out` 可落截图。它们不是"跑通就行"，而是逐项断言可复现的症状——
 手机滚不动、弹层透明、标题零宽、算卦不换卦、切市场白屏都是这样被抓出来的。
 
+### 从哪开始读
+
+| 想了解什么 | 看这里 |
+| --- | --- |
+| **缠论买卖点到底有没有用**（不含代码） | [docs/缠论因子研究报告.md](docs/缠论因子研究报告.md) |
+| 回测方法论、口径、踩过的坑 | [docs/BACKTEST.md](docs/BACKTEST.md) |
+| 五轮结论汇总 | [docs/BACKTEST-CONCLUSIONS.md](docs/BACKTEST-CONCLUSIONS.md) |
+| 理论概念与实践的结合 | [docs/THEORY-TO-PRACTICE.md](docs/THEORY-TO-PRACTICE.md) |
+| 架构与部署 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DEPLOY.md](docs/DEPLOY.md) |
+
+**一句话总结这一年做的事**：搭了一个零依赖的缠论工作站（桌面+手机+闯关+算卦），
+画对了中枢的进入/离开段，把理论拆成九步可复核链路，
+然后用**五轮回测**回答了"这套东西到底有没有用" —— 答案在研究报告里。
+
 ### 缠论因子回测：研究报告
 
 **📄 [docs/缠论因子研究报告.md](docs/缠论因子研究报告.md)** —— 对外可读版（227 行），
