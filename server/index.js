@@ -23,6 +23,7 @@ const UNIV = require('./lib/universe');
 const OOS = require('./lib/oos');
 const ROLLWF = require('./lib/rollwf');
 const DEFENSE = require('./lib/defense');
+const PORTFOLIO = require('./lib/portfolio');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -777,6 +778,43 @@ const routes = {
       biStyle: u.searchParams.get('biStyle') === 'old' ? 'old' : 'new',
     });
     return { ...r, market, code: S.normCode(market, code), period, source: kl.source };
+  },
+  /*
+    组合回测（量化模块）：多标的权重聚合 + 27 项绩效归因。
+    口径借鉴 czsc auto-quant / wbt 的 WeightBacktest。
+  */
+  '/api/quant/portfolio': async (u) => {
+    const period = u.searchParams.get('period') || 'day';
+    const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
+    const mk = u.searchParams.get('markets');
+    const cap = Math.min(40, Math.max(2, Number(u.searchParams.get('maxSymbols') || 12)));
+    let items = mk ? UNIV.flatUniverse(mk.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean)) : BT_DEFAULT_SYMBOLS;
+    const list = (u.searchParams.get('symbols') || '').trim();
+    if (list) {
+      items = list.split(',').map((x) => {
+        const [m, c] = x.split(':');
+        return { market: (m || 'A').toUpperCase(), code: (c || '').trim() };
+      }).filter((x) => x.code);
+    }
+    items = items.slice(0, cap);
+    const symbols = [];
+    for (const it of items) {
+      try {
+        const kl = await S.klines({ market: it.market, code: it.code, period, limit });
+        if (kl.bars.length >= 200) symbols.push({ ...it, bars: kl.bars });
+      } catch (e) { /* 跳过 */ }
+    }
+    if (!symbols.length) return { ok: false, error: '没有标的取到足够数据' };
+    const opts = {
+      period,
+      biStyle: u.searchParams.get('biStyle') === 'old' ? 'old' : 'new',
+      maxWeightPerSymbol: Number(u.searchParams.get('maxWeightPerSymbol') || 1),
+      feeBps: Number(u.searchParams.get('feeBps') || 8),
+      slipBps: Number(u.searchParams.get('slipBps') || 4),
+      maxConfirmLag: Number(u.searchParams.get('maxConfirmLag') || 3),
+    };
+    const r = PORTFOLIO.runPortfolio(symbols, opts);
+    return { ...r, requested: items.length, fetched: symbols.length };
   },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景

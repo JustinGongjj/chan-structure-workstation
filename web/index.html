@@ -26,6 +26,7 @@
       <a class="nav-item" data-page="theory"><span class="ico">▤</span><span>缠论理论</span><em>Theory</em></a>
       <a class="nav-item" data-page="divination"><span class="ico">☯</span><span>算卦择时</span><em>I Ching</em></a>
       <a class="nav-item" data-page="backtest"><span class="ico">◱</span><span>因子回测</span><em>Backtest</em></a>
+      <a class="nav-item" data-page="quant"><span class="ico">◧</span><span>量化组合</span><em>Quant</em></a>
       <a class="nav-item" data-page="sectors"><span class="ico">▦</span><span>商品板块</span><em>Sectors</em></a>
       <a class="nav-item" data-page="game"><span class="ico">◈</span><span>缠关 · 108</span><em>Game</em></a>
       <a class="nav-item" data-page="sources"><span class="ico">⇄</span><span>数据源</span><em>Sources</em></a>
@@ -359,6 +360,46 @@
     </section>
 
     <!-- ================= 商品板块 ================= -->
+    <section class="page" id="page-quant">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">量化组合 · 绩效归因 <span class="tag-live">27 项组合层指标 · 借鉴 czsc / wbt 口径</span></h1>
+          <p class="page-desc">多个品种并行持仓 → 按权重聚合成组合日收益 → 算组合层绩效。这是<b>组合口径</b>（绝对收益/夏普/卡玛/胜率/波动/持仓占比），与「因子回测」的<b>交易口径</b>（逐笔撮合、资金曲线）互补，不重复。</p>
+        </div>
+        <div class="head-actions"><button class="btn sm primary" id="qRun">跑组合回测</button></div>
+      </div>
+
+      <div class="card bt-config">
+        <div class="bt-row">
+          <label>市场池 <select id="qMarkets" class="inp">
+            <option value="A">A股 49</option>
+            <option value="CNF">国内期货 35</option>
+            <option value="US">美股 24</option>
+            <option value="CR">加密 16</option>
+            <option value="HK">港股 12</option>
+            <option value="A,CNF">A股+期货</option>
+          </select></label>
+          <label>品种数上限 <input id="qMax" class="inp" type="number" value="12" min="2" max="40" style="width:64px"></label>
+          <label>级别 <select id="qPeriod" class="inp"><option value="day">日线</option><option value="60m">60分</option><option value="week">周线</option></select></label>
+          <label>笔标准 <select id="qBiStyle" class="inp"><option value="new">新笔</option><option value="old">老笔</option></select></label>
+          <label>单品种满仓 <select id="qMaxW" class="inp"><option value="1">100%</option><option value="0.5">50%</option></select></label>
+          <label>手续费bps <input id="qFee" class="inp" type="number" value="8" style="width:64px"></label>
+          <label>滑点bps <input id="qSlip" class="inp" type="number" value="4" style="width:64px"></label>
+        </div>
+        <div class="bt-row">
+          <label style="flex:1">自定义标的 <input id="qSymbols" class="inp" style="width:100%" placeholder="A:600519,CNF:RB0（留空用市场池）"></label>
+        </div>
+      </div>
+
+      <div id="qVerdict"></div>
+      <div class="q-metrics" id="qMetrics"></div>
+      <div class="bt-grid">
+        <div class="card"><div class="card-head"><h3>净值曲线</h3><span class="hint" id="qCurveHint"></span></div><div class="bt-curve"><canvas id="qCurve"></canvas></div></div>
+        <div class="card"><div class="card-head"><h3>口径说明</h3></div><div id="qGlossary" class="q-gloss"></div></div>
+      </div>
+      <div class="card"><div class="card-head"><h3>分品种表现</h3><span class="hint" id="qByHint"></span></div><div id="qBySymbol"></div></div>
+    </section>
+
     <section class="page" id="page-backtest">
       <div class="page-head">
         <div>
@@ -567,6 +608,7 @@
 <script src="/js/pages/theory.js?v=__ASSET_V__"></script>
 <script src="/js/pages/divination.js?v=__ASSET_V__"></script>
 <script src="/js/pages/backtest.js?v=__ASSET_V__"></script>
+<script src="/js/pages/quant.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sectors.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sources.js?v=__ASSET_V__"></script>
 <script src="/js/app.js?v=__ASSET_V__"></script>

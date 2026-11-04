@@ -1020,3 +1020,51 @@ test('防守模式：price 模式加回发生在价格修复之后', () => {
     if (cut) assert.ok(a.price >= cut.price * 0.999, `加回价 ${a.price} 应不低于减仓价 ${cut.price}`);
   }
 });
+
+/* ---------------- 量化组合：27 项绩效归因 ---------------- */
+test('量化指标：25 项组合层指标全部产出且类型正确', () => {
+  const Q = require('../server/lib/quantmetrics');
+  const daily = [];
+  const t0 = Date.UTC(2023, 0, 1);
+  for (let i = 0; i < 600; i++) daily.push({ date: t0 + i * 86400000, ret: Math.sin(i / 25) * 0.015 + 0.0004 });
+  const weights = [];
+  for (let i = 0; i < 600; i++) weights.push({ date: t0 + i * 86400000, symbol: 'X', weight: i % 120 < 70 ? 1 : 0, price: 100 });
+  const trades = Array.from({ length: 30 }, (_, i) => ({ netPct: Math.sin(i) * 4 }));
+  const r = Q.buildAll27({ daily, weights, trades });
+  assert.ok(r.ok, '指标计算应成功');
+  const want = ['绝对收益', '年化收益', '夏普比率', '卡玛比率', '新高占比', '单笔盈亏比', '单笔收益(BP)',
+    '日胜率', '周胜率', '月胜率', '季胜率', '年胜率', '最大回撤', '年化波动率', '下行波动率', '新高间隔',
+    '交易次数', '年化交易次数', '持仓K线数', '交易胜率', '多头占比', '空头占比', '品种数量', '开始日期', '结束日期'];
+  for (const k of want) {
+    assert.ok(k in r.metrics, `缺少指标：${k}`);
+    assert.notEqual(r.metrics[k], undefined, `${k} 不应为 undefined`);
+  }
+  assert.equal(want.length, 25, '指标应为 25 项');
+  // 方向标记
+  assert.ok(r.inverted.includes('最大回撤'), '最大回撤应标为越小越好');
+});
+
+test('量化指标：年化按 252 交易日折算', () => {
+  const Q = require('../server/lib/quantmetrics');
+  // 252 个交易日各 +0.1% → 年化应≈1.001^252-1 ≈ 28.6%
+  const daily = [];
+  for (let i = 0; i < 252; i++) daily.push({ date: Date.UTC(2023, 0, 1) + i * 86400000, ret: 0.001 });
+  const r = Q.fromDailyReturns(daily);
+  assert.ok(r.ok);
+  assert.ok(Math.abs(r.annualReturn - 28.6) < 2, `年化应≈28.6%，实际 ${r.annualReturn}%`);
+  assert.ok(Math.abs(r.absoluteReturn - 28.6) < 2, `绝对收益也应≈28.6%，实际 ${r.absoluteReturn}%`);
+});
+
+test('量化组合：组合收益按 Σ(收益×权重)/Σ|权重| 聚合', () => {
+  const P = require('../server/lib/portfolio');
+  // 构造两根 K 线的合成数据，权重恒为 1
+  const mk2 = (p0, p1) => [{ t: 1, o: p0, h: p0, l: p0, c: p0, v: 1 }, { t: 2, o: p1, h: p1, l: p1, c: p1, v: 1 }];
+  const syms = [
+    { market: 'A', code: 'X', bars: Array.from({ length: 200 }, (_, i) => ({ t: 1.6e12 + i * 86400000, o: 100, h: 100, l: 100, c: 100 * (1 + i * 0.001), v: 1 })) },
+  ];
+  const r = P.runPortfolio(syms, { warmup: 120 });
+  assert.ok(r.ok, '组合回测应成功');
+  assert.equal(r.symbols, 1);
+  assert.ok(r.metrics && r.metrics.绝对收益 !== undefined, '必须有组合指标');
+  assert.ok(Array.isArray(r.daily) && r.daily.length > 0, '必须有日收益序列');
+});
