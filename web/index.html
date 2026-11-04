@@ -8,6 +8,8 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>缠论工作站 · Chan Station</title>
 <link rel="stylesheet" href="/css/style.css?v=__ASSET_V__">
+  <link rel="stylesheet" href="/css/layout-fix.css?v=__ASSET_V__">
+  <link rel="stylesheet" href="/css/symbolpicker.css?v=__ASSET_V__">
 </head>
 <body>
 <div class="app">
@@ -386,9 +388,11 @@
           <label>手续费bps <input id="qFee" class="inp" type="number" value="8" style="width:64px"></label>
           <label>滑点bps <input id="qSlip" class="inp" type="number" value="4" style="width:64px"></label>
         </div>
-        <div class="bt-row">
-          <label style="flex:1">自定义标的 <input id="qSymbols" class="inp" style="width:100%" placeholder="A:600519,CNF:RB0（留空用市场池）"></label>
-        </div>
+      </div>
+      <div class="card" style="padding:12px 14px;margin-bottom:12px">
+        <div class="card-head" style="margin-bottom:8px"><h3>选标的</h3><span class="hint">点卡片多选 · 不选则用上方的市场池</span></div>
+        <div class="sp-search"><span class="ico">⌕</span><input id="qSearch" placeholder="搜名称、代码或行业，如 茅台 / NVDA / 银行"></div>
+        <div id="qPicker"></div>
       </div>
 
       <div id="qVerdict"></div>
@@ -443,7 +447,6 @@
       </div>
       <div class="card bt-config">
         <div class="bt-row">
-          <label>标的 <input id="btSymbols" class="inp" style="width:300px" placeholder="A:600519,US:NVDA（留空=用下面的市场池）"></label>
           <label>市场池 <select id="btMarkets" class="inp">
             <option value="">全部 136 个</option>
             <option value="A">A股 49</option>
@@ -485,6 +488,11 @@
         </div>
       </div>
 
+      <div class="card" style="padding:12px 14px;margin-bottom:12px">
+        <div class="card-head" style="margin-bottom:8px"><h3>选标的</h3><span class="hint">点卡片多选 · 不选则用上方的市场池</span></div>
+        <div class="sp-search"><span class="ico">⌕</span><input id="btSearch" placeholder="搜名称、代码或行业，如 茅台 / NVDA / 银行"></div>
+        <div id="btPicker"></div>
+      </div>
       <div id="btVerdict"></div>
       <div class="bt-grid">
         <div class="card"><div class="card-head"><h3>汇总指标</h3></div><div id="btStats" class="kv"></div></div>
@@ -607,6 +615,7 @@
 <script src="/js/pages/radar.js?v=__ASSET_V__"></script>
 <script src="/js/pages/theory.js?v=__ASSET_V__"></script>
 <script src="/js/pages/divination.js?v=__ASSET_V__"></script>
+<script src="/js/pages/symbolpicker.js?v=__ASSET_V__"></script>
 <script src="/js/pages/backtest.js?v=__ASSET_V__"></script>
 <script src="/js/pages/quant.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sectors.js?v=__ASSET_V__"></script>

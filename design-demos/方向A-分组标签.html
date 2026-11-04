@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>方向A · 分组标签式</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#2a3140;--line2:#364050;
+--text:#e6edf3;--muted:#9aa7b8;--faint:#6b7787;--good:#22b884;--bad:#f0544f;--gold:#d9a441;--accent:#4a9eff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,"PingFang SC",sans-serif;padding:28px}
+.wrap{max-width:980px;margin:0 auto}
+h2{font-size:15px;margin:0 0 4px}
+.sub{color:var(--faint);font-size:12px;margin-bottom:18px}
+/* 搜索框 */
+.search{position:relative;margin-bottom:14px}
+.search input{width:100%;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;
+padding:11px 14px 11px 38px;color:var(--text);font-size:14px;outline:none}
+.search input:focus{border-color:var(--accent)}
+.search .ico{position:absolute;left:13px;top:11px;color:var(--faint)}
+/* 已选标签 */
+.picked{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;min-height:34px;align-items:center}
+.picked .empty{color:var(--faint);font-size:12px}
+.tag{display:inline-flex;align-items:center;gap:6px;background:color-mix(in srgb,var(--accent) 16%,transparent);
+border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:8px;padding:5px 9px;font-size:12.5px}
+.tag .m{color:var(--accent);font-size:10.5px}
+.tag .x{cursor:pointer;color:var(--muted);font-size:15px;line-height:1}
+.tag .x:hover{color:var(--bad)}
+/* 分组 */
+.grp{border:1px solid var(--line);border-radius:11px;background:var(--panel);margin-bottom:10px;overflow:hidden}
+.grp-h{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;cursor:pointer;
+background:var(--panel2);border-bottom:1px solid var(--line)}
+.grp-h b{font-size:12.5px}
+.grp-h .cnt{color:var(--faint);font-size:11px}
+.grp-b{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;padding:11px 13px}
+.it{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;
+border:1px solid var(--line);background:var(--panel2);cursor:pointer;font-size:12px}
+.it:hover{border-color:var(--line2);background:#222a38}
+.it.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.it .nm{color:var(--text)}
+.it .cd{color:var(--faint);font-size:10.5px}
+.it.on .cd{color:var(--accent)}
+/* 底部操作 */
+.bar{display:flex;gap:9px;align-items:center;margin-top:16px}
+.btn{padding:9px 18px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);color:var(--text);cursor:pointer;font-size:13px}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:#1a1204;font-weight:600}
+.hint{color:var(--faint);font-size:11.5px;margin-left:auto}
+</style></head><body><div class="wrap">
+<h2>方向 A · 分组标签式</h2>
+<div class="sub">搜索 + 已选标签 + 市场折叠分组。结构最平实，信息密度最高。</div>
+
+<div class="search"><span class="ico">⌕</span><input placeholder="搜代码或名称，如 茅台 / NVDA / 螺纹"></div>
+
+<div class="picked">
+  <span class="tag"><span class="m">A股</span>贵州茅台 <span class="x">×</span></span>
+  <span class="tag"><span class="m">国内期货</span>螺纹钢主连 <span class="x">×</span></span>
+  <span class="tag"><span class="m">美股</span>英伟达 <span class="x">×</span></span>
+</div>
+
+<div class="grp">
+  <div class="grp-h"><b>A股</b><span class="cnt">已选 1 / 49</span></div>
+  <div class="grp-b">
+    <div class="it on"><span class="nm">贵州茅台</span><span class="cd">600519</span></div>
+    <div class="it"><span class="nm">五粮液</span><span class="cd">000858</span></div>
+    <div class="it"><span class="nm">宁德时代</span><span class="cd">300750</span></div>
+    <div class="it"><span class="nm">比亚迪</span><span class="cd">002594</span></div>
+    <div class="it"><span class="nm">招商银行</span><span class="cd">600036</span></div>
+  </div>
+</div>
+<div class="grp">
+  <div class="grp-h"><b>国内期货</b><span class="cnt">已选 1 / 35</span></div>
+</div>
+<div class="grp">
+  <div class="grp-h"><b>美股</b><span class="cnt">已选 1 / 24</span></div>
+</div>
+
+<div class="bar">
+  <button class="btn">清空</button>
+  <button class="btn">全选本组</button>
+  <button class="btn primary">跑回测 →</button>
+  <span class="hint">已选 3 个 · 预计 25 秒</span>
+</div>
+</div></body></html>

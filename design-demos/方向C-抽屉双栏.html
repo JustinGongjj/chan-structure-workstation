@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>方向C · 抽屉双栏式</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#2a3140;--line2:#364050;
+--text:#e6edf3;--muted:#9aa7b8;--faint:#6b7787;--good:#22b884;--bad:#f0544f;--gold:#d9a441;--accent:#4a9eff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,"PingFang SC",sans-serif;padding:28px}
+.wrap{max-width:1020px;margin:0 auto}
+h2{font-size:15px;margin:0 0 4px}
+.sub{color:var(--faint);font-size:12px;margin-bottom:18px}
+/* 触发区 */
+.trigger{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line2);
+border-radius:11px;padding:12px 15px;cursor:pointer;margin-bottom:14px}
+.trigger:hover{border-color:var(--gold)}
+.trigger .lbl{font-size:12px;color:var(--faint)}
+.trigger .val{font-size:13px}
+.trigger .badge{background:var(--gold);color:#1a1204;font-size:11px;font-weight:700;
+border-radius:6px;padding:2px 8px;margin-left:auto}
+/* 抽屉 */
+.drawer{display:grid;grid-template-columns:230px minmax(0,1fr);border:1px solid var(--line2);
+border-radius:12px;overflow:hidden;background:var(--panel);min-height:420px}
+/* 左：市场树 */
+.tree{background:var(--panel2);border-right:1px solid var(--line);padding:9px}
+.tree .node{padding:9px 11px;border-radius:8px;cursor:pointer;font-size:12.5px;
+display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.tree .node:hover{background:#222a38}
+.tree .node.on{background:color-mix(in srgb,var(--gold) 15%,transparent);color:var(--gold)}
+.tree .node .n{font-size:10.5px;color:var(--faint)}
+.tree .node.on .n{color:var(--gold)}
+.tree .sec{font-size:10px;color:var(--faint);padding:9px 11px 5px;letter-spacing:.06em}
+/* 右：列表 */
+.pane{display:flex;flex-direction:column;min-width:0}
+.pane-h{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+.pane-h input{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+padding:7px 11px;color:var(--text);font-size:12.5px;outline:none;min-width:0}
+.pane-h input:focus{border-color:var(--accent)}
+.pane-b{flex:1;overflow:auto;padding:8px}
+.row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12.5px}
+.row:hover{background:var(--panel2)}
+.row.on{background:color-mix(in srgb,var(--accent) 11%,transparent)}
+.row .bx{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--line2);flex:0 0 auto;
+display:flex;align-items:center;justify-content:center;font-size:10px;color:transparent}
+.row.on .bx{background:var(--accent);border-color:var(--accent);color:#06101f}
+.row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .cd{color:var(--faint);font-size:11px}
+/* 抽屉底 */
+.pane-f{border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;align-items:center;
+background:var(--panel2)}
+.btn{padding:7px 15px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);
+color:var(--text);cursor:pointer;font-size:12.5px}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:#1a1204;font-weight:600}
+.pane-f .sel{font-size:11.5px;color:var(--muted);margin-left:auto}
+</style></head><body><div class="wrap">
+<h2>方向 C · 抽屉双栏式</h2>
+<div class="sub">收起时只占一行，展开后左市场树 / 右列表。最省版面，适合塞进已有页面。</div>
+
+<div class="trigger">
+  <div><div class="lbl">回测标的</div><div class="val">贵州茅台、宁德时代、英伟达</div></div>
+  <span class="badge">3 / 136</span>
+</div>
+
+<div class="drawer">
+  <div class="tree">
+    <div class="sec">市场</div>
+    <div class="node on">A股 <span class="n">49</span></div>
+    <div class="node">国内期货 <span class="n">35</span></div>
+    <div class="node">美股 <span class="n">24</span></div>
+    <div class="node">加密 <span class="n">16</span></div>
+    <div class="node">港股 <span class="n">12</span></div>
+  </div>
+  <div class="pane">
+    <div class="pane-h"><input placeholder="在 A股 里搜名称或代码"></div>
+    <div class="pane-b">
+      <div class="row on"><span class="bx">✓</span><span class="nm">贵州茅台</span><span class="cd">600519</span></div>
+      <div class="row"><span class="bx">✓</span><span class="nm">五粮液</span><span class="cd">000858</span></div>
+      <div class="row on"><span class="bx">✓</span><span class="nm">宁德时代</span><span class="cd">300750</span></div>
+      <div class="row"><span class="bx">✓</span><span class="nm">比亚迪</span><span class="cd">002594</span></div>
+      <div class="row"><span class="bx">✓</span><span class="nm">招商银行</span><span class="cd">600036</span></div>
+      <div class="row"><span class="bx">✓</span><span class="nm">中国平安</span><span class="cd">601318</span></div>
+      <div class="row"><span class="bx">✓</span><span class="nm">工商银行</span><span class="cd">601398</span></div>
+    </div>
+    <div class="pane-f">
+      <button class="btn">全选</button>
+      <button class="btn">清空</button>
+      <button class="btn primary">确认</button>
+      <span class="sel">已选 3 个</span>
+    </div>
+  </div>
+</div>
+</div></body></html>

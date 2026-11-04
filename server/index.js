@@ -24,6 +24,7 @@ const OOS = require('./lib/oos');
 const ROLLWF = require('./lib/rollwf');
 const DEFENSE = require('./lib/defense');
 const PORTFOLIO = require('./lib/portfolio');
+const SYMNAMES = require('./lib/symbolnames');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -714,6 +715,16 @@ const routes = {
     return { ok: true, symbols: symbols.length, rows: out };
   },
   // 标的池信息
+  // 标的池（带中文名/行业/风格标签，供选标的器使用）
+  '/api/universe': async () => {
+    const items = SYMNAMES.universeWithNames(UNIV.flatUniverse());
+    const groups = {};
+    for (const it of items) {
+      if (!groups[it.market]) groups[it.market] = { market: it.market, label: it.marketLabel, items: [] };
+      groups[it.market].items.push(it);
+    }
+    return { ok: true, total: items.length, items, groups: Object.values(groups) };
+  },
   '/api/bt/universe': async () => ({ ok: true, stats: UNIV.universeStats(), items: UNIV.flatUniverse() }),
   // 样本外验证：训练期调参 → 验证期检验，判断是否过拟合
   '/api/bt/oos': async (u) => {

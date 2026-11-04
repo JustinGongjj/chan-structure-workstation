@@ -4,9 +4,10 @@
   const { U, API, App } = window;
   let curveChart = null;
   let lastBatch = null;
+  let picker = null;   // 选标的器实例
 
   const P = () => ({
-    symbols: (U.$('#btSymbols')?.value || '').trim(),
+    symbols: picker ? picker.getSelected().join(',') : '',
     markets: (U.$('#btMarkets')?.value || '').trim(),
     period: U.$('#btPeriod')?.value || 'day',
     entry: U.$('#btEntry')?.value || 'both',
@@ -51,6 +52,8 @@
       if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
       renderVerdict(null);
       renderStats(r);
+      window.__btEquity = r.equity;
+      window.__btBench = r.stats.benchmarkPct;
       drawCurve(r.equity, r.stats.benchmarkPct);
       renderTrades(r.trades, r.signals);
       U.$('#btRows').innerHTML = '';
@@ -427,12 +430,34 @@
         el.addEventListener('click', fn);
       }
     }
+    // 初始化选标的器（方向 B · 卡片选择式）
+    if (!picker && window.SymbolPicker) {
+      const host = U.$('#btPicker');
+      if (host) {
+        picker = window.SymbolPicker.create(host, { multiple: true, maxSelect: 40 });
+        picker.bindSearch(U.$('#btSearch'));
+        picker.load();
+      }
+    }
     const stats = U.$('#btStats');
     if (stats && !stats.innerHTML.trim()) {
       stats.innerHTML = '<div class="loading">点上方按钮开始回测</div>';
     }
     if (lastBatch) drawCurve(null);
   }
+
+  /*
+    窗口尺寸变化时重绘：canvas 的 width/height 是像素缓冲区，
+    不改它只改 CSS 会拉伸变形（实测拖到 1000px 时仍是 250px 缓冲）。
+  */
+  let _rzTimer = null;
+  window.addEventListener('resize', () => {
+    if (_rzTimer) clearTimeout(_rzTimer);
+    _rzTimer = setTimeout(() => {
+      if (!lastBatch && window.__btEquity) drawCurve(window.__btEquity, window.__btBench);
+      else drawCurve(null);
+    }, 150);
+  });
 
   window.PageBacktest = { renderPage, runSingle, runBatch, runSweep, runOos, runRolling, runDefense };
 })();

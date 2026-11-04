@@ -1,0 +1,89 @@
+/* ===================================================================
+   选标的器（方向 B · 卡片选择式）
+   =================================================================== */
+.sp-root { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* 搜索 */
+.sp-search { position: relative; }
+.sp-search input {
+  width: 100%; background: var(--panel2); border: 1px solid var(--line2);
+  border-radius: 10px; padding: 10px 13px 10px 36px; color: var(--text);
+  font-size: 13px; outline: none; box-sizing: border-box;
+}
+.sp-search input:focus { border-color: var(--accent, #4a9eff); }
+.sp-search .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 13px; pointer-events: none; }
+
+/* 市场横条 */
+.sp-mktabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.sp-mk {
+  position: relative; padding: 7px 14px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--panel2);
+  cursor: pointer; font-size: 12.5px; white-space: nowrap;
+  color: var(--muted); display: flex; align-items: center; gap: 6px;
+}
+.sp-mk:hover { border-color: var(--line2); color: var(--text); }
+.sp-mk.sp-on {
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border-color: var(--gold); color: var(--gold);
+}
+.sp-mk .sp-n { font-size: 10.5px; opacity: .65; }
+.sp-mk .sp-badge {
+  background: var(--gold); color: #1a1204; font-size: 10px; font-weight: 700;
+  border-radius: 5px; padding: 1px 5px;
+}
+
+/* 摘要 */
+.sp-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.sp-sm { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; min-width: 0; }
+.sp-sm .sp-k { font-size: 10.5px; color: var(--faint); }
+.sp-sm .sp-v { font-size: 17px; font-weight: 650; margin-top: 2px; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* 卡片网格 */
+.sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 8px; }
+.sp-card {
+  position: relative; text-align: left; background: var(--panel2);
+  border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px;
+  cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+  transition: border-color .12s, background .12s; min-width: 0;
+}
+.sp-card:hover { border-color: var(--line2); background: #222a38; }
+.sp-card.sp-on {
+  border-color: var(--accent, #4a9eff);
+  background: color-mix(in srgb, var(--accent, #4a9eff) 12%, transparent);
+}
+.sp-card .sp-chk {
+  position: absolute; top: 8px; right: 9px; width: 16px; height: 16px;
+  border-radius: 50%; border: 1.5px solid var(--line2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: transparent;
+}
+.sp-card.sp-on .sp-chk { background: var(--accent, #4a9eff); border-color: var(--accent, #4a9eff); color: #06101f; }
+.sp-name { font-size: 13px; font-weight: 600; color: var(--text); padding-right: 20px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-code { font-size: 10.5px; color: var(--faint); }
+.sp-meta { display: flex; gap: 5px; margin-top: 5px; align-items: center; min-width: 0; }
+.sp-sector { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-pill { font-size: 9.5px; padding: 1px 5px; border-radius: 4px; background: var(--panel); color: var(--faint); white-space: nowrap; }
+
+/* 底部条 */
+.sp-dock {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  border-top: 1px solid var(--line); padding-top: 10px; margin-top: 2px;
+}
+.sp-btn {
+  padding: 7px 15px; border-radius: 8px; border: 1px solid var(--line2);
+  background: var(--panel2); color: var(--text); cursor: pointer; font-size: 12.5px;
+}
+.sp-btn:hover { border-color: var(--gold); color: var(--gold); }
+.sp-info { font-size: 12px; color: var(--muted); margin-left: auto; text-align: right; line-height: 1.45; }
+.sp-info b { color: var(--text); }
+
+/* 空/加载 */
+.sp-empty, .sp-loading { color: var(--faint); font-size: 12.5px; padding: 18px 4px; text-align: center; }
+
+/* 窄屏：卡片两列、摘要两列 */
+@media (max-width: 760px) {
+  .sp-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .sp-summary { grid-template-columns: repeat(3, 1fr); }
+  .sp-info { margin-left: 0; width: 100%; text-align: left; }
+}

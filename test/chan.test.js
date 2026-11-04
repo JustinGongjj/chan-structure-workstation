@@ -1098,3 +1098,49 @@ test('量化组合：前端必须使用语义色而非涨跌色（A股 --up 是�
   assert.ok(!/var\(--up\)|var\(--down\)/.test(metricSection), '指标区不应使用涨跌色变量');
   assert.ok(/q-good/.test(metricSection) && /q-bad/.test(metricSection), '指标区应使用 q-good / q-bad');
 });
+
+/* ---------------- 选标的器 / 布局稳定性 ---------------- */
+test('标的池：136 个全部有中文名、行业标签、市场标签', () => {
+  const N = require('../server/lib/symbolnames');
+  const U = require('../server/lib/universe');
+  const list = N.universeWithNames(U.flatUniverse());
+  assert.equal(list.length, 136, '标的池应为 136 个');
+  for (const x of list) {
+    assert.ok(x.name && x.name !== x.code, `${x.key} 缺少中文名`);
+    assert.ok(x.sector, `${x.key} 缺少行业标签`);
+    assert.ok(x.marketLabel, `${x.key} 缺少市场标签`);
+    assert.equal(x.key, x.market + ':' + x.code, `${x.key} key 格式错误`);
+  }
+});
+
+test('标的池：nameOf 对期货走 sectors 目录，对 A股 走内置表', () => {
+  const N = require('../server/lib/symbolnames');
+  assert.equal(N.nameOf('A', '600519'), '贵州茅台');
+  assert.equal(N.nameOf('US', 'NVDA'), '英伟达');
+  assert.equal(N.nameOf('CR', 'BTCUSDT'), '比特币');
+  assert.equal(N.nameOf('HK', '00700'), '腾讯控股');
+  // 期货名来自 sectors 目录
+  const cnf = N.nameOf('CNF', 'RB0');
+  assert.ok(cnf && cnf !== 'RB0', 'RB0 应有中文名');
+  // 未知代码回退为代码本身
+  assert.equal(N.nameOf('A', '999999'), '999999');
+});
+
+test('布局：canvas 不允许固定像素宽度（否则拖动窗口会拉伸变形）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'web', 'css', 'layout-fix.css'), 'utf8');
+  // 必须有 canvas 宽度 100% 的规则
+  assert.ok(/\.bt-curve canvas\s*\{[^}]*width:\s*100%\s*!important/.test(css), 'canvas 需强制 100% 宽');
+  // 两列网格不允许写死 px px 形式（必须有一列用 minmax 或 0）
+  assert.ok(/grid-template-columns:\s*minmax\(/.test(css), 'bt-grid 应用 minmax 流式列宽');
+});
+
+test('布局：回测页与量化页都必须监听 resize 重绘 canvas', () => {
+  const fs = require('fs');
+  const path = require('path');
+  for (const f of ['backtest.js', 'quant.js']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', f), 'utf8');
+    assert.ok(/addEventListener\('resize'/.test(src), `${f} 缺少 resize 监听`);
+  }
+});

@@ -53,6 +53,8 @@
   const INV_GOOD = { 最大回撤: 15, 年化波动率: 15, 下行波动率: 10, 新高间隔: 60 };
   const INV_BAD = { 最大回撤: 30, 年化波动率: 30, 下行波动率: 20, 新高间隔: 120 };
 
+  let picker = null;
+
   const p = () => ({
     markets: U.$('#qMarkets')?.value || 'A',
     maxSymbols: Number(U.$('#qMax')?.value || 12),
@@ -212,12 +214,28 @@
   async function renderPage() {
     const btn = U.$('#qRun');
     if (btn && !btn._bound) { btn._bound = 1; btn.addEventListener('click', run); }
+    // 初始化选标的器（方向 B · 卡片选择式）
+    if (!picker && window.SymbolPicker) {
+      const host = U.$('#qPicker');
+      if (host) {
+        picker = window.SymbolPicker.create(host, { multiple: true, maxSelect: 40 });
+        picker.bindSearch(U.$('#qSearch'));
+        await picker.load();
+      }
+    }
     renderGlossary();
     if (!lastResult && !U.$('#qMetrics').innerHTML.trim()) {
       U.$('#qMetrics').innerHTML = '<div class="loading">点右上角「跑组合回测」开始</div>';
       drawCurve(null);
     }
   }
+
+  /* 窗口变化重绘净值曲线（canvas 缓冲不跟着变会拉伸变形） */
+  let _rzTimer = null;
+  window.addEventListener('resize', () => {
+    if (_rzTimer) clearTimeout(_rzTimer);
+    _rzTimer = setTimeout(() => drawCurve(lastResult ? lastResult.daily : null), 150);
+  });
 
   window.PageQuant = { renderPage, run };
 })();

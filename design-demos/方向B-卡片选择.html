@@ -1,0 +1,85 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>方向B · 卡片选择式</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#2a3140;--line2:#364050;
+--text:#e6edf3;--muted:#9aa7b8;--faint:#6b7787;--good:#22b884;--bad:#f0544f;--gold:#d9a441;--accent:#4a9eff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,"PingFang SC",sans-serif;padding:28px}
+.wrap{max-width:980px;margin:0 auto}
+h2{font-size:15px;margin:0 0 4px}
+.sub{color:var(--faint);font-size:12px;margin-bottom:18px}
+/* 市场横条 */
+.mktabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px}
+.mk{padding:8px 15px;border-radius:9px;border:1px solid var(--line);background:var(--panel);
+cursor:pointer;font-size:12.5px;white-space:nowrap;display:flex;gap:6px;align-items:center}
+.mk.on{background:color-mix(in srgb,var(--gold) 16%,transparent);border-color:var(--gold);color:var(--gold)}
+.mk .n{font-size:10.5px;opacity:.7}
+/* 状态摘要 */
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
+.sm{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.sm .k{font-size:10.5px;color:var(--faint)}
+.sm .v{font-size:17px;font-weight:650;margin-top:2px}
+/* 卡片网格 */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:9px;margin-bottom:16px}
+.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 13px;
+cursor:pointer;transition:border-color .12s,background .12s}
+.card:hover{border-color:var(--line2)}
+.card.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.card .name{font-size:13.5px;font-weight:600}
+.card .code{font-size:11px;color:var(--faint);margin-top:1px}
+.card .meta{display:flex;justify-content:space-between;margin-top:7px;font-size:11px;color:var(--muted)}
+.card .chk{position:absolute;top:9px;right:10px;width:17px;height:17px;border-radius:50%;
+border:1.5px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:11px;color:transparent}
+.card.on .chk{background:var(--accent);border-color:var(--accent);color:#06101f}
+.card .pill{display:inline-block;font-size:10px;padding:1px 6px;border-radius:5px;background:var(--panel2);
+color:var(--muted);margin-top:6px}
+/* 底部固定条 */
+.dock{position:sticky;bottom:0;background:color-mix(in srgb,var(--bg) 92%,transparent);
+backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:12px 0;margin-top:8px;
+display:flex;gap:10px;align-items:center}
+.btn{padding:9px 20px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);
+color:var(--text);cursor:pointer;font-size:13px}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:#1a1204;font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.dock .info{font-size:12px;color:var(--muted);margin-left:auto;text-align:right}
+.dock .info b{color:var(--text)}
+</style></head><body><div class="wrap">
+<h2>方向 B · 卡片选择式</h2>
+<div class="sub">市场横条 + 摘要卡 + 大卡片多选 + 底部固定条。最少记忆负担，最像购物车。</div>
+
+<div class="mktabs">
+  <div class="mk on">A股 <span class="n">49</span></div>
+  <div class="mk">国内期货 <span class="n">35</span></div>
+  <div class="mk">美股 <span class="n">24</span></div>
+  <div class="mk">加密 <span class="n">16</span></div>
+  <div class="mk">港股 <span class="n">12</span></div>
+</div>
+
+<div class="summary">
+  <div class="sm"><div class="k">已选标的</div><div class="v">3 个</div></div>
+  <div class="sm"><div class="k">覆盖市场</div><div class="v">3 个</div></div>
+  <div class="sm"><div class="k">预计耗时</div><div class="v">~25 秒</div></div>
+</div>
+
+<div class="grid">
+  <div class="card on"><div class="chk">✓</div><div class="name">贵州茅台</div><div class="code">600519 · A股</div>
+    <div class="meta"><span>白酒</span><span class="pill">蓝筹</span></div></div>
+  <div class="card"><div class="chk">✓</div><div class="name">五粮液</div><div class="code">000858 · A股</div>
+    <div class="meta"><span>白酒</span><span class="pill">蓝筹</span></div></div>
+  <div class="card on"><div class="chk">✓</div><div class="name">宁德时代</div><div class="code">300750 · A股</div>
+    <div class="meta"><span>新能源</span><span class="pill">成长</span></div></div>
+  <div class="card"><div class="chk">✓</div><div class="name">比亚迪</div><div class="code">002594 · A股</div>
+    <div class="meta"><span>汽车</span><span class="pill">成长</span></div></div>
+  <div class="card"><div class="chk">✓</div><div class="name">招商银行</div><div class="code">600036 · A股</div>
+    <div class="meta"><span>银行</span><span class="pill">蓝筹</span></div></div>
+  <div class="card on"><div class="chk">✓</div><div class="name">英伟达</div><div class="code">NVDA · 美股</div>
+    <div class="meta"><span>半导体</span><span class="pill">科技</span></div></div>
+</div>
+
+<div class="dock">
+  <button class="btn">清空</button>
+  <button class="btn">全选本市场</button>
+  <button class="btn primary">跑回测 →</button>
+  <div class="info">已选 <b>3</b> 个标的<br>贵州茅台 · 宁德时代 · 英伟达</div>
+</div>
+</div></body></html>

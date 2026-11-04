@@ -1,0 +1,74 @@
+/* ===================================================================
+   布局稳定性修正层
+   -------------------------------------------------------------------
+   解决"一拉动窗口就变形"：
+     ① 固定列宽 → 流式 + 最小宽度约束
+     ② canvas 不给固定 px，交给 devicePixelRatio 重绘
+     ③ 表格/卡片不允许把父容器撑破（min-width:0 是 flex/grid 子项的关键）
+     ④ 统一断点，避免各页面各自为政
+   =================================================================== */
+
+/* ① 所有 grid/flex 子项默认允许收缩（没有这条，长内容会撑破布局） */
+.page, .card, .bt-config, .bt-grid, .q-metrics, .q-group,
+.kv, .bt-tbl, .q-cells, .sector-grid > *, .bt-row > * { min-width: 0; }
+
+/* ② 回测/量化：统计 + 图表的两列布局改为流式 */
+.bt-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: start;
+}
+@media (max-width: 1180px) {
+  /* 窄屏改为上下堆叠，避免图表被压到 250px */
+  .bt-grid { grid-template-columns: minmax(0, 1fr); }
+  .bt-curve { height: 260px; }
+}
+
+/* ③ 图表容器：高度稳定，宽度永远跟随父级 */
+.bt-curve {
+  position: relative;
+  height: 240px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.bt-curve canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ④ 配置行：窄屏自动换行且每个控件不溢出 */
+.bt-row { row-gap: 8px; }
+.bt-row > label { flex: 0 1 auto; max-width: 100%; }
+.bt-row .inp { max-width: 100%; }
+@media (max-width: 900px) {
+  .bt-row { gap: 10px; }
+  .bt-row > label { flex: 1 1 160px; }
+  .bt-row > label[style*="flex:1"] { flex: 1 1 100%; }
+}
+
+/* ⑤ 指标卡：列宽下限降低，避免 4 列挤成 2 列时跳变 */
+.q-metrics { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+@media (max-width: 760px) {
+  .q-metrics { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ⑥ 表格：长表格横向滚动，不允许撑破卡片 */
+.bt-tbl, .bt-table { display: block; overflow-x: auto; white-space: nowrap; }
+@media (min-width: 900px) {
+  .bt-tbl, .bt-table { display: table; white-space: normal; }
+}
+
+/* ⑦ 页面容器：限制最大宽度并居中，超宽屏不让内容拉伸变形 */
+.page { max-width: 1720px; margin: 0 auto; }
+
+/* ⑧ 防止长文本/代码把卡片撑破 */
+.bt-hint, .q-gloss-row span, .hint, .nest-ds { overflow-wrap: anywhere; }
+
+/* ⑨ 两列卡片等高：让右侧卡片跟随左侧高度，避免空状态一大块留白 */
+.bt-grid { align-items: stretch; }
+.bt-grid > .card { height: 100%; display: flex; flex-direction: column; }
+.bt-grid > .card > .bt-curve { flex: 1; min-height: 200px; }
+.bt-grid > .card > .q-gloss { flex: 1; overflow: auto; }
