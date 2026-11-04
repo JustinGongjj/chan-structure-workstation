@@ -49,6 +49,10 @@
     },
   ];
 
+  /* 越小越好的指标的分档阈值（低于 good=绿，高于 bad=红，之间中性） */
+  const INV_GOOD = { 最大回撤: 15, 年化波动率: 15, 下行波动率: 10, 新高间隔: 60 };
+  const INV_BAD = { 最大回撤: 30, 年化波动率: 30, 下行波动率: 20, 新高间隔: 120 };
+
   const p = () => ({
     markets: U.$('#qMarkets')?.value || 'A',
     maxSymbols: Number(U.$('#qMax')?.value || 12),
@@ -82,11 +86,18 @@
     box.innerHTML = GROUPS.map((g) => {
       const cells = g.items.map(([name, unit, dir]) => {
         const v = metrics[name];
+        /*
+          好坏色与涨跌色解耦：A 股配色 --up 是红、--down 是绿，
+          直接用会语义混乱（回撤大反而绿）。用 q-good / q-bad。
+        */
         let cls = '';
-        if (typeof v === 'number' && dir !== 0) {
-          const good = dir > 0 ? v > 0 : true;
-          cls = v > 0 ? (inv.has(name) ? 'neg' : 'pos') : (inv.has(name) ? 'pos' : 'neg');
-          if (dir < 0 && v > 0) cls = 'neg';
+        if (typeof v === 'number' && dir !== 0 && !['多头占比', '空头占比', '品种数量', '交易次数', '持仓K线数', '年化交易次数'].includes(name)) {
+          if (inv.has(name)) {
+            // 越小越好的指标（回撤/波动/新高间隔）：0 最好，越大越差——不能简单用正负判断
+            cls = v <= INV_GOOD[name] ? 'q-good' : v >= INV_BAD[name] ? 'q-bad' : 'q-neutral';
+          } else {
+            cls = v > 0 ? 'q-good' : 'q-bad';
+          }
         }
         return `<div class="q-cell"><div class="q-k">${U.esc(name)}</div><div class="q-v ${cls}">${fmtVal(v, unit)}</div></div>`;
       }).join('');
@@ -152,7 +163,7 @@
   function renderBySymbol(list) {
     if (!list || !list.length) { U.$('#qBySymbol').innerHTML = '<div class="empty">无数据</div>'; return; }
     U.$('#qBySymbol').innerHTML = `<table class="bt-tbl"><thead><tr><th>品种</th><th>交易</th><th>胜率</th><th>平均单笔</th><th>合计</th></tr></thead><tbody>${
-      list.map((x) => `<tr><td>${U.esc(x.symbol)}</td><td>${x.trades}</td><td class="${x.tradeWinRate >= 50 ? 'up' : 'down'}">${x.tradeWinRate}%</td><td class="${x.avgNetPct > 0 ? 'up' : 'down'}">${x.avgNetPct}%</td><td class="${x.totalPct > 0 ? 'up' : 'down'}">${x.totalPct}%</td></tr>`).join('')
+      list.map((x) => `<tr><td>${U.esc(x.symbol)}</td><td>${x.trades}</td><td class="${x.tradeWinRate >= 50 ? 'q-good' : 'q-bad'}">${x.tradeWinRate}%</td><td class="${x.avgNetPct > 0 ? 'q-good' : 'q-bad'}">${x.avgNetPct}%</td><td class="${x.totalPct > 0 ? 'q-good' : 'q-bad'}">${x.totalPct}%</td></tr>`).join('')
     }</tbody></table>`;
     U.$('#qByHint').textContent = `${list.length} 个品种，按合计收益排序`;
   }

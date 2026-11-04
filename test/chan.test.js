@@ -1068,3 +1068,33 @@ test('量化组合：组合收益按 Σ(收益×权重)/Σ|权重| 聚合', () =
   assert.ok(r.metrics && r.metrics.绝对收益 !== undefined, '必须有组合指标');
   assert.ok(Array.isArray(r.daily) && r.daily.length > 0, '必须有日收益序列');
 });
+
+/* ---------------- 量化指标配色语义 ---------------- */
+test('量化配色：越小越好的指标按分档着色，不能用正负判断', () => {
+  // 复刻前端逻辑：inverted 指标按阈值分档，其余按正负
+  const INV = new Set(['最大回撤', '年化波动率', '下行波动率', '新高间隔']);
+  const GOOD = { 最大回撤: 15, 年化波动率: 15, 下行波动率: 10, 新高间隔: 60 };
+  const BAD = { 最大回撤: 30, 年化波动率: 30, 下行波动率: 20, 新高间隔: 120 };
+  const cls = (k, v) => {
+    if (INV.has(k)) return v <= GOOD[k] ? 'q-good' : v >= BAD[k] ? 'q-bad' : 'q-neutral';
+    return v > 0 ? 'q-good' : 'q-bad';
+  };
+  // 回撤 12% 很小 → 绿；39% 很大 → 红（关键：39 是正数，若用正负判断会错判成绿）
+  assert.equal(cls('最大回撤', 12), 'q-good', '小回撤应标绿');
+  assert.equal(cls('最大回撤', 39.44), 'q-bad', '大回撤应标红（不能因是正数就标绿）');
+  assert.equal(cls('最大回撤', 22), 'q-neutral', '中等回撤应中性');
+  assert.equal(cls('新高间隔', 192), 'q-bad', '长新高间隔应标红');
+  // 夏普按正负
+  assert.equal(cls('夏普比率', -0.34), 'q-bad');
+  assert.equal(cls('夏普比率', 1.2), 'q-good');
+});
+
+test('量化组合：前端必须使用语义色而非涨跌色（A股 --up 是红，会误导）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const q = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', 'quant.js'), 'utf8');
+  // 量化页不应在指标/品种着色里用 var(--up)/var(--down)（那是涨跌语义）
+  const metricSection = q.slice(q.indexOf('function renderMetrics'), q.indexOf('function renderGlossary'));
+  assert.ok(!/var\(--up\)|var\(--down\)/.test(metricSection), '指标区不应使用涨跌色变量');
+  assert.ok(/q-good/.test(metricSection) && /q-bad/.test(metricSection), '指标区应使用 q-good / q-bad');
+});

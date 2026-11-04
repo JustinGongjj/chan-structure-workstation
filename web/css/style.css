@@ -918,3 +918,8 @@ button{font-family:inherit}
 .q-gloss-row{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid var(--line)}
 .q-gloss-row b{color:var(--gold);min-width:64px;font-weight:600}
 .q-gloss-row span{color:var(--muted)}
+
+/* 量化指标好坏色：与涨跌色解耦（A股 --up 是红、--down 是绿，直接用会语义混乱） */
+.q-good{color:#22b884}
+.q-bad{color:#f0544f}
+.q-neutral{color:var(--text)}

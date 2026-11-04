@@ -254,6 +254,8 @@
     setTimeout(() => {
       const b = $('#openSectors');
       if (b) b.addEventListener('click', openSectors);
+      const q = $('#openQuant');
+      if (q) q.addEventListener('click', openQuant);
     }, 0);
 
     const idx = ov.indices
@@ -292,6 +294,7 @@
       <div class="page-sub">六市场自选池 · 点击任意标的进入结构分析</div>
       <div class="section" style="display:flex;gap:8px">
         <button class="btn button" id="openSectors" style="flex:1">▦ 商品板块</button>
+        <button class="btn button" id="openQuant" style="flex:1">◧ 量化组合</button>
         <a class="btn button" id="openGame" href="/game/" style="flex:1;text-align:center">◈ 缠关 108</a>
       </div>
       <div class="pulse-grid section">${pulseCards}</div>
@@ -381,6 +384,156 @@
 
   /* ---------------- 雷达 ---------------- */
   /* ---------- 商品板块（底部弹层） ---------- */
+  /*
+    量化组合弹层（手机版）
+    27 项指标在小屏上不能平铺，按 5 组折叠：
+      核心（收益/夏普/卡玛/回撤）默认展开，其余分组可点开。
+    手机端默认品种数更少（6 个），因为组合回测耗时与品种数成正比。
+  */
+  const QUANT_GROUPS = [
+    {
+      key: 'core', title: '核心', open: true,
+      items: [['绝对收益', '%'], ['年化收益', '%'], ['夏普比率', ''], ['卡玛比率', ''], ['最大回撤', '%'], ['新高间隔', '日']],
+    },
+    {
+      key: 'risk', title: '波动与回撤', open: false,
+      items: [['年化波动率', '%'], ['下行波动率', '%'], ['新高占比', '%']],
+    },
+    {
+      key: 'trade', title: '交易', open: false,
+      items: [['交易次数', '次'], ['年化交易次数', '次/年'], ['交易胜率', '%'], ['单笔盈亏比', ''], ['单笔收益(BP)', 'BP'], ['持仓K线数', '根']],
+    },
+    {
+      key: 'win', title: '周期胜率', open: false,
+      items: [['日胜率', '%'], ['周胜率', '%'], ['月胜率', '%'], ['季胜率', '%'], ['年胜率', '%']],
+    },
+    {
+      key: 'pos', title: '持仓与范围', open: false,
+      items: [['多头占比', '%'], ['空头占比', '%'], ['品种数量', '个']],
+    },
+  ];
+  const QUANT_INV = new Set(['最大回撤', '年化波动率', '下行波动率', '新高间隔']);
+  /* 越小越好的指标分档：低于 good=绿，高于 bad=红，之间中性 */
+  const INV_GOOD = { 最大回撤: 15, 年化波动率: 15, 下行波动率: 10, 新高间隔: 60 };
+  const INV_BAD = { 最大回撤: 30, 年化波动率: 30, 下行波动率: 20, 新高间隔: 120 };
+  const quantOpen = new Set(['core']);
+
+  function fmtQ(v, unit) {
+    if (v == null) return '—';
+    if (typeof v === 'number') {
+      if (['日', '次', '次/年', '根', '个'].includes(unit)) return String(Math.round(v));
+      return (Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2)) + unit;
+    }
+    return String(v);
+  }
+
+  function quantMetricsHtml(m) {
+    return QUANT_GROUPS.map((g) => {
+      const open = quantOpen.has(g.key);
+      const cells = g.items.map(([k, unit]) => {
+        const v = m[k];
+        /*
+          好坏色与涨跌色解耦：A 股配色里 --up 是红、--down 是绿，
+          用它们表达"指标好坏"会误导（回撤 39% 反而显示绿色）。
+          这里用 q-good / q-bad 两个独立语义色。
+        */
+        let cls = '';
+        if (typeof v === 'number' && !['空头占比', '品种数量', '交易次数', '持仓K线数', '年化交易次数', '多头占比'].includes(k)) {
+          if (QUANT_INV.has(k)) {
+            cls = v <= INV_GOOD[k] ? 'q-good' : v >= INV_BAD[k] ? 'q-bad' : 'q-neutral';
+          } else {
+            cls = v > 0 ? 'q-good' : 'q-bad';
+          }
+        }
+        return `<div style="flex:1;min-width:88px"><div style="font-size:10.5px;color:var(--faint)">${U.esc(k)}</div>
+          <div class="${cls}" style="font-size:15px;font-weight:650;font-variant-numeric:tabular-nums">${fmtQ(v, unit)}</div></div>`;
+      }).join('');
+      return `<div class="card" style="margin-bottom:8px;padding:9px 11px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${open ? 7 : 0}px">
+          <b style="font-size:12px;color:var(--gold)">${U.esc(g.title)}</b>
+          <button class="chip" data-qg="${g.key}" style="font-size:10px;padding:2px 8px">${open ? '收起' : '展开'}</button>
+        </div>
+        ${open ? `<div style="display:flex;gap:10px;flex-wrap:wrap">${cells}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function openQuant() {
+    openSheet(
+      '量化组合 · 绩效归因',
+      `<div class="seg segmented" id="qMk" style="overflow-x:auto;flex-wrap:nowrap">
+         <button class="button sq active" data-mk="CNF">期货</button>
+         <button class="button sq" data-mk="A">A股</button>
+         <button class="button sq" data-mk="US">美股</button>
+         <button class="button sq" data-mk="CR">加密</button>
+         <button class="button sq" data-mk="HK">港股</button>
+       </div>
+       <div class="hint" style="margin:6px 2px 8px;font-size:11px">27 项组合层指标 · 年化按 252 交易日 · 卡玛=年化÷|最大回撤|</div>
+       <div id="qVerdictM"></div>
+       <div id="qBodyM"><div class="empty">点「开始回测」加载</div></div>
+       <div id="qByM"></div>
+       <button class="btn button" id="qRunM" style="width:100%;margin-top:8px">开始回测</button>`,
+      () => {
+        let market = 'CNF';
+        let data = null;
+
+        const render = () => {
+          if (!data) return;
+          const m = data.metrics;
+          const pos = m.年化收益 > 0;
+          const sh = m.夏普比率;
+          $('#qVerdictM').innerHTML = `<div class="card" style="margin-bottom:8px;padding:10px 12px;border-left:3px solid ${pos ? 'var(--up)' : 'var(--down)'}">
+            <div style="font-size:12.5px;font-weight:600">${pos ? '正收益' : '负收益'} · 夏普 ${sh}</div>
+            <div class="hint" style="font-size:11px;margin-top:3px">${sh > 1 ? '风险调整后表现不错' : '夏普 ≤ 1，风险未得到足够补偿'} · ${m.卡玛比率 > 0.5 ? '回撤控制合理' : '卡玛偏低'} · 年化交易 ${Math.round(m.年化交易次数)} 次</div>
+          </div>`;
+          $('#qBodyM').innerHTML = quantMetricsHtml(m);
+          U.$$('#qBodyM [data-qg]').forEach((b) =>
+            b.addEventListener('click', () => {
+              const k = b.dataset.qg;
+              if (quantOpen.has(k)) quantOpen.delete(k); else quantOpen.add(k);
+              render();
+            })
+          );
+          const rows = (data.bySymbol || []).slice(0, 8);
+          $('#qByM').innerHTML = rows.length
+            ? `<div class="card" style="padding:9px 11px"><b style="font-size:12px;color:var(--gold)">分品种</b>
+               ${rows.map((x) => `<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line)">
+                 <span>${U.esc(x.symbol)}</span>
+                 <span class="${x.totalPct > 0 ? 'q-good' : 'q-bad'}">${x.totalPct}%（${x.trades}笔 胜率${x.tradeWinRate}%）</span>
+               </div>`).join('')}</div>`
+            : '';
+        };
+
+        U.$$('#qMk .button').forEach((b) =>
+          b.addEventListener('click', () => {
+            market = b.dataset.mk;
+            U.$$('#qMk .button').forEach((x) => x.classList.toggle('active', x === b));
+            data = null;
+            $('#qBodyM').innerHTML = '<div class="empty">点「开始回测」加载</div>';
+            $('#qVerdictM').innerHTML = '';
+            $('#qByM').innerHTML = '';
+          })
+        );
+
+        const runBtn = $('#qRunM');
+        if (runBtn) runBtn.addEventListener('click', async () => {
+          runBtn.disabled = true;
+          runBtn.textContent = '回测中（约 30-90 秒）…';
+          try {
+            data = await API.get(`/api/quant/portfolio?markets=${market}&maxSymbols=6&period=day`);
+            if (!data.ok) { $('#qBodyM').innerHTML = `<div class="empty">${U.esc(data.error || '失败')}</div>`; return; }
+            render();
+          } catch (e) {
+            $('#qBodyM').innerHTML = `<div class="empty">${U.esc(e.message)}</div>`;
+          } finally {
+            runBtn.disabled = false;
+            runBtn.textContent = '重新回测';
+          }
+        });
+      }
+    );
+  }
+
   async function openSectors() {
     let catalog = [];
     try {

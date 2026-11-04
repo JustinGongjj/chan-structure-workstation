@@ -346,3 +346,8 @@ display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
   font-size:12.5px;
   white-space:nowrap;
 }
+
+/* 量化指标好坏色（与涨跌色解耦） */
+.q-good{color:#22b884}
+.q-bad{color:#f0544f}
+.q-neutral{color:var(--text)}
