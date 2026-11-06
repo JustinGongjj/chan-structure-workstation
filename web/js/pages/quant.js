@@ -302,6 +302,115 @@
     <div class="cmp-dims">${dimRows}</div>`;
   }
 
+  /*
+    ---------- 历史趋势图 ----------
+    用 canvas 画分数曲线。设计要点：
+      · 分数范围固定 0-100（而不是自适应）——否则 51→54 会被拉成剧烈波动
+      · 标出 60/40 两条评级线，让"边缘/可用"有视觉参照
+      · 单点也画（画成一个圆点 + 说明），不显示空白
+      · 全部持平时提示"无变化"
+  */
+  function drawTrend(canvas, points) {
+    if (!canvas || !points || !points.length) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 620;
+    const h = canvas.clientHeight || 150;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+
+    const padL = 30, padR = 12, padT = 12, padB = 20;
+    const iw = w - padL - padR;
+    const ih = h - padT - padB;
+    const xOf = (i) => padL + (points.length === 1 ? iw / 2 : (i / (points.length - 1)) * iw);
+
+    /*
+      纵轴口径：固定 0-100 会让 40→48 压成一条横线（实测踩到），
+      纯自适应又会把 1 分波动画成悬崖。
+      折中：至少显示 30 分的窗口，且以数据范围为中心，再夹在 0-100 内。
+    */
+    const vals = points.map((pt) => pt.score);
+    const lo0 = Math.min(...vals), hi0 = Math.max(...vals);
+    const MIN_SPAN = 30;
+    let yLo = lo0, yHi = hi0;
+    if (yHi - yLo < MIN_SPAN) {
+      const mid = (yHi + yLo) / 2;
+      yLo = mid - MIN_SPAN / 2;
+      yHi = mid + MIN_SPAN / 2;
+    } else {
+      const pad = (yHi - yLo) * 0.12;
+      yLo -= pad; yHi += pad;
+    }
+    yLo = Math.max(0, yLo);
+    yHi = Math.min(100, yHi);
+    const span = Math.max(1, yHi - yLo);
+    const yOf = (v) => padT + (1 - (Math.max(yLo, Math.min(yHi, v)) - yLo) / span) * ih;
+
+    /* 评级参考线：只画落在当前窗口内的 60 / 40 */
+    const lines = [[60, 'rgba(34,184,132,.35)', '60'], [40, 'rgba(217,164,65,.35)', '40']]
+      .filter(([v]) => v >= yLo && v <= yHi);
+    g.font = '9px system-ui,sans-serif';
+    for (const [v, col, lab] of lines) {
+      const y = yOf(v);
+      g.strokeStyle = col;
+      g.setLineDash([3, 3]);
+      g.beginPath(); g.moveTo(padL, y); g.lineTo(w - padR, y); g.stroke();
+      g.setLineDash([]);
+      g.fillStyle = 'rgba(150,160,180,.55)';
+      g.fillText(lab, 4, y + 3);
+    }
+
+    /* 折线 + 面积 */
+    const first = points[0].score;
+    const last = points[points.length - 1].score;
+    const up = last >= first;
+    const col = up ? '#22b884' : '#f0544f';
+
+    if (points.length > 1) {
+      g.strokeStyle = col;
+      g.lineWidth = 1.8;
+      g.beginPath();
+      points.forEach((pt, i) => {
+        const x = xOf(i), y = yOf(pt.score);
+        i ? g.lineTo(x, y) : g.moveTo(x, y);
+      });
+      g.stroke();
+      g.lineTo(xOf(points.length - 1), padT + ih);
+      g.lineTo(xOf(0), padT + ih);
+      g.closePath();
+      g.fillStyle = up ? 'rgba(34,184,132,.13)' : 'rgba(240,84,79,.13)';
+      g.fill();
+    }
+
+    /* 数据点 */
+    points.forEach((pt, i) => {
+      const x = xOf(i), y = yOf(pt.score);
+      g.fillStyle = col;
+      g.beginPath(); g.arc(x, y, points.length === 1 ? 4 : 2.4, 0, Math.PI * 2); g.fill();
+    });
+
+    /* 末点分数 */
+    const lx = xOf(points.length - 1), ly = yOf(last);
+    g.fillStyle = col;
+    g.font = '600 11px system-ui,sans-serif';
+    g.textAlign = 'right';
+    g.fillText(String(last), Math.min(w - padR, lx + 22), Math.max(11, ly - 6));
+    g.textAlign = 'left';
+
+    /* 首末时间 */
+    if (points.length > 1) {
+      const fd = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}`; };
+      g.fillStyle = 'rgba(150,160,180,.5)';
+      g.font = '9px system-ui,sans-serif';
+      g.fillText(fd(points[0].at), padL, h - 6);
+      g.textAlign = 'right';
+      g.fillText(fd(points[points.length - 1].at), w - padR, h - 6);
+      g.textAlign = 'left';
+    }
+  }
+
   /* ---------- 历史存档 ---------- */
   async function openHistory() {
     const box = U.$('#qHistoryBox');
@@ -315,20 +424,74 @@
         box.innerHTML = '<div class="card" style="padding:12px 14px;margin-bottom:12px"><div class="empty">还没有存档。每跑一次回测会自动记一条。</div></div>';
         return;
       }
+      const multi = items.filter((x) => (x.points || []).length >= 2);
       const rows = items.map((x) => {
         const d = new Date(x.lastAt);
         const ts = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         const trend = x.trend == null ? '' : `<span class="${x.trend > 0 ? 'q-good' : x.trend < 0 ? 'q-bad' : ''}">${x.trend > 0 ? '+' : ''}${x.trend}</span>`;
-        return `<div class="hist-row">
+        const pts = x.points || [];
+        const spark = pts.length >= 2
+          ? `<canvas class="hist-spark" data-key="${U.esc(x.key)}" style="width:88px;height:26px"></canvas>`
+          : '';
+        return `<div class="hist-row${pts.length >= 2 ? ' hist-click' : ''}" data-key="${U.esc(x.key)}">
           <div class="hist-lb">${U.esc(x.label || x.key)}</div>
           <div class="hist-meta">${ts} · ${x.runs} 次${trend ? ' · 较首次 ' + trend : ''}</div>
           <div class="hist-sc">${x.lastScore != null ? x.lastScore : '—'}</div>
+          <div class="hist-sp">${spark}</div>
         </div>`;
       }).join('');
-      box.innerHTML = `<div class="card" style="padding:12px 14px;margin-bottom:12px">
+
+      /* 顶部大趋势图：取"有多次记录"的第一组；没有则提示跑两次才有趋势 */
+      const focus = multi[0] || null;
+      const trendBlock = focus
+        ? `<div class="card" style="padding:12px 14px;margin-bottom:12px">
+             <div class="card-head" style="margin-bottom:6px">
+               <h3>分数趋势</h3>
+               <span class="hint">${U.esc(focus.label)} · ${focus.points.length} 次</span>
+             </div>
+             <div class="hist-trend"><canvas id="histTrend"></canvas></div>
+             <div class="hist-trend-note">${(() => {
+               const ps = focus.points.map((p) => p.score);
+               const d = ps[ps.length - 1] - ps[0];
+               const best = Math.max(...ps), worst = Math.min(...ps);
+               return `首次 ${ps[0]} → 最新 ${ps[ps.length - 1]}（${d > 0 ? '+' : ''}${d}）· 最高 ${best} · 最低 ${worst}`;
+             })()}</div>
+           </div>`
+        : `<div class="card" style="padding:12px 14px;margin-bottom:12px">
+             <div class="card-head" style="margin-bottom:6px"><h3>分数趋势</h3></div>
+             <div class="empty">同一套参数跑两次以上，这里就会出现分数曲线</div>
+           </div>`;
+
+      box.innerHTML = trendBlock + `<div class="card" style="padding:12px 14px;margin-bottom:12px">
         <div class="card-head" style="margin-bottom:8px"><h3>历史存档</h3><span class="hint">${items.length} 套配置 · 每跑一次自动记录</span></div>
         <div class="hist-list">${rows}</div>
       </div>`;
+
+      /* 画大趋势图 */
+      if (focus) {
+        const cv = U.$('#histTrend');
+        if (cv) drawTrend(cv, focus.points);
+      }
+      /* 画每行的小趋势 */
+      U.$$('.hist-spark').forEach((cv) => {
+        const it = items.find((x) => x.key === cv.dataset.key);
+        if (it) drawTrend(cv, it.points || []);
+      });
+      /* 点击某行 → 大图切到那一组 */
+      U.$$('.hist-click').forEach((row) => {
+        row.addEventListener('click', () => {
+          const it = items.find((x) => x.key === row.dataset.key);
+          if (!it || !(it.points || []).length) return;
+          const cv = U.$('#histTrend');
+          if (cv) drawTrend(cv, it.points);
+          const head = box.querySelector('.hist-trend-note');
+          if (head) {
+            const ys = it.points.map((p) => p.score);
+            const d = ys[ys.length - 1] - ys[0];
+            head.textContent = `首次 ${ys[0]} → 最新 ${ys[ys.length - 1]}（${d > 0 ? '+' : ''}${d}）· 最高 ${Math.max(...ys)} · 最低 ${Math.min(...ys)}`;
+          }
+        });
+      });
     } catch (e) {
       box.innerHTML = `<div class="card" style="padding:12px 14px"><div class="empty">${U.esc(e.message)}</div></div>`;
     }

@@ -61,25 +61,42 @@ function makeStore(file) {
     fs.renameSync(tmp, file);
   }
 
-  /** 生成指纹：只含影响回测结果的参数 */
+  /*
+    生成指纹：只含影响回测结果的参数，且**先归一化默认值**。
+    为什么必须先归一化：同一组参数，一次带 entry:'both'、一次不带，
+    指纹就不同 → 历史被拆成两组，趋势图永远是单点。
+    （实测踩到：手工造的数据与真实调用分成两组，各 1 条）
+    归一化规则：所有字段填上默认值，数值统一转 Number，空串统一为 ''。
+  */
+  function normalize(input) {
+    const n = (v, d) => {
+      if (v === undefined || v === null || v === '') return d;
+      const x = Number(v);
+      return Number.isFinite(x) ? x : d;
+    };
+    const s = (v, d) => (v === undefined || v === null ? d : String(v));
+    return {
+      mk: s(input.markets, ''),
+      sym: s(input.symbols, ''),
+      mc: input.market && input.code ? input.market.toUpperCase() + ':' + String(input.code) : '',
+      p: s(input.period, 'day'),
+      e: s(input.entry, 'both'),
+      sig: s(input.signalTypes, ''),
+      st: n(input.stopPct, 0),
+      tk: n(input.takePct, 0),
+      bs: s(input.biStyle, 'new'),
+      ex: s(input.exitOn, 'signal'),
+      mtf: s(input.mtfMode, ''),
+      rm: s(input.restoreMode, 'price'),
+      mw: n(input.maxWeightPerSymbol, 1),
+      fee: n(input.feeBps, 8),
+      slip: n(input.slipBps, 4),
+      ms: n(input.maxSymbols, 0),
+    };
+  }
+
   function fingerprint(kind, input) {
-    const key = JSON.stringify({
-      k: kind,
-      s: input.symbols || '',
-      mk: input.markets || '',
-      p: input.period || 'day',
-      e: input.entry || '',
-      sig: input.signalTypes || '',
-      st: input.stopPct || 0,
-      tk: input.takePct || 0,
-      bs: input.biStyle || 'new',
-      ex: input.exitOn || '',
-      mtf: input.mtfMode || '',
-      ds: input.defSell || '',
-      rm: input.restoreMode || '',
-      n: input.maxSymbols || input.limit || 0,
-      fm: input.formula || '',
-    });
+    const key = JSON.stringify({ k: kind, ...normalize(input) });
     return crypto.createHash('sha1').update(key).digest('hex').slice(0, 12);
   }
 
@@ -177,6 +194,8 @@ function makeStore(file) {
         lastAt: cur ? cur.at : null,
         lastScore: cur ? cur.score : null,
         lastGrade: cur ? cur.grade : null,
+        /* 趋势图用：完整分数序列（时间 + 分数），最多 30 点 */
+        points: es.map((e) => ({ at: e.at, score: e.score })).filter((pt) => pt.score != null),
         /* 首末对比：这笔配置从第一次跑到现在变了多少 */
         trend: es.length >= 2 && es[0].score != null && cur.score != null
           ? cur.score - es[0].score : null,
@@ -199,7 +218,7 @@ function makeStore(file) {
     save();
   }
 
-  return { record, series, listAll, remove, clear, fingerprint, _load: load };
+  return { record, series, listAll, remove, clear, fingerprint, normalize, _load: load };
 }
 
 module.exports = { makeStore, MAX_ENTRIES_PER_KEY, MAX_KEYS };

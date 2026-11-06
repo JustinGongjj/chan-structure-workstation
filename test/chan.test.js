@@ -1300,3 +1300,73 @@ test('对比：两种回测类型的可调参数集不同', () => {
   assert.ok(!/takePct/.test(seg), '量化对比不应提供 takePct');
   assert.ok(/biStyle/.test(seg), '应提供换笔标准');
 });
+
+/* ---------------- 历史趋势图 ---------------- */
+test('历史指纹：归一化后，带默认值与不带默认值得同一指纹（趋势图的前提）', () => {
+  const H = require('../server/lib/history');
+  const s = H.makeStore('/tmp/hist-norm-' + Date.now() + '.json');
+  const bare = { market: 'A', code: '600519', period: 'day' };
+  const full = {
+    market: 'A', code: '600519', period: 'day',
+    entry: 'both', exitOn: 'signal', stopPct: 0, takePct: 0,
+    feeBps: 8, slipBps: 4, biStyle: 'new', mtfMode: '',
+  };
+  assert.equal(s.fingerprint('single', bare), s.fingerprint('single', full),
+    '带默认值与不带默认值必须同指纹，否则每次跑都新建一组，趋势图永远单点');
+  // 真实差异仍要区分
+  assert.notEqual(s.fingerprint('single', bare), s.fingerprint('single', { ...bare, stopPct: 8 }),
+    '改了止损必须区分');
+  assert.notEqual(s.fingerprint('single', bare), s.fingerprint('single', { ...bare, biStyle: 'old' }),
+    '改了笔标准必须区分');
+});
+
+test('历史：同一指纹多次记录产出可画趋势的序列', () => {
+  const H = require('../server/lib/history');
+  const fs = require('fs');
+  const f = '/tmp/hist-series-' + Date.now() + '.json';
+  const s = H.makeStore(f);
+  const inp = { market: 'A', code: '600519', period: 'day' };
+  const scores = [30, 34, 38, 42, 45, 48];
+  for (const sc of scores) {
+    s.record('single', inp, { score: { total: sc, grade: { text: '边缘' } } });
+    const st = s._load();
+    const k = Object.keys(st.kinds)[0];
+    // 拉开时间，避免被"1 秒内合并"吃掉
+    st.kinds[k].entries[st.kinds[k].entries.length - 1].at = Date.now() - (scores.length - scores.indexOf(sc)) * 86400000;
+  }
+  const all = s.listAll();
+  assert.equal(all.length, 1, '同一组参数应只有 1 组');
+  assert.equal(all[0].points.length, scores.length, '点数应等于记录次数');
+  const got = all[0].points.map((p) => p.score);
+  assert.deepEqual(got, scores, '序列应与记录顺序一致');
+  assert.equal(all[0].points[all[0].points.length - 1].score, 48, '最新一条应为最后记录的分');
+  fs.unlinkSync(f);
+});
+
+test('趋势图：纵轴至少 30 分窗口（避免小波动被压成横线）', () => {
+  // 复刻前端轴口径逻辑
+  const calc = (vals) => {
+    const lo0 = Math.min(...vals), hi0 = Math.max(...vals);
+    const MIN_SPAN = 30;
+    let yLo = lo0, yHi = hi0;
+    if (yHi - yLo < MIN_SPAN) {
+      const mid = (yHi + yLo) / 2;
+      yLo = mid - MIN_SPAN / 2; yHi = mid + MIN_SPAN / 2;
+    } else {
+      const pad = (yHi - yLo) * 0.12;
+      yLo -= pad; yHi += pad;
+    }
+    return { yLo: Math.max(0, yLo), yHi: Math.min(100, yHi) };
+  };
+  // 40→48 只有 8 分差，窗口应撑到 30 分
+  const a = calc([40, 44, 48]);
+  assert.ok(a.yHi - a.yLo >= 29.9, `窗口应 ≥30，实际 ${(a.yHi - a.yLo).toFixed(1)}`);
+  // 大范围数据不应被强行撑大
+  const b = calc([10, 90]);
+  assert.ok(b.yHi - b.yLo > 80, '大范围应保持');
+  // 不越界
+  const c = calc([98, 100]);
+  assert.ok(c.yHi <= 100, '上界不应超 100');
+  const d = calc([0, 2]);
+  assert.ok(d.yLo >= 0, '下界不应小于 0');
+});
