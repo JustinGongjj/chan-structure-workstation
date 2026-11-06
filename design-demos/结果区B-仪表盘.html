@@ -1,0 +1,44 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>结果区B · 仪表盘评分</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#2a3140;--line2:#364050;
+--text:#e6edf3;--muted:#9aa7b8;--faint:#6b7787;--good:#22b884;--bad:#f0544f;--gold:#d9a441}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,"PingFang SC",sans-serif;padding:28px}
+.wrap{max-width:1000px;margin:0 auto}
+h2{font-size:15px;margin:0 0 4px}.sub{color:var(--faint);font-size:12px;margin-bottom:20px}
+.score{display:grid;grid-template-columns:170px 1fr;gap:16px;background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:18px;margin-bottom:14px}
+.ring{position:relative;width:150px;height:150px}
+.ring svg{transform:rotate(-90deg)}
+.ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .num b{font-size:34px;font-weight:750;line-height:1}
+.ring .num span{font-size:11px;color:var(--faint);margin-top:3px}
+.grade{display:flex;flex-direction:column;gap:9px}
+.grade .row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
+.grade .row .n{color:var(--muted)}
+.grade .row .s{font-weight:650}
+.bar{height:5px;border-radius:3px;background:var(--panel2);overflow:hidden;margin-top:3px}
+.bar i{display:block;height:100%;border-radius:3px}
+</style></head><body><div class="wrap">
+<h2>结果区 B · 仪表盘评分</h2><div class="sub">先给一个总分（0-100），再拆成四个维度。小白不需要理解指标，只需要知道"这套能不能用"。</div>
+<div class="score">
+  <div class="ring">
+    <svg width="150" height="150">
+      <circle cx="75" cy="75" r="62" fill="none" stroke="#1c2230" stroke-width="11"/>
+      <circle cx="75" cy="75" r="62" fill="none" stroke="#f0544f" stroke-width="11"
+        stroke-dasharray="389.6" stroke-dashoffset="311.7" stroke-linecap="round"/>
+    </svg>
+    <div class="num"><b style="color:#f0544f">20</b><span>综合评分</span></div>
+  </div>
+  <div class="grade">
+    <div><div class="row"><span class="n">收益能力</span><span class="s" style="color:#f0544f">12 / 30</span></div>
+      <div class="bar"><i style="width:40%;background:#f0544f"></i></div></div>
+    <div><div class="row"><span class="n">风险调整</span><span class="s" style="color:#f0544f">8 / 30</span></div>
+      <div class="bar"><i style="width:27%;background:#f0544f"></i></div></div>
+    <div><div class="row"><span class="n">回撤控制</span><span class="s" style="color:#d9a441">20 / 25</span></div>
+      <div class="bar"><i style="width:80%;background:#d9a441"></i></div></div>
+    <div><div class="row"><span class="n">交易质量</span><span class="s" style="color:#d9a441">15 / 25</span></div>
+      <div class="bar"><i style="width:60%;background:#d9a441"></i></div></div>
+    <div style="font-size:11.5px;color:var(--faint);margin-top:2px">结论：这套组合在震荡市能守住，但不适合单独满仓使用</div>
+  </div>
+</div>
+</div></body></html>

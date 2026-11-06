@@ -395,13 +395,17 @@
         <div id="qPicker"></div>
       </div>
 
-      <div id="qVerdict"></div>
+      <!-- ① 评分仪表盘：回答"这套能不能用" -->
+      <div id="qScore"></div>
+      <!-- ② 四个大数字卡：回答"具体多少" -->
+      <div class="q-hero" id="qHero"></div>
+      <!-- ③ 详细指标分组 -->
       <div class="q-metrics" id="qMetrics"></div>
       <div class="bt-grid">
         <div class="card"><div class="card-head"><h3>净值曲线</h3><span class="hint" id="qCurveHint"></span></div><div class="bt-curve"><canvas id="qCurve"></canvas></div></div>
         <div class="card"><div class="card-head"><h3>口径说明</h3></div><div id="qGlossary" class="q-gloss"></div></div>
       </div>
-      <div class="card"><div class="card-head"><h3>分品种表现</h3><span class="hint" id="qByHint"></span></div><div id="qBySymbol"></div></div>
+      <div class="card"><div class="card-head"><h3>品种贡献排行</h3><span class="hint" id="qByHint"></span></div><div id="qBySymbol"></div></div>
     </section>
 
     <section class="page" id="page-backtest">

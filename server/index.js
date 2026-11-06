@@ -25,6 +25,7 @@ const ROLLWF = require('./lib/rollwf');
 const DEFENSE = require('./lib/defense');
 const PORTFOLIO = require('./lib/portfolio');
 const SYMNAMES = require('./lib/symbolnames');
+const SCORE = require('./lib/score');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -825,7 +826,11 @@ const routes = {
       maxConfirmLag: Number(u.searchParams.get('maxConfirmLag') || 3),
     };
     const r = PORTFOLIO.runPortfolio(symbols, opts);
-    return { ...r, requested: items.length, fetched: symbols.length };
+    if (!r.ok) return r;
+    /* 附上 0-100 评分（权重预设可切换：balanced / conservative / aggressive） */
+    const preset = ['balanced', 'conservative', 'aggressive'].includes(u.searchParams.get('scoring'))
+      ? u.searchParams.get('scoring') : 'balanced';
+    return { ...r, score: SCORE.scorePortfolio(r.metrics, preset), requested: items.length, fetched: symbols.length };
   },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景

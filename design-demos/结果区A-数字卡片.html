@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>结果区A · 数字卡片</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#2a3140;--line2:#364050;
+--text:#e6edf3;--muted:#9aa7b8;--faint:#6b7787;--good:#22b884;--bad:#f0544f;--gold:#d9a441}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,"PingFang SC",sans-serif;padding:28px}
+.wrap{max-width:1000px;margin:0 auto}
+h2{font-size:15px;margin:0 0 4px}.sub{color:var(--faint);font-size:12px;margin-bottom:20px}
+/* 大数字卡 */
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.hc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden}
+.hc .k{font-size:11px;color:var(--faint)}
+.hc .v{font-size:26px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums;line-height:1.1}
+.hc .d{font-size:11px;margin-top:4px;color:var(--muted)}
+.hc.good .v{color:var(--good)}.hc.bad .v{color:var(--bad)}
+.hc .spark{position:absolute;right:0;bottom:0;width:100%;height:34px;opacity:.28}
+</style></head><body><div class="wrap">
+<h2>结果区 A · 数字卡片</h2><div class="sub">4 个大数字卡打头，每个配迷你走势。一眼抓住最关键的四个结论。</div>
+<div class="hero">
+  <div class="hc bad"><div class="k">年化收益</div><div class="v">-1.86%</div><div class="d">绝对 -5.79%</div>
+    <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><path d="M0,8 L10,12 L20,10 L30,18 L40,15 L50,22 L60,20 L70,25 L80,23 L90,26 L100,28" fill="none" stroke="#f0544f" stroke-width="1.5"/></svg></div>
+  <div class="hc bad"><div class="k">夏普比率</div><div class="v">-0.03</div><div class="d">卡玛 -0.05</div>
+    <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><path d="M0,12 L12,10 L24,14 L36,12 L48,17 L60,15 L72,20 L84,18 L100,22" fill="none" stroke="#f0544f" stroke-width="1.5"/></svg></div>
+  <div class="hc bad"><div class="k">最大回撤</div><div class="v">36.52%</div><div class="d">新高间隔 173 日</div>
+    <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><path d="M0,5 L15,4 L30,14 L45,26 L60,20 L75,17 L90,15 L100,13" fill="none" stroke="#f0544f" stroke-width="1.5"/></svg></div>
+  <div class="hc"><div class="k">交易胜率</div><div class="v">37.50%</div><div class="d">27 笔 · 盈亏比 1.00</div>
+    <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><path d="M0,15 L10,13 L20,17 L30,14 L40,16 L50,12 L60,15 L70,13 L80,16 L90,14 L100,15" fill="none" stroke="#9aa7b8" stroke-width="1.5"/></svg></div>
+</div>
+</div></body></html>

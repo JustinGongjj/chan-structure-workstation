@@ -186,19 +186,39 @@ function runPortfolio(symbols, opts = {}) {
     detail: m.detail,
     daily,
     trades: tradePnl,
-    /* 每标的简表 */
-    bySymbol: valid.map((s) => {
-      const sym = s.market + ':' + s.code;
-      const t = tradePnl.filter((x) => x.symbol === sym);
-      const wins = t.filter((x) => x.netPct > 0).length;
-      return {
-        symbol: sym,
-        trades: t.length,
-        tradeWinRate: t.length ? +(wins / t.length * 100).toFixed(1) : 0,
-        avgNetPct: t.length ? +(t.reduce((a, x) => a + x.netPct, 0) / t.length).toFixed(2) : 0,
-        totalPct: +t.reduce((a, x) => a + x.netPct, 0).toFixed(2),
-      };
-    }).sort((a, b) => b.totalPct - a.totalPct),
+    /*
+      每标的明细（结果区排行榜用）
+      补充了名称与贡献占比，前端可以直接画排行条。
+    */
+    bySymbol: (() => {
+      let names = {};
+      try { names = require('./symbolnames'); } catch (e) { names = null; }
+      const rows = valid.map((s) => {
+        const sym = s.market + ':' + s.code;
+        const t = tradePnl.filter((x) => x.symbol === sym);
+        const wins = t.filter((x) => x.netPct > 0).length;
+        const totalPct = t.reduce((a, x) => a + x.netPct, 0);
+        return {
+          symbol: sym,
+          market: s.market,
+          code: s.code,
+          name: names ? names.nameOf(s.market, s.code) : s.code,
+          trades: t.length,
+          tradeWinRate: t.length ? +(wins / t.length * 100).toFixed(1) : 0,
+          avgNetPct: t.length ? +(totalPct / t.length).toFixed(2) : 0,
+          totalPct: +totalPct.toFixed(2),
+          bars: s.bars.length,
+        };
+      }).sort((a, b) => b.totalPct - a.totalPct);
+      // 贡献占比：该品种合计收益 / 所有品种合计正收益绝对值之和
+      const sumAbs = rows.reduce((a, x) => a + Math.abs(x.totalPct), 0) || 1;
+      const maxAbs = Math.max(...rows.map((x) => Math.abs(x.totalPct)), 1);
+      for (const r of rows) {
+        r.sharePct = +(Math.abs(r.totalPct) / sumAbs * 100).toFixed(1);
+        r.barPct = +(Math.abs(r.totalPct) / maxAbs * 100).toFixed(1);
+      }
+      return rows;
+    })(),
   };
 }
 

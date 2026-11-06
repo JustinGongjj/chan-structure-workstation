@@ -1144,3 +1144,42 @@ test('布局：回测页与量化页都必须监听 resize 重绘 canvas', () =>
     assert.ok(/addEventListener\('resize'/.test(src), `${f} 缺少 resize 监听`);
   }
 });
+
+/* ---------------- 组合评分 ---------------- */
+test('评分：三种权重预设总和均为 100，且强组合分数更高', () => {
+  const S = require('../server/lib/score');
+  const m = { 年化收益: -1.86, 夏普比率: -0.03, 卡玛比率: -0.05, 最大回撤: 36.52, 交易胜率: 37.5, 单笔盈亏比: 1.0, 年化交易次数: 8.5 };
+  for (const p of ['balanced', 'conservative', 'aggressive']) {
+    const r = S.scorePortfolio(m, p);
+    const sum = r.weights.ret + r.weights.risk + r.weights.dd + r.weights.trade;
+    assert.equal(sum, 100, `${p} 权重总和应为 100，实际 ${sum}`);
+    assert.ok(r.total >= 0 && r.total <= 100, `${p} 总分应在 0-100`);
+    assert.equal(r.dims.length, 4, '必须有四个维度');
+  }
+  const good = { 年化收益: 22, 夏普比率: 1.6, 卡玛比率: 1.4, 最大回撤: 12, 交易胜率: 58, 单笔盈亏比: 2.1, 年化交易次数: 20 };
+  const goodScore = S.scorePortfolio(good, 'balanced').total;
+  const badScore = S.scorePortfolio(m, 'balanced').total;
+  assert.ok(goodScore > badScore + 30, `强组合 ${goodScore} 应显著高于弱组合 ${badScore}`);
+});
+
+test('评分：结论必须指出短板（回归：pct 未计算会导致短板整段丢失）', () => {
+  const S = require('../server/lib/score');
+  const m = { 年化收益: -1.86, 夏普比率: -0.03, 卡玛比率: -0.05, 最大回撤: 36.52, 交易胜率: 37.5, 单笔盈亏比: 1.0, 年化交易次数: 8.5 };
+  const r = S.scorePortfolio(m, 'balanced');
+  assert.ok(Number.isFinite(r.weakest.pct), 'weakest.pct 必须是数字');
+  assert.ok(r.weakest.pct >= 0 && r.weakest.pct <= 100, 'pct 应在 0-100');
+  assert.ok(/主要短板在/.test(r.verdict), `结论必须包含短板说明，实际：${r.verdict}`);
+  assert.ok(r.verdict.length > 15, '结论不能是空模板');
+});
+
+test('评分：极端数据不产生 NaN 或越界', () => {
+  const S = require('../server/lib/score');
+  const extreme = { 年化收益: -99, 夏普比率: -5, 卡玛比率: null, 最大回撤: 99, 交易胜率: 0, 单笔盈亏比: null, 年化交易次数: 500 };
+  const r = S.scorePortfolio(extreme, 'balanced');
+  assert.ok(Number.isFinite(r.total), `总分不能是 NaN，实际 ${r.total}`);
+  assert.ok(r.total >= 0 && r.total <= 100, '总分应被截断在 0-100');
+  for (const d of r.dims) {
+    assert.ok(Number.isFinite(d.got), `${d.name} 得分不能是 NaN`);
+    assert.ok(d.got >= 0 && d.got <= d.max, `${d.name} 得分 ${d.got} 应在 0-${d.max}`);
+  }
+});

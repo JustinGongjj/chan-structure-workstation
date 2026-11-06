@@ -923,3 +923,52 @@ button{font-family:inherit}
 .q-good{color:#22b884}
 .q-bad{color:#f0544f}
 .q-neutral{color:var(--text)}
+
+/* ---------- 结果区：评分仪表盘 ---------- */
+.q-score{
+  display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px;align-items:center;
+  border:1px solid var(--line2);border-radius:14px;padding:16px 18px;margin-bottom:12px;
+  background:var(--panel);
+}
+.q-ring{position:relative;width:132px;height:132px;justify-self:center}
+.q-ring svg{transform:rotate(-90deg);display:block}
+.q-ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.q-ring .num b{font-size:32px;font-weight:750;line-height:1}
+.q-ring .num span{font-size:10.5px;color:var(--faint);margin-top:3px}
+.q-dims{display:flex;flex-direction:column;gap:8px;min-width:0}
+.q-dim{display:grid;grid-template-columns:72px minmax(0,1fr) 62px;gap:9px;align-items:center;font-size:12px}
+.q-dim .n{color:var(--muted);white-space:nowrap}
+.q-dim .s{text-align:right;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.q-track{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden;min-width:0}
+.q-track i{display:block;height:100%;border-radius:3px}
+.q-verdict{font-size:12px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line2);line-height:1.6}
+.q-preset{display:flex;gap:5px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.q-preset .lbl{font-size:11.5px;color:var(--faint);margin-right:2px}
+.q-preset button{padding:5px 12px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);
+  color:var(--muted);cursor:pointer;font-size:11.5px}
+.q-preset button.on{background:color-mix(in srgb,var(--gold) 16%,transparent);border-color:var(--gold);color:var(--gold)}
+
+/* 大数字卡 */
+.q-hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.q-hc{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:12px;padding:13px 15px;background:var(--panel)}
+.q-hc .k{font-size:11px;color:var(--faint)}
+.q-hc .v{font-size:25px;font-weight:700;margin-top:2px;line-height:1.1;font-variant-numeric:tabular-nums}
+.q-hc .d{font-size:10.5px;color:var(--faint);margin-top:4px}
+.q-hc .spark{position:absolute;left:0;bottom:0;width:100%;height:30px;opacity:.22;pointer-events:none}
+
+/* 品种排行条 */
+.q-rank{display:flex;flex-direction:column;gap:2px}
+.q-rank .r{display:grid;grid-template-columns:20px minmax(0,1fr) minmax(80px,180px) 78px;
+  gap:10px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line);font-size:12px}
+.q-rank .r:last-child{border-bottom:none}
+.q-rank .idx{color:var(--faint);font-size:10.5px}
+.q-rank .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q-rank .nm .cd{color:var(--faint);font-size:10px;margin-left:5px}
+.q-rank .track{height:13px;background:var(--panel2);border-radius:4px;overflow:hidden;min-width:0}
+.q-rank .track i{display:block;height:100%;border-radius:4px}
+.q-rank .val{text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+@media (max-width:900px){
+  .q-score{grid-template-columns:minmax(0,1fr)}
+  .q-rank .r{grid-template-columns:18px minmax(0,1fr) 66px}
+  .q-rank .track{display:none}
+}

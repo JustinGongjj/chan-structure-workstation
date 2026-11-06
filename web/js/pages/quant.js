@@ -54,6 +54,7 @@
   const INV_BAD = { 最大回撤: 30, 年化波动率: 30, 下行波动率: 20, 新高间隔: 120 };
 
   let picker = null;
+  let scoringPreset = 'balanced';   // 评分权重预设
 
   const p = () => ({
     markets: U.$('#qMarkets')?.value || 'A',
@@ -162,36 +163,125 @@
     U.$('#qCurveHint').textContent = `期末净值 ${nav[nav.length - 1].toFixed(3)} · ${daily.length} 个交易日`;
   }
 
+  /* ---------- ③ 品种贡献排行条 ---------- */
   function renderBySymbol(list) {
-    if (!list || !list.length) { U.$('#qBySymbol').innerHTML = '<div class="empty">无数据</div>'; return; }
-    U.$('#qBySymbol').innerHTML = `<table class="bt-tbl"><thead><tr><th>品种</th><th>交易</th><th>胜率</th><th>平均单笔</th><th>合计</th></tr></thead><tbody>${
-      list.map((x) => `<tr><td>${U.esc(x.symbol)}</td><td>${x.trades}</td><td class="${x.tradeWinRate >= 50 ? 'q-good' : 'q-bad'}">${x.tradeWinRate}%</td><td class="${x.avgNetPct > 0 ? 'q-good' : 'q-bad'}">${x.avgNetPct}%</td><td class="${x.totalPct > 0 ? 'q-good' : 'q-bad'}">${x.totalPct}%</td></tr>`).join('')
-    }</tbody></table>`;
-    U.$('#qByHint').textContent = `${list.length} 个品种，按合计收益排序`;
+    const box = U.$('#qBySymbol');
+    if (!box) return;
+    if (!list || !list.length) { box.innerHTML = '<div class="empty">无数据</div>'; return; }
+    const maxAbs = Math.max(...list.map((x) => Math.abs(x.totalPct)), 1);
+    box.innerHTML = `<div class="q-rank">${list.map((x, i) => {
+      const up = x.totalPct > 0;
+      const w = Math.max(2, Math.abs(x.totalPct) / maxAbs * 100);
+      const name = x.name && x.name !== x.code ? x.name : x.symbol;
+      const cd = x.name && x.name !== x.code ? x.code : '';
+      return `<div class="r">
+        <span class="idx">${i + 1}</span>
+        <span class="nm">${U.esc(name)}${cd ? `<span class="cd">${U.esc(cd)}</span>` : ''}</span>
+        <span class="track"><i style="width:${w.toFixed(1)}%;background:${up ? '#22b884' : '#f0544f'}"></i></span>
+        <span class="val ${up ? 'q-good' : 'q-bad'}">${up ? '+' : ''}${x.totalPct}%</span>
+      </div>`;
+    }).join('')}</div>`;
+    U.$('#qByHint').textContent = `${list.length} 个品种 · 按合计收益排序 · 绿色贡献、红色拖累`;
   }
 
-  function renderVerdict(m) {
-    const box = U.$('#qVerdict');
+  /* ---------- ① 评分仪表盘 ---------- */
+  const GRADE_COLOR = { good: '#22b884', warn: '#d9a441', bad: '#f0544f' };
+
+  function renderScore(score) {
+    const box = U.$('#qScore');
+    if (!box || !score) { if (box) box.innerHTML = ''; return; }
+    const col = GRADE_COLOR[score.grade.cls] || '#9aa7b8';
+    const R = 56, C = 2 * Math.PI * R;
+    const off = C * (1 - score.total / 100);
+    const presets = [
+      ['balanced', '均衡'], ['conservative', '保守'], ['aggressive', '激进'],
+    ];
+    const dimRows = score.dims.map((d) => {
+      const pct = Math.round(d.got / d.max * 100);
+      const c = pct >= 60 ? '#22b884' : pct >= 35 ? '#d9a441' : '#f0544f';
+      return `<div class="q-dim">
+        <span class="n">${U.esc(d.name)}</span>
+        <span class="q-track"><i style="width:${pct}%;background:${c}"></i></span>
+        <span class="s" style="color:${c}">${d.got} / ${d.max}</span>
+      </div>`;
+    }).join('');
+    box.innerHTML = `
+      <div class="q-preset">
+        <span class="lbl">评分标准</span>
+        ${presets.map(([k, lb]) => `<button data-preset="${k}" class="${k === score.preset ? 'on' : ''}">${lb}</button>`).join('')}
+        <span class="hint" style="margin-left:6px">评级：80+ 优秀 · 60 可用 · 40 边缘 · 20 偏弱</span>
+      </div>
+      <div class="q-score">
+        <div class="q-ring">
+          <svg width="132" height="132">
+            <circle cx="66" cy="66" r="${R}" fill="none" stroke="#1c2230" stroke-width="10"/>
+            <circle cx="66" cy="66" r="${R}" fill="none" stroke="${col}" stroke-width="10"
+              stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" stroke-linecap="round"/>
+          </svg>
+          <div class="num"><b style="color:${col}">${score.total}</b><span>${U.esc(score.grade.text)}</span></div>
+        </div>
+        <div class="q-dims">
+          ${dimRows}
+          <div class="q-verdict">${U.esc(score.verdict)}</div>
+        </div>
+      </div>`;
+    U.$$('#qScore [data-preset]').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (b.dataset.preset === scoringPreset) return;
+        scoringPreset = b.dataset.preset;
+        run();   // 重跑（评分依赖后端）
+      })
+    );
+  }
+
+  /* ---------- ② 四个大数字卡（带迷你走势） ---------- */
+  function sparkline(vals, color) {
+    if (!vals || vals.length < 2) return '';
+    const w = 100, h = 30;
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const pts = vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * w;
+      const y = h - ((v - min) / (max - min || 1)) * h;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+  }
+
+  function navSeries(daily) {
+    let v = 1;
+    return (daily || []).map((d) => (v *= (1 + d.ret)));
+  }
+
+  /** 回撤序列（负数往下），用于回撤卡走势 */
+  function drawdownSeries(nav) {
+    let peak = -Infinity;
+    return nav.map((v) => { if (v > peak) peak = v; return (v / peak - 1) * 100; });
+  }
+
+  function renderHero(m, daily) {
+    const box = U.$('#qHero');
     if (!box) return;
-    const pos = m.年化收益 > 0;
-    const goodSharpe = m.夏普比率 > 1;
-    const goodCalmar = m.卡玛比率 != null && m.卡玛比率 > 0.5;
-    const lowTurn = m.年化交易次数 < 30;
-    box.innerHTML = `<div class="bt-verdict ${pos ? (goodSharpe ? 'up' : 'gold') : 'down'}">
-      <div class="btv-head"><b>组合表现：${pos ? '正收益' : '负收益'} · 夏普 ${m.夏普比率}</b>
-      <span>年化 ${m.年化收益}% · 最大回撤 ${m.最大回撤}% · 卡玛 ${m.卡玛比率 ?? '—'}</span></div>
-      <ul>
-        <li>${goodSharpe ? '夏普 > 1，风险调整后表现不错' : '夏普 ≤ 1，承担的风险没有得到足够补偿'}</li>
-        <li>${goodCalmar ? '卡玛 > 0.5，回撤控制相对合理' : '卡玛偏低，回撤相对收益过大'}</li>
-        <li>${lowTurn ? `年化交易 ${m.年化交易次数} 次，换手低、摩擦小` : `年化交易 ${m.年化交易次数} 次，换手偏高，注意摩擦成本`}</li>
-        <li>持仓方向：多头 ${m.多头占比}% / 空头 ${m.空头占比}%（${m.空头占比 === 0 ? '纯多头策略' : '含做空'}）</li>
-      </ul></div>`;
+    const nav = navSeries(daily);
+    const cUp = '#22b884', cDn = '#f0544f';
+    const cards = [
+      { k: '年化收益', v: (m.年化收益 > 0 ? '+' : '') + m.年化收益 + '%', d: `绝对 ${m.绝对收益}%`, good: m.年化收益 > 0, spark: nav, sc: m.年化收益 > 0 ? cUp : cDn },
+      { k: '夏普比率', v: m.夏普比率, d: `卡玛 ${m.卡玛比率 ?? '—'}`, good: m.夏普比率 > 0, spark: nav, sc: m.夏普比率 > 0 ? cUp : cDn },
+      /* 回撤卡不画净值曲线（净值向上，画在回撤卡上会误导）；画回撤序列 */
+      { k: '最大回撤', v: m.最大回撤 + '%', d: `新高间隔 ${Math.round(m.新高间隔)} 日`, good: m.最大回撤 <= 15, spark: drawdownSeries(nav), sc: cDn },
+      { k: '交易胜率', v: m.交易胜率 + '%', d: `${Math.round(m.交易次数)} 笔 · 盈亏比 ${m.单笔盈亏比 ?? '—'}`, good: m.交易胜率 >= 50, spark: nav, sc: m.交易胜率 >= 50 ? cUp : '#9aa7b8' },
+    ];
+    box.innerHTML = cards.map((c) => `
+      <div class="q-hc">
+        <div class="k">${U.esc(c.k)}</div>
+        <div class="v ${c.good ? 'q-good' : 'q-bad'}">${U.esc(String(c.v))}</div>
+        <div class="d">${U.esc(c.d)}</div>
+        ${sparkline(c.spark, c.sc)}
+      </div>`).join('');
   }
 
   async function run() {
     const cfg = p();
     U.$('#qMetrics').innerHTML = '<div class="loading">组合回测中（多品种，约 1-3 分钟）…</div>';
-    U.$('#qVerdict').innerHTML = '';
     try {
       const q2 = { ...cfg };
       if (q2.symbols) delete q2.markets;
@@ -201,7 +291,8 @@
         return;
       }
       lastResult = r;
-      renderVerdict(r.metrics);
+      renderScore(r.score);
+      renderHero(r.metrics, r.daily);
       renderMetrics(r.metrics, r.inverted);
       drawCurve(r.daily);
       renderBySymbol(r.bySymbol);

@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>结果区C · 排行条</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#2a3140;--line2:#364050;
+--text:#e6edf3;--muted:#9aa7b8;--faint:#6b7787;--good:#22b884;--bad:#f0544f;--gold:#d9a441}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,"PingFang SC",sans-serif;padding:28px}
+.wrap{max-width:1000px;margin:0 auto}
+h2{font-size:15px;margin:0 0 4px}.sub{color:var(--faint);font-size:12px;margin-bottom:20px}
+.rank{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.rank-h{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin-bottom:10px}
+.r{display:grid;grid-template-columns:22px 1fr 200px 76px;gap:10px;align-items:center;padding:7px 0;
+border-bottom:1px solid var(--line);font-size:12.5px}
+.r:last-child{border-bottom:none}
+.r .idx{color:var(--faint);font-size:11px}
+.r .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r .nm .cd{color:var(--faint);font-size:10.5px;margin-left:5px}
+.track{height:14px;background:var(--panel2);border-radius:4px;overflow:hidden;position:relative}
+.track i{display:block;height:100%;border-radius:4px}
+.r .val{text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+.up{color:var(--good)}.down{color:var(--bad)}
+</style></head><body><div class="wrap">
+<h2>结果区 C · 排行条</h2><div class="sub">分品种用横向排行条替代表格。一眼看出谁贡献最多、谁在拖后腿。</div>
+<div class="rank">
+  <div class="rank-h"><span>品种贡献排行</span><span>按合计收益排序 · 5 个品种</span></div>
+  <div class="r"><span class="idx">1</span><span class="nm">沪铜主连<span class="cd">CU0</span></span>
+    <span class="track"><i style="width:100%;background:#22b884"></i></span><span class="val up">+19.18%</span></div>
+  <div class="r"><span class="idx">2</span><span class="nm">焦煤主连<span class="cd">JM0</span></span>
+    <span class="track"><i style="width:73%;background:#22b884"></i></span><span class="val up">+13.90%</span></div>
+  <div class="r"><span class="idx">3</span><span class="nm">铁矿石主连<span class="cd">I0</span></span>
+    <span class="track"><i style="width:15%;background:#22b884"></i></span><span class="val up">+2.83%</span></div>
+  <div class="r"><span class="idx">4</span><span class="nm">热卷主连<span class="cd">HC0</span></span>
+    <span class="track"><i style="width:55%;background:#f0544f"></i></span><span class="val down">-10.61%</span></div>
+  <div class="r"><span class="idx">5</span><span class="nm">螺纹钢主连<span class="cd">RB0</span></span>
+    <span class="track"><i style="width:65%;background:#f0544f"></i></span><span class="val down">-12.43%</span></div>
+</div>
+</div></body></html>

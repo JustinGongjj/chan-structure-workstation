@@ -39,7 +39,14 @@
 .sp-sm .sp-v { font-size: 17px; font-weight: 650; margin-top: 2px; color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* 卡片网格 */
-.sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 8px; }
+.sp-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 8px;
+  /* 限制最大高度：卡片池不该占满整屏，滚动查看 */
+  max-height: 320px; overflow-y: auto; padding-right: 4px;
+}
+.sp-grid::-webkit-scrollbar { width: 7px; }
+.sp-grid::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
+.sp-grid::-webkit-scrollbar-track { background: transparent; }
 .sp-card {
   position: relative; text-align: left; background: var(--panel2);
   border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px;
