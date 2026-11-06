@@ -1220,3 +1220,29 @@ test('批量：中位年化必须从 totalReturnPct 与 years 现算（回归：
   assert.notEqual(r.summary.medianAnnualPct, null, '中位年化不能是 null');
   assert.ok(Number.isFinite(r.summary.medianAnnualPct), '中位年化必须是数字');
 });
+
+/* ---------------- 手机版三层结果 ---------------- */
+test('手机版：量化与回测两个入口都存在，且复用三层组件', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const m = fs.readFileSync(path.join(__dirname, '..', 'web', 'm', 'js', 'mobile.js'), 'utf8');
+  // 两个入口
+  assert.ok(/id="openQuant"/.test(m), '缺少量化组合入口');
+  assert.ok(/id="openBacktest"/.test(m), '缺少因子回测入口');
+  // 三层渲染函数
+  assert.ok(/function mScoreHtml/.test(m), '缺少评分环渲染');
+  assert.ok(/function mHeroHtml/.test(m), '缺少大数字卡渲染');
+  assert.ok(/function mRankHtml/.test(m), '缺少品种排行渲染');
+  // 必须调用
+  assert.ok(/mScoreHtml\(data\.score\)/.test(m), '量化弹层未调用评分渲染');
+  assert.ok(/mHeroHtml\(/.test(m), '未调用大数字卡渲染');
+});
+
+test('手机版：三层样式已定义', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'web', 'm', 'css', 'mobile.css'), 'utf8');
+  for (const cls of ['.m-score', '.m-ring', '.m-dims', '.m-hero', '.m-hc', '.m-verdict', '.m-rank']) {
+    assert.ok(css.includes(cls), `手机样式缺少 ${cls}`);
+  }
+});

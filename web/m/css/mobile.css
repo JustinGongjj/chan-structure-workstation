@@ -351,3 +351,35 @@ display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
 .q-good{color:#22b884}
 .q-bad{color:#f0544f}
 .q-neutral{color:var(--text)}
+
+/* ===== 量化结果三层（手机版紧凑） ===== */
+.m-score{display:flex;gap:12px;align-items:center;padding:12px;margin-bottom:8px;
+  background:var(--card-bg,var(--panel));border-radius:12px}
+.m-ring{position:relative;width:84px;height:84px;flex:0 0 auto}
+.m-ring svg{transform:rotate(-90deg);display:block}
+.m-ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.m-ring .num b{font-size:22px;font-weight:750;line-height:1}
+.m-ring .num span{font-size:9.5px;color:var(--faint);margin-top:1px}
+.m-dims{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.m-dim{display:flex;align-items:center;gap:6px;font-size:10.5px}
+.m-dim .n{color:var(--muted);width:52px;flex:0 0 auto;white-space:nowrap}
+.m-dim .track{flex:1;height:5px;border-radius:3px;background:var(--panel2);overflow:hidden;min-width:0}
+.m-dim .track i{display:block;height:100%;border-radius:3px}
+.m-dim .s{width:42px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;flex:0 0 auto}
+
+.m-hero{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px}
+.m-hc{padding:9px 11px;border-radius:11px;background:var(--panel2);border:1px solid var(--line);min-width:0}
+.m-hc .k{font-size:10px;color:var(--faint)}
+.m-hc .v{font-size:18px;font-weight:700;margin-top:1px;line-height:1.15;font-variant-numeric:tabular-nums}
+.m-hc .d{font-size:9.5px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.m-verdict{padding:9px 11px;margin-bottom:8px;border-radius:10px;font-size:11px;line-height:1.6;
+  background:var(--panel2);border-left:3px solid var(--gold);color:var(--muted)}
+
+.m-rank{display:flex;flex-direction:column;gap:1px}
+.m-rank .r{display:grid;grid-template-columns:16px 1fr 58px;gap:7px;align-items:center;
+  padding:5px 0;border-bottom:1px solid var(--line);font-size:11px}
+.m-rank .r:last-child{border-bottom:none}
+.m-rank .idx{color:var(--faint);font-size:9.5px}
+.m-rank .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-rank .val{text-align:right;font-weight:650;font-variant-numeric:tabular-nums}

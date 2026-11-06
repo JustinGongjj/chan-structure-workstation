@@ -256,6 +256,8 @@
       if (b) b.addEventListener('click', openSectors);
       const q = $('#openQuant');
       if (q) q.addEventListener('click', openQuant);
+      const r = $('#openBacktest');
+      if (r) r.addEventListener('click', openBacktest);
     }, 0);
 
     const idx = ov.indices
@@ -295,6 +297,7 @@
       <div class="section" style="display:flex;gap:8px">
         <button class="btn button" id="openSectors" style="flex:1">▦ 商品板块</button>
         <button class="btn button" id="openQuant" style="flex:1">◧ 量化组合</button>
+        <button class="btn button" id="openBacktest" style="flex:1">◱ 因子回测</button>
         <a class="btn button" id="openGame" href="/game/" style="flex:1;text-align:center">◈ 缠关 108</a>
       </div>
       <div class="pulse-grid section">${pulseCards}</div>
@@ -427,6 +430,70 @@
     return String(v);
   }
 
+  /* ---------- 手机版：评分环 + 四维度 ---------- */
+  function mScoreHtml(score) {
+    if (!score) return '';
+    const COL = { good: '#22b884', warn: '#d9a441', bad: '#f0544f' };
+    const col = COL[score.grade.cls] || '#9aa7b8';
+    const R = 34, C = 2 * Math.PI * R;
+    const off = C * (1 - score.total / 100);
+    const dims = score.dims.map((d) => {
+      const pct = Math.round(d.got / d.max * 100);
+      const c = pct >= 60 ? '#22b884' : pct >= 35 ? '#d9a441' : '#f0544f';
+      return `<div class="m-dim">
+        <span class="n">${U.esc(d.name)}</span>
+        <span class="track"><i style="width:${pct}%;background:${c}"></i></span>
+        <span class="s" style="color:${c}">${d.got}/${d.max}</span>
+      </div>`;
+    }).join('');
+    return `<div class="m-score">
+      <div class="m-ring">
+        <svg width="84" height="84">
+          <circle cx="42" cy="42" r="${R}" fill="none" stroke="#1c2230" stroke-width="7"/>
+          <circle cx="42" cy="42" r="${R}" fill="none" stroke="${col}" stroke-width="7"
+            stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" stroke-linecap="round"/>
+        </svg>
+        <div class="num"><b style="color:${col}">${score.total}</b><span>${U.esc(score.grade.text)}</span></div>
+      </div>
+      <div class="m-dims">${dims}</div>
+    </div>`;
+  }
+
+  /* ---------- 手机版：四个大数字卡 ---------- */
+  function mHeroHtml(m) {
+    const cUp = '#22b884', cDn = '#f0544f';
+    const cards = [
+      { k: '年化收益', v: (m.年化收益 > 0 ? '+' : '') + m.年化收益 + '%', d: `绝对 ${m.绝对收益}%`, good: m.年化收益 > 0 },
+      { k: '夏普比率', v: m.夏普比率, d: `卡玛 ${m.卡玛比率 ?? '—'}`, good: (m.夏普比率 || 0) > 0 },
+      { k: '最大回撤', v: m.最大回撤 + '%', d: `新高间隔 ${Math.round(m.新高间隔)} 日`, good: m.最大回撤 <= 15 },
+      { k: '交易胜率', v: m.交易胜率 + '%', d: `${Math.round(m.交易次数)} 笔 · 盈亏 ${m.单笔盈亏比 ?? '—'}`, good: m.交易胜率 >= 50 },
+    ];
+    return `<div class="m-hero">${cards.map((c) => `
+      <div class="m-hc">
+        <div class="k">${U.esc(c.k)}</div>
+        <div class="v ${c.good ? 'q-good' : 'q-bad'}">${U.esc(String(c.v))}</div>
+        <div class="d">${U.esc(c.d)}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  /* ---------- 手机版：品种排行（前 10） ---------- */
+  function mRankHtml(list) {
+    if (!list || !list.length) return '';
+    const rows = list.slice(0, 10);
+    return `<div class="card" style="padding:9px 11px;margin-bottom:8px">
+      <div style="font-size:11.5px;font-weight:600;color:var(--gold);margin-bottom:5px">品种贡献排行</div>
+      <div class="m-rank">${rows.map((x, i) => {
+        const up = x.totalPct > 0;
+        const name = x.name && x.name !== x.code ? x.name : x.symbol;
+        return `<div class="r">
+          <span class="idx">${i + 1}</span>
+          <span class="nm">${U.esc(name)}</span>
+          <span class="val ${up ? 'q-good' : 'q-bad'}">${up ? '+' : ''}${x.totalPct}%</span>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }
+
   function quantMetricsHtml(m) {
     return QUANT_GROUPS.map((g) => {
       const open = quantOpen.has(g.key);
@@ -458,6 +525,83 @@
     }).join('');
   }
 
+  /*
+    手机版：因子回测（单标的）
+    复用 quant 的三层组件：评分环 / 大数字卡 / 结论。因子回测没有品种排行，
+    但有逐笔明细，这里放最近 8 笔。
+  */
+  async function openBacktest() {
+    openSheet(
+      '因子回测 · 单标的',
+      `<div class="seg segmented" id="btMk" style="overflow-x:auto;flex-wrap:nowrap">
+         <button class="button sq active" data-mk="A">A股</button>
+         <button class="button sq" data-mk="CNF">期货</button>
+         <button class="button sq" data-mk="US">美股</button>
+         <button class="button sq" data-mk="CR">加密</button>
+       </div>
+       <div class="hint" style="margin:6px 2px 8px;font-size:11px">逐根推进 · 次日开盘成交 · 无未来函数</div>
+       <div id="btHeadM"></div>
+       <div id="btBodyM"><div class="empty">点「跑回测」加载</div></div>
+       <div id="btTradesM"></div>
+       <button class="btn button" id="btRunM" style="width:100%;margin-top:8px">跑回测</button>`,
+      () => {
+        let market = 'A';
+        let data = null;
+        const defaults = { A: '600519', CNF: 'RB0', US: 'NVDA', CR: 'BTCUSDT' };
+
+        const render = () => {
+          if (!data) return;
+          const s = data.stats;
+          /* 归一化成与量化页一致的结构，复用渲染函数 */
+          const pseudo = {
+            年化收益: s.annualReturnPct, 绝对收益: s.totalReturnPct,
+            夏普比率: s.sharpe,
+            卡玛比率: s.maxDrawdownPct > 0 ? +(s.annualReturnPct / s.maxDrawdownPct).toFixed(2) : null,
+            最大回撤: s.maxDrawdownPct, 交易胜率: s.winRate,
+            单笔盈亏比: s.payoff, 交易次数: s.trades, 新高间隔: 0,
+          };
+          $('#btHeadM').innerHTML = mScoreHtml(data.score) + mHeroHtml(pseudo)
+            + (data.score && data.score.verdict ? `<div class="m-verdict">${U.esc(data.score.verdict)}</div>` : '');
+          const tr = (data.trades || []).slice(-8).reverse();
+          $('#btBodyM').innerHTML = `<div class="card" style="padding:9px 11px">
+            <div style="font-size:11.5px;font-weight:600;color:var(--gold);margin-bottom:5px">最近 ${tr.length} 笔</div>
+            ${tr.length ? tr.map((t) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--line)">
+              <span>${U.esc(t.signalType || '')} ${t.dir > 0 ? '多' : '空'} · ${t.bars}根</span>
+              <span class="${t.netPct > 0 ? 'q-good' : 'q-bad'}">${t.netPct}%</span>
+            </div>`).join('') : '<div class="empty">无成交</div>'}
+          </div>`;
+          $('#btTradesM').innerHTML = '';
+        };
+
+        U.$$('#btMk .button').forEach((b) =>
+          b.addEventListener('click', () => {
+            market = b.dataset.mk;
+            U.$$('#btMk .button').forEach((x) => x.classList.toggle('active', x === b));
+            data = null;
+            $('#btHeadM').innerHTML = '';
+            $('#btBodyM').innerHTML = '<div class="empty">点「跑回测」加载</div>';
+          })
+        );
+
+        const runBtn = $('#btRunM');
+        if (runBtn) runBtn.addEventListener('click', async () => {
+          runBtn.disabled = true;
+          runBtn.textContent = '回测中…';
+          try {
+            data = await API.get(`/api/bt/run?market=${market}&code=${defaults[market]}&period=day`);
+            if (!data.ok) { $('#btBodyM').innerHTML = `<div class="empty">${U.esc(data.error || '失败')}</div>`; return; }
+            render();
+          } catch (e) {
+            $('#btBodyM').innerHTML = `<div class="empty">${U.esc(e.message)}</div>`;
+          } finally {
+            runBtn.disabled = false;
+            runBtn.textContent = '重新回测';
+          }
+        });
+      }
+    );
+  }
+
   async function openQuant() {
     openSheet(
       '量化组合 · 绩效归因',
@@ -480,12 +624,14 @@
         const render = () => {
           if (!data) return;
           const m = data.metrics;
-          const pos = m.年化收益 > 0;
-          const sh = m.夏普比率;
-          $('#qVerdictM').innerHTML = `<div class="card" style="margin-bottom:8px;padding:10px 12px;border-left:3px solid ${pos ? 'var(--up)' : 'var(--down)'}">
-            <div style="font-size:12.5px;font-weight:600">${pos ? '正收益' : '负收益'} · 夏普 ${sh}</div>
-            <div class="hint" style="font-size:11px;margin-top:3px">${sh > 1 ? '风险调整后表现不错' : '夏普 ≤ 1，风险未得到足够补偿'} · ${m.卡玛比率 > 0.5 ? '回撤控制合理' : '卡玛偏低'} · 年化交易 ${Math.round(m.年化交易次数)} 次</div>
-          </div>`;
+          /*
+            三层结构（与桌面版一致，但按 390px 宽重排）：
+              ① 评分环 + 四维度  ② 四个大数字卡  ③ 品种排行
+            verdict 保留为独立一行文字，因为评分环里放不下长句。
+          */
+          $('#qVerdictM').innerHTML = mScoreHtml(data.score)
+            + mHeroHtml(m)
+            + (data.score && data.score.verdict ? `<div class="m-verdict">${U.esc(data.score.verdict)}</div>` : '');
           $('#qBodyM').innerHTML = quantMetricsHtml(m);
           U.$$('#qBodyM [data-qg]').forEach((b) =>
             b.addEventListener('click', () => {
@@ -494,14 +640,7 @@
               render();
             })
           );
-          const rows = (data.bySymbol || []).slice(0, 8);
-          $('#qByM').innerHTML = rows.length
-            ? `<div class="card" style="padding:9px 11px"><b style="font-size:12px;color:var(--gold)">分品种</b>
-               ${rows.map((x) => `<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line)">
-                 <span>${U.esc(x.symbol)}</span>
-                 <span class="${x.totalPct > 0 ? 'q-good' : 'q-bad'}">${x.totalPct}%（${x.trades}笔 胜率${x.tradeWinRate}%）</span>
-               </div>`).join('')}</div>`
-            : '';
+          $('#qByM').innerHTML = mRankHtml(data.bySymbol);
         };
 
         U.$$('#qMk .button').forEach((b) =>
