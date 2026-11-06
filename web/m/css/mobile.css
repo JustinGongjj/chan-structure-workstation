@@ -383,3 +383,7 @@ display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
 .m-rank .idx{color:var(--faint);font-size:9.5px}
 .m-rank .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m-rank .val{text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+
+/* 评分权重切换（手机版） */
+.m-preset{margin-bottom:8px}
+.m-preset .button{font-size:11.5px;padding:6px 4px}

@@ -540,14 +540,32 @@
          <button class="button sq" data-mk="CR">加密</button>
        </div>
        <div class="hint" style="margin:6px 2px 8px;font-size:11px">逐根推进 · 次日开盘成交 · 无未来函数</div>
+       <div class="seg segmented m-preset" id="btPreset">
+         <button class="sq button active" data-preset="balanced">均衡</button>
+         <button class="sq button" data-preset="conservative">保守</button>
+         <button class="sq button" data-preset="aggressive">激进</button>
+       </div>
        <div id="btHeadM"></div>
        <div id="btBodyM"><div class="empty">点「跑回测」加载</div></div>
        <div id="btTradesM"></div>
        <button class="btn button" id="btRunM" style="width:100%;margin-top:8px">跑回测</button>`,
       () => {
         let market = 'A';
+        let preset = 'balanced';
         let data = null;
         const defaults = { A: '600519', CNF: 'RB0', US: 'NVDA', CR: 'BTCUSDT' };
+
+        U.$$('#btPreset .button').forEach((b) =>
+          b.addEventListener('click', async () => {
+            preset = b.dataset.preset;
+            U.$$('#btPreset .button').forEach((x) => x.classList.toggle('active', x === b));
+            if (!data) return;
+            try {
+              const r2 = await API.get(`/api/bt/run?market=${market}&code=${defaults[market]}&period=day&scoring=${preset}`);
+              if (r2.ok) { data = r2; render(); }
+            } catch (e) { /* 保持原结果 */ }
+          })
+        );
 
         const render = () => {
           if (!data) return;
@@ -588,7 +606,7 @@
           runBtn.disabled = true;
           runBtn.textContent = '回测中…';
           try {
-            data = await API.get(`/api/bt/run?market=${market}&code=${defaults[market]}&period=day`);
+            data = await API.get(`/api/bt/run?market=${market}&code=${defaults[market]}&period=day&scoring=${preset}`);
             if (!data.ok) { $('#btBodyM').innerHTML = `<div class="empty">${U.esc(data.error || '失败')}</div>`; return; }
             render();
           } catch (e) {
@@ -613,13 +631,32 @@
          <button class="button sq" data-mk="HK">港股</button>
        </div>
        <div class="hint" style="margin:6px 2px 8px;font-size:11px">27 项组合层指标 · 年化按 252 交易日 · 卡玛=年化÷|最大回撤|</div>
+       <div class="seg segmented m-preset" id="qPreset">
+         <button class="sq button active" data-preset="balanced">均衡</button>
+         <button class="sq button" data-preset="conservative">保守</button>
+         <button class="sq button" data-preset="aggressive">激进</button>
+       </div>
        <div id="qVerdictM"></div>
        <div id="qBodyM"><div class="empty">点「开始回测」加载</div></div>
        <div id="qByM"></div>
        <button class="btn button" id="qRunM" style="width:100%;margin-top:8px">开始回测</button>`,
       () => {
         let market = 'CNF';
+        let preset = 'balanced';
         let data = null;
+
+        /* 权重切换：重新请求（评分在服务端算） */
+        U.$$('#qPreset .button').forEach((b) =>
+          b.addEventListener('click', async () => {
+            preset = b.dataset.preset;
+            U.$$('#qPreset .button').forEach((x) => x.classList.toggle('active', x === b));
+            if (!data) return;
+            try {
+              const r2 = await API.get(`/api/quant/portfolio?markets=${market}&maxSymbols=6&period=day&scoring=${preset}`);
+              if (r2.ok) { data = r2; render(); }
+            } catch (e) { /* 保持原结果 */ }
+          })
+        );
 
         const render = () => {
           if (!data) return;
@@ -659,7 +696,7 @@
           runBtn.disabled = true;
           runBtn.textContent = '回测中（约 30-90 秒）…';
           try {
-            data = await API.get(`/api/quant/portfolio?markets=${market}&maxSymbols=6&period=day`);
+            data = await API.get(`/api/quant/portfolio?markets=${market}&maxSymbols=6&period=day&scoring=${preset}`);
             if (!data.ok) { $('#qBodyM').innerHTML = `<div class="empty">${U.esc(data.error || '失败')}</div>`; return; }
             render();
           } catch (e) {

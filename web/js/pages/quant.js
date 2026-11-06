@@ -203,6 +203,137 @@
   }
 
 
+  /* ---------- 并排对比 ---------- */
+  /*
+    交互设计：点「与上次参数对比」→ 打开一个表单，让你改一两个参数（默认只改止损），
+    右侧实时显示改后的参数摘要 → 点「开始对比」跑两组，并排显示分数与维度差异。
+    为什么不做成"自动对比上次"：用户往往想比较的是"如果我加止损会怎样"，
+    而不是"上次跑的是什么"。
+  */
+  function openCompare() {
+    const box = U.$('#qCompareBox');
+    if (!box) return;
+    if (box.innerHTML.trim()) { box.innerHTML = ''; return; }  // 再点一次收起
+    const cur = p();
+    box.innerHTML = `<div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <div class="card-head" style="margin-bottom:8px"><h3>并排对比</h3><span class="hint">同一套标的，改一两个参数，看分数差多少</span></div>
+      <div class="bt-row">
+        <label>改动项
+          <select id="cmpWhat" class="inp">
+            <!-- 量化组合是"信号→权重聚合"，没有止损止盈概念，只能比这几项 -->
+            <option value="biStyle">换笔标准</option>
+            <option value="maxWeightPerSymbol">单品种仓位上限</option>
+            <option value="feeBps">手续费</option>
+            <option value="maxSymbols">品种数</option>
+          </select>
+        </label>
+        <label>新值 <select id="cmpVal" class="inp"></select></label>
+        <button class="btn sm primary" id="cmpRun">开始对比</button>
+        <span class="hint" id="cmpHint"></span>
+      </div>
+      <div id="cmpResult"></div>
+    </div>`;
+
+    const what = U.$('#cmpWhat');
+    const val = U.$('#cmpVal');
+    const OPTS = {
+      biStyle: [['new', '新笔'], ['old', '老笔']],
+      maxWeightPerSymbol: [['1', '100%'], ['0.5', '50%'], ['0.3', '30%']],
+      feeBps: [['8', '8bps'], ['15', '15bps'], ['30', '30bps']],
+      maxSymbols: [['6', '6 个'], ['12', '12 个'], ['20', '20 个']],
+    };
+    const fillVal = () => {
+      val.innerHTML = (OPTS[what.value] || []).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    };
+    fillVal();
+    what.addEventListener('change', fillVal);
+
+    U.$('#cmpRun').addEventListener('click', async () => {
+      const base = p();
+      const cfgA = { kind: 'quant', markets: base.markets, maxSymbols: base.maxSymbols, period: base.period, biStyle: base.biStyle, feeBps: base.feeBps, slipBps: base.slipBps, symbols: base.symbols, scoring: scoringPreset };
+      const NUMERIC = ['maxWeightPerSymbol', 'feeBps', 'maxSymbols'];
+      const cfgB = { ...cfgA, [what.value]: NUMERIC.includes(what.value) ? Number(val.value) : val.value };
+      U.$('#cmpHint').textContent = '跑两组，约 1-2 分钟…';
+      const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      try {
+        const r = await API.get(`/api/bt/compare?a=${enc(cfgA)}&b=${enc(cfgB)}&scoring=${scoringPreset}`);
+        if (!r.ok) { U.$('#cmpHint').textContent = r.error || '失败'; return; }
+        U.$('#cmpHint').textContent = '';
+        renderCompare(r);
+      } catch (e) {
+        U.$('#cmpHint').textContent = e.message;
+      }
+    });
+  }
+
+  function renderCompare(r) {
+    const box = U.$('#cmpResult');
+    if (!box) return;
+    const A = r.a, B = r.b;
+    if (!A.ok || !B.ok) { box.innerHTML = `<div class="empty">有一组失败：${U.esc((A.error || '') + ' / ' + (B.error || ''))}</div>`; return; }
+    const d = r.diff || {};
+    const better = d.better;
+    const cls = (v) => (v > 0 ? 'q-good' : v < 0 ? 'q-bad' : '');
+    const dimRows = (d.dims || []).map((x) => `<div class="cmp-row">
+      <span class="n">${U.esc(x.name)}</span>
+      <span class="a">${x.a}</span>
+      <span class="arrow">→</span>
+      <span class="b">${x.b}</span>
+      <span class="d ${cls(x.diff)}">${x.diff > 0 ? '+' : ''}${x.diff}</span>
+    </div>`).join('');
+    box.innerHTML = `<div class="cmp-grid">
+      <div class="cmp-side ${better === 'a' ? 'win' : ''}">
+        <div class="cmp-lb">A · 原始</div>
+        <div class="cmp-sc">${A.score.total}</div>
+        <div class="cmp-gd">${U.esc(A.score.grade.text)}</div>
+        <div class="cmp-cf">${U.esc(A.label)}</div>
+      </div>
+      <div class="cmp-mid">
+        <div class="cmp-sd ${cls(d.scoreDiff)}">${d.scoreDiff > 0 ? '+' : ''}${d.scoreDiff} 分</div>
+        <div class="cmp-wn">${better === 'b' ? 'B 更好' : better === 'a' ? 'A 更好' : '持平'}</div>
+      </div>
+      <div class="cmp-side ${better === 'b' ? 'win' : ''}">
+        <div class="cmp-lb">B · 新参数</div>
+        <div class="cmp-sc">${B.score.total}</div>
+        <div class="cmp-gd">${U.esc(B.score.grade.text)}</div>
+        <div class="cmp-cf">${U.esc(B.label)}</div>
+      </div>
+    </div>
+    <div class="cmp-dims">${dimRows}</div>`;
+  }
+
+  /* ---------- 历史存档 ---------- */
+  async function openHistory() {
+    const box = U.$('#qHistoryBox');
+    if (!box) return;
+    if (box.innerHTML.trim()) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="card" style="padding:12px 14px;margin-bottom:12px"><div class="loading">读取历史…</div></div>';
+    try {
+      const r = await API.get('/api/bt/history?all=1&limit=30');
+      const items = r.items || [];
+      if (!items.length) {
+        box.innerHTML = '<div class="card" style="padding:12px 14px;margin-bottom:12px"><div class="empty">还没有存档。每跑一次回测会自动记一条。</div></div>';
+        return;
+      }
+      const rows = items.map((x) => {
+        const d = new Date(x.lastAt);
+        const ts = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const trend = x.trend == null ? '' : `<span class="${x.trend > 0 ? 'q-good' : x.trend < 0 ? 'q-bad' : ''}">${x.trend > 0 ? '+' : ''}${x.trend}</span>`;
+        return `<div class="hist-row">
+          <div class="hist-lb">${U.esc(x.label || x.key)}</div>
+          <div class="hist-meta">${ts} · ${x.runs} 次${trend ? ' · 较首次 ' + trend : ''}</div>
+          <div class="hist-sc">${x.lastScore != null ? x.lastScore : '—'}</div>
+        </div>`;
+      }).join('');
+      box.innerHTML = `<div class="card" style="padding:12px 14px;margin-bottom:12px">
+        <div class="card-head" style="margin-bottom:8px"><h3>历史存档</h3><span class="hint">${items.length} 套配置 · 每跑一次自动记录</span></div>
+        <div class="hist-list">${rows}</div>
+      </div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="card" style="padding:12px 14px"><div class="empty">${U.esc(e.message)}</div></div>`;
+    }
+  }
+
   async function run() {
     const cfg = p();
     U.$('#qMetrics').innerHTML = '<div class="loading">组合回测中（多品种，约 1-3 分钟）…</div>';
@@ -227,8 +358,16 @@
   }
 
   async function renderPage() {
-    const btn = U.$('#qRun');
-    if (btn && !btn._bound) { btn._bound = 1; btn.addEventListener('click', run); }
+    /* 表驱动绑定：新增按钮只要加一行 */
+    const bindings = [
+      ['#qRun', run],
+      ['#qCompare', openCompare],
+      ['#qHistory', openHistory],
+    ];
+    for (const [sel, fn] of bindings) {
+      const el = U.$(sel);
+      if (el && !el._bound) { el._bound = 1; el.addEventListener('click', fn); }
+    }
     // 初始化选标的器（方向 B · 卡片选择式）
     if (!picker && window.SymbolPicker) {
       const host = U.$('#qPicker');

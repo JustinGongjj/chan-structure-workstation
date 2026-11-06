@@ -368,7 +368,11 @@
           <h1 class="page-title">量化组合 · 绩效归因 <span class="tag-live">27 项组合层指标 · 借鉴 czsc / wbt 口径</span></h1>
           <p class="page-desc">多个品种并行持仓 → 按权重聚合成组合日收益 → 算组合层绩效。这是<b>组合口径</b>（绝对收益/夏普/卡玛/胜率/波动/持仓占比），与「因子回测」的<b>交易口径</b>（逐笔撮合、资金曲线）互补，不重复。</p>
         </div>
-        <div class="head-actions"><button class="btn sm primary" id="qRun">跑组合回测</button></div>
+        <div class="head-actions">
+          <button class="btn sm primary" id="qRun">跑组合回测</button>
+          <button class="btn sm" id="qCompare">与上次参数对比</button>
+          <button class="btn sm" id="qHistory">历史存档</button>
+        </div>
       </div>
 
       <div class="card bt-config">
@@ -396,6 +400,8 @@
       </div>
 
       <!-- ① 评分仪表盘：回答"这套能不能用" -->
+      <div id="qCompareBox"></div>
+      <div id="qHistoryBox"></div>
       <div id="qScore"></div>
       <!-- ② 四个大数字卡：回答"具体多少" -->
       <div class="q-hero" id="qHero"></div>

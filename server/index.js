@@ -26,6 +26,7 @@ const DEFENSE = require('./lib/defense');
 const PORTFOLIO = require('./lib/portfolio');
 const SYMNAMES = require('./lib/symbolnames');
 const SCORE = require('./lib/score');
+const { makeStore } = require('./lib/history');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
 const TIMING = require('./lib/timing');
@@ -522,6 +523,54 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+/* ---------------- 回测：对比辅助 ---------------- */
+function describeCfg(kind, cfg) {
+  const MK = { A: 'A股', US: '美股', CR: '加密', CNF: '国内期货', HK: '港股', USF: '美期货' };
+  const p = [];
+  p.push(kind === 'quant' ? '量化组合' : kind === 'batch' ? '批量回测' : '单标的');
+  if (cfg.symbols) p.push(cfg.symbols.split(',').slice(0, 2).join('/'));
+  else if (cfg.markets) p.push(cfg.markets.split(',').map((m) => MK[m.trim()] || m).join('+'));
+  else if (cfg.code) p.push((MK[cfg.market] || cfg.market || 'A') + ':' + cfg.code);
+  if (cfg.signalTypes) p.push(cfg.signalTypes);
+  if (cfg.entry) p.push({ buy: '只做多', sell: '只做空', both: '双向' }[cfg.entry] || cfg.entry);
+  if (cfg.stopPct > 0) p.push(`止损${cfg.stopPct}%`);
+  if (cfg.takePct > 0) p.push(`止盈${cfg.takePct}%`);
+  if (cfg.biStyle === 'old') p.push('老笔');
+  if (cfg.mtfMode) p.push('多级别');
+  return p.join(' · ');
+}
+
+/** 两份结果的差异表：分数、四维度、关键指标 */
+function diffScores(ra, rb) {
+  if (!ra || !rb || !ra.ok || !rb.ok) return null;
+  const dimDiff = (ra.score && rb.score) ? ra.score.dims.map((d, i) => {
+    const o = rb.score.dims[i] || { got: 0 };
+    return { name: d.name, a: d.got, b: o.got, diff: +(o.got - d.got).toFixed(1), max: d.max };
+  }) : [];
+  const PICK = ['年化收益', '年化收益', '夏普比率', '最大回撤', '交易胜率', '交易次数', '绝对收益', 'medianAnnualPct', 'medianSharpe', 'medianDrawdownPct', 'totalTrades', 'winRate', 'annualReturnPct', 'sharpe', 'maxDrawdownPct', 'trades'];
+  const seen = new Set();
+  const metricDiff = [];
+  for (const k of PICK) {
+    if (seen.has(k)) continue;
+    const va = ra.metrics ? ra.metrics[k] : undefined;
+    const vb = rb.metrics ? rb.metrics[k] : undefined;
+    if (va === undefined && vb === undefined) continue;
+    seen.add(k);
+    metricDiff.push({
+      name: k,
+      a: va != null ? va : null,
+      b: vb != null ? vb : null,
+      diff: (typeof va === 'number' && typeof vb === 'number') ? +(vb - va).toFixed(2) : null,
+    });
+  }
+  return {
+    scoreDiff: (ra.score && rb.score) ? rb.score.total - ra.score.total : null,
+    dims: dimDiff,
+    metrics: metricDiff.slice(0, 8),
+    better: (ra.score && rb.score) ? (rb.score.total > ra.score.total ? 'b' : rb.score.total < ra.score.total ? 'a' : 'tie') : null,
+  };
+}
+
 /* ---------------- 回测：默认标的池与参数解析 ---------------- */
 // 默认标的池来自 universe.js（136 个，按行业/板块分散预设，非按回测表现挑选）
 const BT_DEFAULT_SYMBOLS = UNIV.flatUniverse();
@@ -554,6 +603,8 @@ function btOptsFromQuery(u) {
 /* ---------------- 手绘线存储 ----------------
    结构：{ "A:600519:day": { updatedAt, drawings: [...] } }
    用原子写，避免进程被杀造成半个文件；单文件够用（几 KB），不做数据库。 */
+const HIST = makeStore(path.join(DATA_DIR, 'backtest-history.json'));
+
 const DRAW_FILE = path.join(DATA_DIR, 'drawings.json');
 let DRAW_STORE = null;
 
@@ -661,11 +712,13 @@ const routes = {
     if (!r.ok) return r;
     const preset = ['balanced', 'conservative', 'aggressive'].includes(u.searchParams.get('scoring'))
       ? u.searchParams.get('scoring') : 'balanced';
-    return {
-      ...r,
-      score: SCORE.scorePortfolio(SCORE.fromBacktest(r.stats, false), preset),
-      market, code: S.normCode(market, code), period, source: kl.source,
-    };
+    const score = SCORE.scorePortfolio(SCORE.fromBacktest(r.stats, false), preset);
+    const input = { market, code: S.normCode(market, code), period, ...opts };
+    // 先存档再取序列，否则取到的是"本次之前"的历史
+    if (u.searchParams.get('nosave') !== '1') {
+      HIST.record('single', input, { score, metrics: { 年化: r.stats.annualReturnPct, 夏普: r.stats.sharpe, 回撤: r.stats.maxDrawdownPct, 交易: r.stats.trades } });
+    }
+    return { ...r, score, history: HIST.series('single', input), market, code: S.normCode(market, code), period, source: kl.source };
   },
   // 批量回测：多标的汇总，判断因子普适性
   '/api/bt/batch': async (u) => {
@@ -697,9 +750,18 @@ const routes = {
     if (!r.ok) return r;
     const preset = ['balanced', 'conservative', 'aggressive'].includes(u.searchParams.get('scoring'))
       ? u.searchParams.get('scoring') : 'balanced';
+    const score = SCORE.scorePortfolio(SCORE.fromBacktest(r.summary, true), preset);
+    const input = {
+      markets: u.searchParams.get('markets') || '',
+      symbols: list, period, ...opts,
+      maxSymbols: u.searchParams.get('maxSymbols') || '',
+    };
+    if (u.searchParams.get('nosave') !== '1') {
+      HIST.record('batch', input, { score, metrics: { 中位年化: r.summary.medianAnnualPct, 中位夏普: r.summary.medianSharpe, 交易: r.summary.totalTrades } });
+    }
     return {
-      ...r,
-      score: SCORE.scorePortfolio(SCORE.fromBacktest(r.summary, true), preset),
+      ...r, score,
+      history: HIST.series('batch', input),
       period, requested: items.length, fetched: symbols.length,
     };
   },
@@ -844,7 +906,123 @@ const routes = {
     /* 附上 0-100 评分（权重预设可切换：balanced / conservative / aggressive） */
     const preset = ['balanced', 'conservative', 'aggressive'].includes(u.searchParams.get('scoring'))
       ? u.searchParams.get('scoring') : 'balanced';
-    return { ...r, score: SCORE.scorePortfolio(r.metrics, preset), requested: items.length, fetched: symbols.length };
+    const score = SCORE.scorePortfolio(r.metrics, preset);
+    const input = {
+      markets: u.searchParams.get('markets') || '',
+      symbols: list, period, ...opts,
+      maxSymbols: u.searchParams.get('maxSymbols') || '',
+    };
+    if (u.searchParams.get('nosave') !== '1') {
+      HIST.record('quant', input, { score, metrics: { 年化: r.metrics.年化收益, 夏普: r.metrics.夏普比率, 回撤: r.metrics.最大回撤 } });
+    }
+    return {
+      ...r, score,
+      history: HIST.series('quant', input),
+      requested: items.length, fetched: symbols.length,
+    };
+  },
+  /* ---------- 回测历史 ---------- */
+  '/api/bt/history': async (u) => {
+    const kind = u.searchParams.get('kind') || '';
+    if (u.searchParams.get('all') === '1' || !kind) {
+      return { ok: true, items: HIST.listAll(Number(u.searchParams.get('limit') || 50)) };
+    }
+    /* 单条详情 */
+    const key = u.searchParams.get('key') || '';
+    const all = HIST.listAll(500);
+    const hit = all.find((x) => x.key === key);
+    if (!hit) return { ok: false, error: '未找到该历史记录' };
+    return { ok: true, item: hit };
+  },
+  '/api/bt/history/clear': async (u) => {
+    if (u.searchParams.get('key')) {
+      const okDel = HIST.remove(u.searchParams.get('key'));
+      return { ok: okDel, error: okDel ? '' : '未找到' };
+    }
+    HIST.clear();
+    return { ok: true };
+  },
+  /*
+    并排对比：一次跑两组参数，返回两份结果 + 差异表
+    用途：想确认"换个止损是不是真变好了"，不必跑两次再自己记数字。
+    参数 enc 格式：base64url(JSON)，避免 URL 过长和特殊字符问题。
+  */
+  '/api/bt/compare': async (u) => {
+    const decode = (str) => {
+      if (!str) return null;
+      try { return JSON.parse(Buffer.from(str, 'base64url').toString('utf8')); } catch (e) { return null; }
+    };
+    const a = decode(u.searchParams.get('a'));
+    const b = decode(u.searchParams.get('b'));
+    if (!a || !b) return { ok: false, error: '需要两组参数（a 与 b）' };
+    const kind = a.kind || b.kind || 'single';
+    const preset = ['balanced', 'conservative', 'aggressive'].includes(u.searchParams.get('scoring'))
+      ? u.searchParams.get('scoring') : 'balanced';
+
+    const runOne = async (cfg) => {
+      try {
+        if (kind === 'quant') {
+          const mk = cfg.markets || '';
+          let items = mk ? UNIV.flatUniverse(mk.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean))
+            : (cfg.symbols ? cfg.symbols.split(',').map((x) => { const [m, c] = x.split(':'); return { market: (m || 'A').toUpperCase(), code: c }; }) : BT_DEFAULT_SYMBOLS);
+          items = items.slice(0, Math.min(40, cfg.maxSymbols || 12));
+          const symbols = [];
+          for (const it of items) {
+            try { const kl = await S.klines({ market: it.market, code: it.code, period: cfg.period || 'day', limit: cfg.limit || 800 }); if (kl.bars.length >= 200) symbols.push({ ...it, bars: kl.bars }); } catch (e) {}
+          }
+          if (!symbols.length) return { ok: false, error: '无数据' };
+          const r = PORTFOLIO.runPortfolio(symbols, {
+            period: cfg.period || 'day', biStyle: cfg.biStyle || 'new',
+            maxWeightPerSymbol: cfg.maxWeightPerSymbol || 1, feeBps: cfg.feeBps || 8, slipBps: cfg.slipBps || 4,
+          });
+          if (!r.ok) return r;
+          return { ok: true, score: SCORE.scorePortfolio(r.metrics, preset), metrics: r.metrics, label: describeCfg('quant', cfg) };
+        }
+        if (kind === 'batch') {
+          const mk = cfg.markets || '';
+          let items = cfg.symbols
+            ? cfg.symbols.split(',').map((x) => { const [m, c] = x.split(':'); return { market: (m || 'A').toUpperCase(), code: c }; })
+            : (mk ? UNIV.flatUniverse(mk.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean)) : BT_DEFAULT_SYMBOLS);
+          items = items.slice(0, Math.min(40, cfg.maxSymbols || 12));
+          const symbols = [];
+          for (const it of items) {
+            try { const kl = await S.klines({ market: it.market, code: it.code, period: cfg.period || 'day', limit: cfg.limit || 800 }); if (kl.bars.length >= 400) symbols.push({ ...it, bars: kl.bars }); } catch (e) {}
+          }
+          if (!symbols.length) return { ok: false, error: '无数据' };
+          const r = BTBATCH.runBatch(symbols, {
+            period: cfg.period || 'day', entry: cfg.entry || 'both',
+            signalTypes: cfg.signalTypes ? cfg.signalTypes.split(',') : null,
+            exitOn: cfg.exitOn || 'signal', stopPct: cfg.stopPct || 0, takePct: cfg.takePct || 0,
+            biStyle: cfg.biStyle || 'new', mtfMode: cfg.mtfMode || '', maxConfirmLag: 3,
+          });
+          if (!r.ok) return r;
+          return {
+            ok: true,
+            score: SCORE.scorePortfolio(SCORE.fromBacktest(r.summary, true), preset),
+            metrics: r.summary, label: describeCfg('batch', cfg),
+          };
+        }
+        /* single */
+        const kl = await S.klines({ market: cfg.market || 'A', code: cfg.code || '600519', period: cfg.period || 'day', limit: cfg.limit || 800 });
+        const r = BTENGINE.runBacktest(kl.bars, {
+          period: cfg.period || 'day', entry: cfg.entry || 'both',
+          signalTypes: cfg.signalTypes ? cfg.signalTypes.split(',') : null,
+          exitOn: cfg.exitOn || 'signal', stopPct: cfg.stopPct || 0, takePct: cfg.takePct || 0,
+          biStyle: cfg.biStyle || 'new', mtfMode: cfg.mtfMode || '', maxConfirmLag: 3,
+        });
+        if (!r.ok) return r;
+        return {
+          ok: true,
+          score: SCORE.scorePortfolio(SCORE.fromBacktest(r.stats, false), preset),
+          metrics: r.stats, label: describeCfg('single', cfg),
+        };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      }
+    };
+
+    const [ra, rb] = await Promise.all([runOne(a), runOne(b)]);
+    return { ok: true, kind, a: ra, b: rb, diff: diffScores(ra, rb) };
   },
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景

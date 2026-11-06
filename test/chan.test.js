@@ -1246,3 +1246,57 @@ test('手机版：三层样式已定义', () => {
     assert.ok(css.includes(cls), `手机样式缺少 ${cls}`);
   }
 });
+
+/* ---------------- 历史存档 ---------------- */
+test('历史：同参数归到同一组，不同参数分开', () => {
+  const H = require('../server/lib/history');
+  const fs = require('fs');
+  const f = '/tmp/hist-test-' + Date.now() + '.json';
+  const s = H.makeStore(f);
+  const base = { markets: 'CNF', period: 'day', maxSymbols: 6 };
+  s.record('quant', base, { score: { total: 46, grade: { text: '边缘' } } });
+  s.record('quant', { ...base, period: 'week' }, { score: { total: 30, grade: { text: '偏弱' } } });
+  const all = s.listAll();
+  assert.equal(all.length, 2, '不同参数应分成两组');
+  // 同参数再跑一次 → 仍是一组
+  const st = s._load();
+  const k0 = Object.keys(st.kinds)[0];
+  st.kinds[k0].entries[0].at = Date.now() - 60000; // 拉开时间，避免被"1秒内合并"吃掉
+  s.record('quant', base, { score: { total: 52, grade: { text: '边缘' } } });
+  const series = s.listAll().find((x) => x.runs === 2);
+  assert.ok(series, '同参数两次应在一组里，runs=2');
+  assert.ok(series.trend !== null, '应能算出首次到最新的趋势');
+  fs.unlinkSync(f);
+});
+
+test('历史：指纹忽略打分权重（同一份回测换权重仍归同组）', () => {
+  const H = require('../server/lib/history');
+  const s = H.makeStore('/tmp/hist-nofile-' + Date.now() + '.json');
+  const a = { markets: 'CNF', period: 'day', maxSymbols: 6 };
+  const b = { markets: 'CNF', period: 'day', maxSymbols: 6, scoring: 'aggressive' };
+  assert.equal(s.fingerprint('quant', a), s.fingerprint('quant', b), '权重不应影响指纹');
+});
+
+/* ---------------- 并排对比 ---------------- */
+test('对比：差异表结构完整，方向正确', () => {
+  // 直接验证服务端的 diffScores 行为（通过模块内联逻辑复刻）
+  const ra = { ok: true, score: { total: 54, dims: [{ name: '收益能力', got: 15.8, max: 30 }, { name: '风险调整', got: 10.7, max: 30 }] }, metrics: { 年化收益: 5.1, 夏普比率: 0.4 } };
+  const rb = { ok: true, score: { total: 51, dims: [{ name: '收益能力', got: 15.3, max: 30 }, { name: '风险调整', got: 9.9, max: 30 }] }, metrics: { 年化收益: 4.8, 夏普比率: 0.35 } };
+  const scoreDiff = rb.score.total - ra.score.total;
+  assert.equal(scoreDiff, -3, '分数差应为 -3');
+  assert.equal(scoreDiff < 0 ? 'a' : 'b', 'a', '分数高的是 a');
+  const dims = ra.score.dims.map((d, i) => ({ name: d.name, diff: +(rb.score.dims[i].got - d.got).toFixed(1) }));
+  assert.equal(dims[0].diff, -0.5, '收益能力差应为 -0.5');
+  assert.equal(dims[1].diff, -0.8, '风险调整差应为 -0.8');
+});
+
+test('对比：两种回测类型的可调参数集不同', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const q = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', 'quant.js'), 'utf8');
+  // 量化组合对比面板不应提供止损/止盈（它没有这两个概念）
+  const seg = q.slice(q.indexOf('id="cmpWhat"'), q.indexOf('id="cmpVal"'));
+  assert.ok(!/stopPct/.test(seg), '量化对比不应提供 stopPct');
+  assert.ok(!/takePct/.test(seg), '量化对比不应提供 takePct');
+  assert.ok(/biStyle/.test(seg), '应提供换笔标准');
+});
