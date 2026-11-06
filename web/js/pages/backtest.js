@@ -5,6 +5,7 @@
   let curveChart = null;
   let lastBatch = null;
   let picker = null;   // 选标的器实例
+  let scoringPreset = 'balanced';
 
   const P = () => ({
     symbols: picker ? picker.getSelected().join(',') : '',
@@ -21,6 +22,37 @@
   });
 
   const qs = (o) => Object.entries(o).filter(([, v]) => v !== '' && v != null).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+
+  /* 评分仪表盘（共享组件）：权重切换后重跑当前模式 */
+  function renderScore(score, rerun) {
+    window.ScoreWidget.render(U.$('#btScore'), score, {
+      onPreset: (pr) => { scoringPreset = pr; if (rerun) rerun(); },
+    });
+  }
+
+  /* 单标的的大数字卡（用资金曲线画迷你走势） */
+  function renderHeroSingle(r) {
+    const s = r.stats;
+    const nav = (r.equity || []).map((e) => e.v);
+    const cUp = '#22b884', cDn = '#f0544f';
+    window.ScoreWidget.hero(U.$('#btHero'), [
+      { k: '年化收益', v: (s.annualReturnPct > 0 ? '+' : '') + s.annualReturnPct + '%', d: `总收益 ${s.totalReturnPct}%`, good: s.annualReturnPct > 0, spark: nav, sc: s.annualReturnPct > 0 ? cUp : cDn },
+      { k: '夏普比率', v: s.sharpe, d: `盈亏比 ${s.payoff ?? '—'}`, good: s.sharpe > 0, spark: nav, sc: s.sharpe > 0 ? cUp : cDn },
+      { k: '最大回撤', v: s.maxDrawdownPct + '%', d: `超额 ${s.excessPct}%`, good: s.maxDrawdownPct <= 15, spark: window.ScoreWidget.drawdownSeries(nav), sc: cDn },
+      { k: '交易胜率', v: s.winRate + '%', d: `${s.trades} 笔 · 持有 ${s.avgHoldBars} 根`, good: s.winRate >= 50, spark: nav, sc: s.winRate >= 50 ? cUp : '#9aa7b8' },
+    ]);
+  }
+
+  /* 批量的大数字卡（无单条曲线，走势留空） */
+  function renderHeroBatch(sum) {
+    const cUp = '#22b884', cDn = '#f0544f';
+    window.ScoreWidget.hero(U.$('#btHero'), [
+      { k: '中位年化', v: (sum.medianAnnualPct ?? 0) + '%', d: `中位总收益 ${sum.medianTotalReturnPct ?? '—'}%`, good: (sum.medianAnnualPct ?? 0) > 0, sc: (sum.medianAnnualPct ?? 0) > 0 ? cUp : cDn },
+      { k: '中位夏普', v: sum.medianSharpe ?? '—', d: `盈利因子 ${sum.profitFactor ?? '—'}`, good: (sum.medianSharpe ?? 0) > 0, sc: (sum.medianSharpe ?? 0) > 0 ? cUp : cDn },
+      { k: '中位回撤', v: sum.medianDrawdownPct + '%', d: `最差 ${sum.worstDrawdownPct}%`, good: sum.medianDrawdownPct <= 15, sc: cDn },
+      { k: '交易胜率', v: sum.winRate + '%', d: `${sum.totalTrades} 笔 · ${sum.symbols} 标的`, good: sum.winRate >= 50, sc: sum.winRate >= 50 ? cUp : '#9aa7b8' },
+    ]);
+  }
 
   function statRow(label, value, cls) {
     return `<div class="kv-row"><span>${label}</span><b class="${cls || ''}">${value}</b></div>`;
@@ -51,6 +83,8 @@
       const r = await API.get(`/api/bt/run?market=${market}&code=${encodeURIComponent(code)}&${qs(p)}`);
       if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
       renderVerdict(null);
+      renderScore(r.score, runSingle);
+      renderHeroSingle(r);
       renderStats(r);
       window.__btEquity = r.equity;
       window.__btBench = r.stats.benchmarkPct;
@@ -75,6 +109,8 @@
       const r = await API.get(`/api/bt/batch?${qs(q2)}`);
       if (!r.ok) { U.$('#btStats').innerHTML = `<div class="loading">${U.esc(r.error || '失败')}</div>`; return; }
       lastBatch = r;
+      renderScore(r.score, runBatch);
+      renderHeroBatch(r.summary);
       renderVerdict(r.summary.verdict);
       const s = r.summary;
       U.$('#btStats').innerHTML = [

@@ -136,4 +136,48 @@ function verdictOf(total, strongest, weakest, m) {
   return parts.join('；') + '。';
 }
 
-module.exports = { scorePortfolio, WEIGHTS };
+/**
+ * 从「因子回测」的结果构造评分输入
+ * 两套回测的字段名不同，这里做归一化，让 scorePortfolio 可以复用。
+ *
+ * 单标的（bt/run）：
+ *   年化=annualReturnPct 夏普=sharpe 回撤=maxDrawdownPct
+ *   胜率=winRate 盈亏比=payoff 交易数=trades 持有=avgHoldBars
+ * 批量（bt/batch）：
+ *   用中位值（medianSharpe / medianAnnualPct / medianDrawdownPct）
+ *   胜率用汇总胜率，盈亏比由单笔数据推得
+ */
+function fromBacktest(stats, isBatch = false) {
+  if (isBatch) {
+    const s = stats || {};
+    /* 换手：年化交易次数 = 总交易 / 年数；批量没有年数字段，用平均持有与标的数粗估 */
+    const trades = s.totalTrades || 0;
+    return {
+      年化收益: s.medianAnnualPct != null ? s.medianAnnualPct : 0,
+      绝对收益: s.medianTotalReturnPct != null ? s.medianTotalReturnPct : 0,
+      夏普比率: s.medianSharpe != null ? s.medianSharpe : 0,
+      /* 批量没有卡玛的直接来源 → 用 年化/|回撤| 现算 */
+      卡玛比率: (s.medianDrawdownPct > 0 && s.medianAnnualPct != null)
+        ? +(s.medianAnnualPct / s.medianDrawdownPct).toFixed(2) : null,
+      最大回撤: s.medianDrawdownPct != null ? s.medianDrawdownPct : 0,
+      交易胜率: s.winRate != null ? s.winRate : 0,
+      单笔盈亏比: s.profitFactor != null ? Math.min(s.profitFactor, 5) : null,
+      /* 年化交易次数：总量 / 标的数（每标的每年大致次数） */
+      年化交易次数: s.symbols ? +(trades / s.symbols / 3).toFixed(1) : trades,
+    };
+  }
+  const s = stats || {};
+  const years = s.years > 0 ? s.years : 1;
+  return {
+    年化收益: s.annualReturnPct || 0,
+    绝对收益: s.totalReturnPct || 0,
+    夏普比率: s.sharpe || 0,
+    卡玛比率: s.maxDrawdownPct > 0 ? +((s.annualReturnPct || 0) / s.maxDrawdownPct).toFixed(2) : null,
+    最大回撤: s.maxDrawdownPct || 0,
+    交易胜率: s.winRate || 0,
+    单笔盈亏比: s.payoff != null ? Math.min(s.payoff, 5) : null,
+    年化交易次数: (s.trades || 0) / years,
+  };
+}
+
+module.exports = { scorePortfolio, fromBacktest, WEIGHTS };

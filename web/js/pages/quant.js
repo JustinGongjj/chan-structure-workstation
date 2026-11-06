@@ -184,100 +184,24 @@
     U.$('#qByHint').textContent = `${list.length} 个品种 · 按合计收益排序 · 绿色贡献、红色拖累`;
   }
 
-  /* ---------- ① 评分仪表盘 ---------- */
-  const GRADE_COLOR = { good: '#22b884', warn: '#d9a441', bad: '#f0544f' };
-
+  /* ---------- ① 评分仪表盘 + ② 大数字卡（共享组件 ScoreWidget） ---------- */
   function renderScore(score) {
-    const box = U.$('#qScore');
-    if (!box || !score) { if (box) box.innerHTML = ''; return; }
-    const col = GRADE_COLOR[score.grade.cls] || '#9aa7b8';
-    const R = 56, C = 2 * Math.PI * R;
-    const off = C * (1 - score.total / 100);
-    const presets = [
-      ['balanced', '均衡'], ['conservative', '保守'], ['aggressive', '激进'],
-    ];
-    const dimRows = score.dims.map((d) => {
-      const pct = Math.round(d.got / d.max * 100);
-      const c = pct >= 60 ? '#22b884' : pct >= 35 ? '#d9a441' : '#f0544f';
-      return `<div class="q-dim">
-        <span class="n">${U.esc(d.name)}</span>
-        <span class="q-track"><i style="width:${pct}%;background:${c}"></i></span>
-        <span class="s" style="color:${c}">${d.got} / ${d.max}</span>
-      </div>`;
-    }).join('');
-    box.innerHTML = `
-      <div class="q-preset">
-        <span class="lbl">评分标准</span>
-        ${presets.map(([k, lb]) => `<button data-preset="${k}" class="${k === score.preset ? 'on' : ''}">${lb}</button>`).join('')}
-        <span class="hint" style="margin-left:6px">评级：80+ 优秀 · 60 可用 · 40 边缘 · 20 偏弱</span>
-      </div>
-      <div class="q-score">
-        <div class="q-ring">
-          <svg width="132" height="132">
-            <circle cx="66" cy="66" r="${R}" fill="none" stroke="#1c2230" stroke-width="10"/>
-            <circle cx="66" cy="66" r="${R}" fill="none" stroke="${col}" stroke-width="10"
-              stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" stroke-linecap="round"/>
-          </svg>
-          <div class="num"><b style="color:${col}">${score.total}</b><span>${U.esc(score.grade.text)}</span></div>
-        </div>
-        <div class="q-dims">
-          ${dimRows}
-          <div class="q-verdict">${U.esc(score.verdict)}</div>
-        </div>
-      </div>`;
-    U.$$('#qScore [data-preset]').forEach((b) =>
-      b.addEventListener('click', () => {
-        if (b.dataset.preset === scoringPreset) return;
-        scoringPreset = b.dataset.preset;
-        run();   // 重跑（评分依赖后端）
-      })
-    );
-  }
-
-  /* ---------- ② 四个大数字卡（带迷你走势） ---------- */
-  function sparkline(vals, color) {
-    if (!vals || vals.length < 2) return '';
-    const w = 100, h = 30;
-    const min = Math.min(...vals), max = Math.max(...vals);
-    const pts = vals.map((v, i) => {
-      const x = (i / (vals.length - 1)) * w;
-      const y = h - ((v - min) / (max - min || 1)) * h;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
-  }
-
-  function navSeries(daily) {
-    let v = 1;
-    return (daily || []).map((d) => (v *= (1 + d.ret)));
-  }
-
-  /** 回撤序列（负数往下），用于回撤卡走势 */
-  function drawdownSeries(nav) {
-    let peak = -Infinity;
-    return nav.map((v) => { if (v > peak) peak = v; return (v / peak - 1) * 100; });
+    window.ScoreWidget.render(U.$('#qScore'), score, {
+      onPreset: (pr) => { scoringPreset = pr; run(); },
+    });
   }
 
   function renderHero(m, daily) {
-    const box = U.$('#qHero');
-    if (!box) return;
-    const nav = navSeries(daily);
+    const nav = window.ScoreWidget.navSeries(daily);
     const cUp = '#22b884', cDn = '#f0544f';
-    const cards = [
+    window.ScoreWidget.hero(U.$('#qHero'), [
       { k: '年化收益', v: (m.年化收益 > 0 ? '+' : '') + m.年化收益 + '%', d: `绝对 ${m.绝对收益}%`, good: m.年化收益 > 0, spark: nav, sc: m.年化收益 > 0 ? cUp : cDn },
       { k: '夏普比率', v: m.夏普比率, d: `卡玛 ${m.卡玛比率 ?? '—'}`, good: m.夏普比率 > 0, spark: nav, sc: m.夏普比率 > 0 ? cUp : cDn },
-      /* 回撤卡不画净值曲线（净值向上，画在回撤卡上会误导）；画回撤序列 */
-      { k: '最大回撤', v: m.最大回撤 + '%', d: `新高间隔 ${Math.round(m.新高间隔)} 日`, good: m.最大回撤 <= 15, spark: drawdownSeries(nav), sc: cDn },
+      { k: '最大回撤', v: m.最大回撤 + '%', d: `新高间隔 ${Math.round(m.新高间隔)} 日`, good: m.最大回撤 <= 15, spark: window.ScoreWidget.drawdownSeries(nav), sc: cDn },
       { k: '交易胜率', v: m.交易胜率 + '%', d: `${Math.round(m.交易次数)} 笔 · 盈亏比 ${m.单笔盈亏比 ?? '—'}`, good: m.交易胜率 >= 50, spark: nav, sc: m.交易胜率 >= 50 ? cUp : '#9aa7b8' },
-    ];
-    box.innerHTML = cards.map((c) => `
-      <div class="q-hc">
-        <div class="k">${U.esc(c.k)}</div>
-        <div class="v ${c.good ? 'q-good' : 'q-bad'}">${U.esc(String(c.v))}</div>
-        <div class="d">${U.esc(c.d)}</div>
-        ${sparkline(c.spark, c.sc)}
-      </div>`).join('');
+    ]);
   }
+
 
   async function run() {
     const cfg = p();

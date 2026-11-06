@@ -1183,3 +1183,40 @@ test('评分：极端数据不产生 NaN 或越界', () => {
     assert.ok(d.got >= 0 && d.got <= d.max, `${d.name} 得分 ${d.got} 应在 0-${d.max}`);
   }
 });
+
+/* ---------------- 回测评分适配 ---------------- */
+test('评分适配：单标的与批量字段都能正确归一化', () => {
+  const S = require('../server/lib/score');
+  const single = { annualReturnPct: 6.16, sharpe: 0.43, maxDrawdownPct: 22.48, winRate: 58.06, payoff: 1.08, trades: 54, years: 3.3, totalReturnPct: 20.88 };
+  const m1 = S.fromBacktest(single, false);
+  assert.ok(Math.abs(m1.年化收益 - 6.16) < 0.01, '年化应取自 annualReturnPct');
+  assert.ok(Math.abs(m1.夏普比率 - 0.43) < 0.01, '夏普应取自 sharpe');
+  assert.ok(Math.abs(m1.最大回撤 - 22.48) < 0.01, '回撤应取自 maxDrawdownPct');
+  assert.ok(Math.abs(m1.年化交易次数 - 54 / 3.3) < 0.1, '年化交易次数 = trades/years');
+
+  const batch = { medianAnnualPct: 0.33, medianSharpe: 0.1, medianDrawdownPct: 20.16, winRate: 51.9, profitFactor: 1.2, totalTrades: 77, symbols: 35 };
+  const m2 = S.fromBacktest(batch, true);
+  assert.ok(Math.abs(m2.年化收益 - 0.33) < 0.01, '批量年化应取自 medianAnnualPct');
+  assert.ok(Math.abs(m2.夏普比率 - 0.1) < 0.01);
+  assert.ok(Math.abs(m2.卡玛比率 - 0.02) < 0.05, '批量卡玛 = 年化/回撤');
+});
+
+test('批量：中位年化必须从 totalReturnPct 与 years 现算（回归：曾恒为 null）', () => {
+  const B = require('../server/lib/batch');
+  // 构造两个标的：一个 3 年翻倍，一个 3 年不变
+  const mkBars = (mult) => {
+    const out = [];
+    for (let i = 0; i < 800; i++) {
+      const c = 100 * (1 + (mult - 1) * (i / 799));
+      out.push({ t: 1.6e12 + i * 86400000, o: c, h: c * 1.01, l: c * 0.99, c, v: 1000 });
+    }
+    return out;
+  };
+  const r = B.runBatch([
+    { market: 'A', code: 'X1', bars: mkBars(2) },
+    { market: 'A', code: 'X2', bars: mkBars(1) },
+  ], { warmup: 120, entry: 'buy', exitOn: 'signal' });
+  assert.ok(r.ok, '批量应成功');
+  assert.notEqual(r.summary.medianAnnualPct, null, '中位年化不能是 null');
+  assert.ok(Number.isFinite(r.summary.medianAnnualPct), '中位年化必须是数字');
+});

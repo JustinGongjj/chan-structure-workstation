@@ -658,7 +658,14 @@ const routes = {
     const kl = await S.klines({ market, code, period, limit });
     const opts = btOptsFromQuery(u);
     const r = BTENGINE.runBacktest(kl.bars, { ...opts, period });
-    return { ...r, market, code: S.normCode(market, code), period, source: kl.source };
+    if (!r.ok) return r;
+    const preset = ['balanced', 'conservative', 'aggressive'].includes(u.searchParams.get('scoring'))
+      ? u.searchParams.get('scoring') : 'balanced';
+    return {
+      ...r,
+      score: SCORE.scorePortfolio(SCORE.fromBacktest(r.stats, false), preset),
+      market, code: S.normCode(market, code), period, source: kl.source,
+    };
   },
   // 批量回测：多标的汇总，判断因子普适性
   '/api/bt/batch': async (u) => {
@@ -687,7 +694,14 @@ const routes = {
     if (!symbols.length) return { ok: false, error: '没有任何标的取到数据' };
     const opts = btOptsFromQuery(u);
     const r = BTBATCH.runBatch(symbols, { ...opts, period });
-    return { ...r, period, requested: items.length, fetched: symbols.length };
+    if (!r.ok) return r;
+    const preset = ['balanced', 'conservative', 'aggressive'].includes(u.searchParams.get('scoring'))
+      ? u.searchParams.get('scoring') : 'balanced';
+    return {
+      ...r,
+      score: SCORE.scorePortfolio(SCORE.fromBacktest(r.summary, true), preset),
+      period, requested: items.length, fetched: symbols.length,
+    };
   },
   // 参数扫描：找出更优规则组合
   '/api/bt/sweep': async (u) => {

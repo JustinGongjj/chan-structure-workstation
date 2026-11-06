@@ -110,6 +110,20 @@ function summarize(rows, okRows, allTrades, opts) {
   const excesses = okRows.map((r) => r.excessPct);
   const beat = okRows.filter((r) => r.excessPct > 0).length;
   const dds = okRows.map((r) => r.maxDrawdownPct);
+  const sharpes = okRows.map((r) => r.sharpe).filter((x) => Number.isFinite(x));
+  /*
+    年化：rows 里没有 annualReturnPct 字段，必须从 totalReturnPct + years 现算。
+    （之前直接读 r.annualReturnPct 导致 medianAnnualPct 恒为 null）
+    annual = (1 + total/100)^(1/years) - 1
+  */
+  const annuals = okRows.map((r) => {
+    if (!Number.isFinite(r.totalReturnPct)) return null;
+    const y = Number.isFinite(r.years) && r.years > 0 ? r.years : 1;
+    const base = 1 + r.totalReturnPct / 100;
+    if (base <= 0) return -100;
+    return (Math.pow(base, 1 / y) - 1) * 100;
+  }).filter((x) => Number.isFinite(x));
+  const totalRets = okRows.map((r) => r.totalReturnPct).filter((x) => Number.isFinite(x));
 
   // 按信号类型汇总（跨标的）
   const byType = {};
@@ -163,6 +177,10 @@ function summarize(rows, okRows, allTrades, opts) {
     medianExcessPct: +median(excesses).toFixed(2),
     meanExcessPct: +(excesses.reduce((a, b) => a + b, 0) / n).toFixed(2),
     medianDrawdownPct: +median(dds).toFixed(2),
+    /* 组合层需要的中位指标（供评分复用 score.js 的四维度口径） */
+    medianSharpe: sharpes.length ? +median(sharpes).toFixed(2) : null,
+    medianAnnualPct: annuals.length ? +median(annuals).toFixed(2) : null,
+    medianTotalReturnPct: totalRets.length ? +median(totalRets).toFixed(2) : null,
     worstDrawdownPct: +Math.max(...dds).toFixed(2),
     typeStats,
     marketStats,

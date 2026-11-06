@@ -235,6 +235,33 @@ A 股配色里 `--up` 是**红**、`--down` 是**绿**。用它表达"指标好�
 导致 `undefined < 40` 恒为 false，**短板说明整段丢失**。
 已修并加回归测试锁住。
 
+## 四点七、评分组件已复用到因子回测页（v3.9.2）
+
+结果区三层结构现在**两页共用同一套组件** `web/js/pages/scorewidget.js`：
+
+| 页面 | 评分输入来源 | 说明 |
+|---|---|---|
+| 量化组合 | 27 项组合指标 | 原口径 |
+| 因子回测·单标的 | `annualReturnPct / sharpe / maxDrawdownPct / winRate / payoff` | 直接映射 |
+| 因子回测·批量 | `medianAnnualPct / medianSharpe / medianDrawdownPct` + 汇总胜率 | 取中位，避免极值 |
+
+两套回测字段名不同，用 `SCORE.fromBacktest(stats, isBatch)` 做归一化，
+避免在两个页面各写一份打分逻辑。
+
+### ⚠️ 又踩了一个「字段不存在」的坑
+
+批量汇总里我写了 `r.annualReturnPct`，但 `batch.js` 的 rows **没有这个字段**
+（只有 `totalReturnPct` 和 `years`），导致 `medianAnnualPct` 恒为 **null**，
+评分里「年化收益」这一维度永远得 0 分。
+
+修正：从 `totalReturnPct` 与 `years` 现算年化
+`(1 + total/100)^(1/years) - 1`。修完后中位年化从 `null` 变成 `0.33%`，
+总分从 44 → 46。
+
+**这是本项目第二次因为"引用了不存在的字段"出 bug**
+（上一次是 `weakest.pct`）。已加回归测试：
+断言 `medianAnnualPct` 不能是 null。
+
 ## 五、如何用于实盘
 
 ### 1. 组合体检
