@@ -1,0 +1,82 @@
+{
+  "A": [
+    {
+      "code": "600519",
+      "name": "贵州茅台"
+    },
+    {
+      "code": "300750",
+      "name": "宁德时代"
+    },
+    {
+      "code": "000001",
+      "name": "平安银行"
+    },
+    {
+      "code": "601899",
+      "name": "紫金矿业"
+    },
+    {
+      "code": "002594",
+      "name": "比亚迪"
+    },
+    {
+      "code": "688981",
+      "name": "中芯国际"
+    }
+  ],
+  "HK": [
+    {
+      "code": "00700",
+      "name": "腾讯控股"
+    },
+    {
+      "code": "09988",
+      "name": "阿里巴巴-W"
+    },
+    {
+      "code": "03690",
+      "name": "美团-W"
+    },
+    {
+      "code": "01810",
+      "name": "小米集团-W"
+    }
+  ],
+  "US": [
+    {
+      "code": "NVDA",
+      "name": "英伟达"
+    },
+    {
+      "code": "AAPL",
+      "name": "苹果"
+    },
+    {
+      "code": "TSLA",
+      "name": "特斯拉"
+    },
+    {
+      "code": "MSFT",
+      "name": "微软"
+    }
+  ],
+  "CR": [
+    {
+      "code": "BTCUSDT",
+      "name": "BTC/USDT"
+    },
+    {
+      "code": "ETHUSDT",
+      "name": "ETH/USDT"
+    },
+    {
+      "code": "SOLUSDT",
+      "name": "SOL/USDT"
+    },
+    {
+      "code": "BNBUSDT",
+      "name": "BNB/USDT"
+    }
+  ]
+}
