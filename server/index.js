@@ -1379,3 +1379,38 @@ server.listen(PORT, HOST, () => {
 
 process.on('SIGTERM', () => server.close(() => process.exit(0)));
 process.on('SIGINT', () => server.close(() => process.exit(0)));
+
+/*
+  全局崩溃兜底
+  =====================================================================
+  之前没有任何 uncaughtException / unhandledRejection 处理器，
+  任何一个未捕获的异步异常都会直接杀掉整个进程 —— 表现为
+  「服务跑一会儿就没了，health 返回 000」，而日志里什么都没留下。
+
+  实际踩到过一次：抓取外部行情的某个 Promise 在特定网络状况下 reject，
+  没有被 await 的 catch 接住，整个服务退出。
+
+  策略：
+    · unhandledRejection —— 记日志，**不退出**（单个请求失败不该拖垮服务）
+    · uncaughtException  —— 记日志；同步状态可能已损坏，给 1 秒把日志刷盘后退出，
+      由 service_manage 自动拉起
+*/
+const CRASH_LOG = path.join(__dirname, '..', 'data', 'server-crash.log');
+function logCrash(kind, err) {
+  const line = `[${new Date().toISOString()}] ${kind}: ${err && err.stack ? err.stack : err}\n`;
+  try {
+    fs.mkdirSync(path.dirname(CRASH_LOG), { recursive: true });
+    fs.appendFileSync(CRASH_LOG, line, 'utf8');
+  } catch (e) { /* 日志写不进去也不能再抛 */ }
+  console.error(line.trim());
+}
+
+process.on('unhandledRejection', (reason) => {
+  logCrash('unhandledRejection', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  logCrash('uncaughtException', err);
+  // 给日志一点刷盘时间，然后退出让 service_manage 拉起
+  setTimeout(() => process.exit(1), 1000);
+});

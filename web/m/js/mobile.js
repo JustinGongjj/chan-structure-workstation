@@ -24,6 +24,15 @@
     tickN: 0,
   };
 
+  /*
+    市场全集：从 U.MK 派生，且**只定义一次**。
+    起因：本文件里 ['A','HK','US','CR','CNF','USF'] 曾硬编码 3 遍
+    （结构页市场条、算卦市场条、自选池市场条）。
+    当时内容是对的，但下次加市场就要改 3 个地方，漏一个就少一个按钮。
+    这正是"同文件内两处循环本该一致却各写一份"的典型形态。
+  */
+  const MK_ALL = () => Object.keys((window.U && window.U.MK) || {});
+
   /* 周期显示名从共享常量派生短名（同桌面版），不再自己维护一份 */
   const shortPeriod = (n) => String(n || '').replace(/钟$/, '').replace(/小时$/, '时');
   const PNAME = new Proxy({}, {
@@ -947,7 +956,7 @@
       <div class="page-sub">${U.MK[market]} · ${U.esc(code)} · ${PNAME[state.period]}</div>
       <div class="section">
         <div class="seg segmented" id="sMarket">
-          ${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
+          ${MK_ALL().map((m) => `<button class="sq button ${m === market ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}
           <button class="sq button" id="sSearch">搜索</button>
         </div>
       </div>
@@ -1252,7 +1261,7 @@
       <div class="page-sub">代码 + 实时价 + 时辰起卦；娱乐向，不构成投资建议</div>
       <div class="card">
         <div class="form-row"><div class="hint" style="margin-bottom:6px">市场</div>
-          <div class="seg segmented" id="dMarket">${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
+          <div class="seg segmented" id="dMarket">${MK_ALL().map((m) => `<button class="sq button ${d.market === m ? 'active' : ''}" data-m="${m}">${U.MK[m]}</button>`).join('')}</div>
         </div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">标的代码</div><input class="input" id="dCode" value="${U.esc(d.code)}" placeholder="600519 / NVDA / BTCUSDT" autocomplete="off"></div>
         <div class="form-row" style="margin-top:10px"><div class="hint" style="margin-bottom:6px">起卦方式</div>
@@ -1493,7 +1502,7 @@
       const list = data[SK.market] || [];
       openSheet(
         '管理自选',
-        `<div class="seg segmented" id="wMarket">${['A', 'HK', 'US', 'CR', 'CNF', 'USF'].map((m) => `<button class="sq button ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${(data[m] || []).length}</button>`).join('')}</div>
+        `<div class="seg segmented" id="wMarket">${MK_ALL().map((m) => `<button class="sq button ${m === SK.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} ${(data[m] || []).length}</button>`).join('')}</div>
          <div class="form-row" style="margin-top:12px"><input class="input" id="wCode" placeholder="输入代码，如 600519 / NVDA / BTCUSDT"></div>
          <button class="btn button primary block" id="wAdd">添加</button>
          <div class="list" style="margin-top:12px">

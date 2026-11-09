@@ -220,12 +220,47 @@ function ruleConfigDrift() {
   }
 }
 
+/*
+  规则⑥：同一文件内，相同的数组字面量循环出现 ≥2 次
+  起因：mobile.js 里 ['A','HK','US','CR','CNF','USF'] 硬编码 3 遍
+  （结构页市场条、算卦市场条、自选池市场条）。当时内容正确，
+  但下次加市场要改 3 个地方——漏一个就少一个按钮。
+
+  这类"同文件内两处循环本该用同一份列表却各写一份"比跨文件重复更隐蔽：
+  跨文件重复至少 grep 能看到多份，同文件里往往被当成"各自独立"而放过。
+*/
+function ruleDuplicateLiteralLoop() {
+  for (const f of files) {
+    const src = fs.readFileSync(f, 'utf8');   // files 已是绝对路径
+    const re = /\[([^\[\]]{4,200})\]\s*\.\s*(map|forEach|some|every|filter|includes)/g;
+    const seen = {};
+    let m;
+    while ((m = re.exec(src))) {
+      const body = m[1].replace(/\s+/g, '');
+      // 只关心"字面量常量列表"（以引号或数字开头），忽略动态表达式
+      if (!/^['"]/.test(body) && !/^\d/.test(body)) continue;
+      const line = src.slice(0, m.index).split('\n').length;
+      (seen[body] = seen[body] || []).push(line);
+    }
+    for (const [body, lines] of Object.entries(seen)) {
+      if (lines.length >= 2) {
+        problems.push({
+          file: f, line: lines[0], rule: '同文件重复列表',
+          text: `[${body.slice(0, 50)}] × ${lines.length}（行 ${lines.join(',')}）`,
+          why: '同一份列表在同一文件里写了多遍，应提取成一个常量，否则容易改一处漏一处',
+        });
+      }
+    }
+  }
+}
+
 rulePeriodConsistency();
 ruleConfigDrift();
+ruleDuplicateLiteralLoop();
 
 const rel = (p) => path.relative(ROOT, p);
 if (!problems.length) {
-  console.log(`✅ 误导性文案审计通过（扫描 ${files.length} 个文件，5 条规则）`);
+  console.log(`✅ 误导性文案审计通过（扫描 ${files.length} 个文件，6 条规则）`);
   process.exit(0);
 }
 console.log(`❌ 发现 ${problems.length} 处可疑：`);

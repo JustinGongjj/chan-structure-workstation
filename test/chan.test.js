@@ -1704,3 +1704,74 @@ test('API 超时：慢接口必须有独立超时（雷达首包实测 17.4 秒�
   assert.ok(/api\\\/radar/.test(js) || js.includes('/api/radar'), '雷达接口应单独放宽超时');
   assert.ok(/timeoutFor/.test(js), '应有 timeoutFor 函数');
 });
+
+/* ---------------- 同文件重复列表 / 全局崩溃兜底 ---------------- */
+test('同文件重复列表：同一份数组字面量不得在同一文件里循环多遍', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const targets = [];
+  const walk = (d) => {
+    for (const n of fs.readdirSync(d)) {
+      const p = path.join(d, n); const st = fs.statSync(p);
+      if (st.isDirectory()) walk(p); else if (/\.js$/.test(n)) targets.push(p);
+    }
+  };
+  walk(path.join(ROOT, 'web', 'js'));
+  walk(path.join(ROOT, 'web', 'm', 'js'));
+  for (const f of targets) {
+    const src = fs.readFileSync(f, 'utf8');
+    const re = /\[([^\[\]]{4,200})\]\s*\.\s*(map|forEach|some|every|filter|includes)/g;
+    const seen = {};
+    let m;
+    while ((m = re.exec(src))) {
+      const body = m[1].replace(/\s+/g, '');
+      if (!/^['"]/.test(body) && !/^\d/.test(body)) continue;
+      (seen[body] = seen[body] || []).push(1);
+    }
+    for (const [body, list] of Object.entries(seen)) {
+      assert.ok(list.length < 2,
+        `${path.relative(ROOT, f)} 里 [${body.slice(0, 40)}] 出现了 ${list.length} 次，应提取成常量`);
+    }
+  }
+});
+
+test('手机版：市场按钮从 U.MK 派生，不得硬编码 6 市场', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const m = fs.readFileSync(path.join(__dirname, '..', 'web', 'm', 'js', 'mobile.js'), 'utf8');
+  assert.ok(/const MK_ALL\s*=/.test(m), '应有 MK_ALL 统一入口');
+  // 只看代码：需要跨行跟踪块注释 /* ... */ 的状态，不能只判断行首
+  let inBlock = false;
+  const codeLines = [];
+  for (const line of m.split('\n')) {
+    let l = line;
+    if (inBlock) {
+      const end = l.indexOf('*/');
+      if (end < 0) continue;
+      l = l.slice(end + 2);
+      inBlock = false;
+    }
+    const open = l.indexOf('/*');
+    if (open >= 0) {
+      const close = l.indexOf('*/', open + 2);
+      if (close < 0) { inBlock = true; l = l.slice(0, open); }
+      else l = l.slice(0, open) + l.slice(close + 2);
+    }
+    if (/^\s*\/\//.test(l)) continue;
+    codeLines.push(l);
+  }
+  const codeOnly = codeLines.join('\n');
+  assert.ok(!/\['A',\s*'HK',\s*'US',\s*'CR',\s*'CNF',\s*'USF'\]/.test(codeOnly),
+    '不应在代码里硬编码 6 市场列表');
+});
+
+test('服务：必须有 uncaughtException / unhandledRejection 兜底（否则单次异常杀进程）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const s = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf8');
+  assert.ok(/process\.on\('unhandledRejection'/.test(s), '缺 unhandledRejection 处理器');
+  assert.ok(/process\.on\('uncaughtException'/.test(s), '缺 uncaughtException 处理器');
+  // 必须写日志，否则崩溃查不到原因
+  assert.ok(/server-crash\.log/.test(s), '崩溃应写日志文件');
+});
