@@ -45,7 +45,9 @@
     "check:matrix": "node scripts/matrixcheck.js",
     "check:sources": "node scripts/srcaudit.js",
     "check:html": "node scripts/htmlcheck.js",
-    "check:misleading": "node scripts/audit-misleading.js"
+    "check:misleading": "node scripts/audit-misleading.js",
+    "whereis": "node scripts/whereis.js",
+    "check:drift": "node scripts/whereis.js --check"
   },
   "engines": {
     "node": ">=20"

@@ -1558,3 +1558,35 @@ test('前后端一致：/api/constants 的市场与周期与后端模块相同',
   assert.deepEqual(j.markets, C.MARKETS, 'API 返回的市场名应与 constants 一致');
   assert.deepEqual(j.periods, C.PERIODS, 'API 返回的周期名应与 constants 一致');
 });
+
+/* ---------------- 改动自查工具 ---------------- */
+test('whereis：能识别"手机版有独立实现"这类高危改动', () => {
+  const { execSync } = require('child_process');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const out = execSync('node scripts/whereis.js --check 周期', { cwd: ROOT, encoding: 'utf8' });
+  assert.ok(/手机版有独立实现/.test(out), '周期类改动必须提示手机版有独立实现');
+  assert.ok(/前后端都有实现/.test(out), '周期类改动必须提示前后端都有实现');
+});
+
+test('whereis：功能点分布表能报出前后端各一份的功能', () => {
+  const { execSync } = require('child_process');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const out = execSync('node scripts/whereis.js --features', { cwd: ROOT, encoding: 'utf8' });
+  assert.ok(/周期列表/.test(out), '应列出周期列表');
+  assert.ok(/市场列表/.test(out), '应列出市场列表');
+  assert.ok(/前后端各一份/.test(out), '应标出前后端各一份的风险');
+});
+
+test('规范化：CHANGE-CHECKLIST 文档存在且覆盖五类高危改动', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const doc = path.join(__dirname, '..', 'docs', 'CHANGE-CHECKLIST.md');
+  assert.ok(fs.existsSync(doc), 'docs/CHANGE-CHECKLIST.md 必须存在');
+  const txt = fs.readFileSync(doc, 'utf8');
+  for (const k of ['改周期', '改市场', '改信号', '结构式', '接口']) {
+    assert.ok(txt.includes(k), `清单应覆盖「${k}」类改动`);
+  }
+  assert.ok(/手机版/.test(txt), '必须强调手机版');
+});

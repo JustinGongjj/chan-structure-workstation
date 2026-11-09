@@ -22,6 +22,20 @@
   └────────────────  web/js/api.js
 ```
 
+## 改动前必读
+
+本项目同一功能常分布在后端 / 桌面 / 手机三处，历史上有过两次"只修一半"的事故
+（桌面修了手机没修、市场名在 5 个文件各写一份导致 `game.js` 缺 CNF/USF）。
+
+改动前先跑：
+
+```bash
+node scripts/whereis.js --check <关键词>   # 列出必须一起改的位置
+node scripts/whereis.js --features         # 列出"前后端各一份"的功能点
+```
+
+完整纪律见 [CHANGE-CHECKLIST.md](./CHANGE-CHECKLIST.md)。
+
 ## Why zero dependencies
 
 The runtime is a single Node process plus static files. That means: no `npm audit`
