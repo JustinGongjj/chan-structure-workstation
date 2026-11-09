@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── 纯静态检查：不联网、不启服务，最快的反馈 ─────────────────────────
+  # ── 静态检查 + 单测（有 1 项单测要打本地 API，故先起服务） ──────────
   static:
     name: Static (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
@@ -34,6 +34,14 @@ jobs:
             node --check "$f" || { echo "::error file=$f::语法错误"; fail=1; }
           done
           exit $fail
+      - name: Boot server (for API-backed unit tests)
+        run: |
+          PORT=8931 node server/index.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 40); do
+            curl -fsS http://127.0.0.1:8931/api/health >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:8931/api/health
       - name: Unit tests
         run: npm test
       - name: HTML 引用一致性
