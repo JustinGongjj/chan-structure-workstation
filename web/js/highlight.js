@@ -154,7 +154,19 @@
       } else {
         steps.push('当前中枢尚未走出离开段（b 还没形成），所以还不能比较 a、b 的力度。');
       }
-      steps.push('结构升级：若 b 之后又形成第二个不与 A 重叠的中枢 B、再走 c 段，就变成 <b>a+A+b+B+c</b> 的趋势结构——切换周线/更高级别看会更清楚。');
+      /*
+        结构说明必须按**实际中枢个数**生成。
+        原先是无条件追加"就变成 a+A+b+B+c"，用户看到 1 个中枢也读到这句话，
+        误以为当前结构已经是 a+A+b+B+c。（实测踩到，用户反馈）
+      */
+      {
+        const nP = (pivots || []).length;
+        if (nP <= 1) {
+          steps.push('当前是 <b>a+A+b</b> 的盘整结构（只有 1 个中枢 A）。<b>a+A+b+B+c 是趋势骨架，现在还没到那一步</b>——只有当 b 之后又形成第二个不与 A 重叠的中枢 B、再走出 c 段，才会升级成 a+A+b+B+c。');
+        } else {
+          steps.push(`图上共 <b>${nP} 个中枢</b>。当前高亮的是最后一个（A），它之前的同向中枢构成了 b 段之前的走势；要判断是否已成趋势，看相邻中枢是否<b>同向且不重叠</b>。`);
+        }
+      }
     } else if (key === 'beichi' || key === 'panzheng_beichi') {
       const cand = beichi.filter((x) => x.kind === '段背驰');
       const be = cand[cand.length - 1] || beichi[beichi.length - 1] || null;

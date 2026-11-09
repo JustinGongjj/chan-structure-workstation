@@ -117,10 +117,24 @@
     const rows = [
       ['现价', `<span class="${U.cls(q.pct)}">${U.fmt(st.price)}（${U.pct(q.pct)}）</span>`],
       ['趋势类型', `${res.trend.type}<span class="hint">（${res.trend.sub}）</span>`],
-      ['当前中枢', pv ? `[${U.fmt(pv.zd)}, ${U.fmt(pv.zg)}] · ${pv.count} 笔${pv.upgraded ? ' · 九笔升级' : ''}${pv.overlapPrev ? ' · 与前一中枢重叠（扩展形态）' : ''}` : '尚未形成'],
+      /*
+        "当前中枢"= 最后一个中枢，不是中枢总数。
+        之前只写区间和笔数，用户容易把它当成"图上一共就这一个中枢"，
+        再看到结构式里的 B+c 就以为是错的。（用户反馈过）
+        这里显式标出"第 k/N 个"，并把笔数说明改成"本中枢 3 笔"。
+      */
+      ['当前中枢', pv
+        ? `第 ${res.pivots.length}/${res.pivots.length} 个（最新）：[${U.fmt(pv.zd)}, ${U.fmt(pv.zg)}] · 本中枢 ${pv.count} 笔${pv.upgraded ? ' · 九笔升级' : ''}${pv.overlapPrev ? ' · 与前一中枢重叠（扩展形态）' : ''}`
+        : '尚未形成'],
+      ['中枢总数', `${res.pivots.length} 个`],
       ['现价位置', U.POS_TXT[st.position] || '—'],
       ['最后一笔', res.bis.length ? `${res.bis[res.bis.length - 1].dir > 0 ? '向上' : '向下'} ${U.fmt(res.bis[res.bis.length - 1].p0)} → ${U.fmt(res.bis[res.bis.length - 1].p1)}` : '—'],
-      ['结构', res.structure.replace(/（.*?）/, '')],
+      /*
+        不再用 replace(/（.*?）/) 删括号——那会把"（16 个中枢）"这种关键限定删掉，
+        用户只看到 a+A+b+B+c 就以为当前结构真有 B 和 c。
+        现在后端把中枢个数写进主文案，这里原样显示。
+      */
+      ['结构', res.structure],
       ['最近信号', st.lastSignal ? `${st.lastSignal.name} @ ${U.fmt(st.lastSignal.price)}` : '近 90 根无'],
     ];
     U.$('#structState').innerHTML = rows.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');

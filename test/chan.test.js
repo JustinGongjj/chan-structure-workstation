@@ -1370,3 +1370,59 @@ test('趋势图：纵轴至少 30 分窗口（避免小波动被压成横线）'
   const d = calc([0, 2]);
   assert.ok(d.yLo >= 0, '下界不应小于 0');
 });
+
+/* ---------------- 走势结构式必须与中枢个数一致 ---------------- */
+test('结构式：中枢个数决定 a+A+b / a+A+b+B+c，且数量写进主文案', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'chan.js'), 'utf8');
+  const m = src.match(/function structureLabel\(pivots\) \{[\s\S]*?\n\}/);
+  assert.ok(m, '找不到 structureLabel');
+  const structureLabel = eval('(' + m[0] + ')');
+  const mk = (n) => Array.from({ length: n }, (_, i) => ({ zd: 100 + i * 10, zg: 110 + i * 10 }));
+
+  assert.ok(/无线段中枢/.test(structureLabel([])), '0 中枢应提示无结构');
+
+  const one = structureLabel(mk(1));
+  assert.ok(one.includes('a + A + b'), '1 个中枢应为 a+A+b');
+  assert.ok(!/B \+ c/.test(one), '1 个中枢绝不应出现 B+c（核心 bug）');
+  assert.ok(/1 个中枢/.test(one), '必须写明 1 个中枢');
+
+  const two = structureLabel(mk(2));
+  assert.ok(/B \+ c/.test(two), '2 个中枢才可以出现 B+c');
+  assert.ok(/2 个中枢/.test(two), '必须写明 2 个中枢');
+
+  const many = structureLabel(mk(16));
+  assert.ok(/B \+ c/.test(many), '多中枢应有 B+c 骨架');
+  assert.ok(/16 个中枢/.test(many), '必须写明实际中枢数');
+});
+
+test('结构式：中枢数量不能只放在括号里（前端曾把括号删掉导致误导）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'chan.js'), 'utf8');
+  const m = src.match(/function structureLabel\(pivots\) \{[\s\S]*?\n\}/);
+  const structureLabel = eval('(' + m[0] + ')');
+  const lab = structureLabel(Array.from({ length: 5 }, (_, i) => ({ zd: i, zg: i + 1 })));
+  // 去掉括号内容后，中枢数量信息不能消失
+  const stripped = lab.replace(/（.*?）/g, '');
+  assert.ok(/个中枢/.test(stripped), `去掉括号后仍须保留中枢数，实际：${stripped}`);
+});
+
+test('结构式：前端不得再用正则删掉结构文案里的括号', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', 'structure.js'), 'utf8');
+  assert.ok(!/res\.structure\.replace/.test(js), 'structure.js 不应再对 structure 做 replace');
+  assert.ok(/\['结构', res\.structure\]/.test(js), '应原样显示结构文案');
+});
+
+test('教学标注：结构升级话术必须按实际中枢数分支', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'highlight.js'), 'utf8');
+  // 不允许出现"无条件 append 结构升级"的旧写法
+  assert.ok(!/steps\.push\('结构升级：若 b 之后/.test(js), '旧的固定话术应已移除');
+  assert.ok(/nP <= 1/.test(js), '应有 nP<=1 的分支');
+  assert.ok(/现在还没到那一步/.test(js), '1 个中枢时应明确说还没到 a+A+b+B+c');
+});
