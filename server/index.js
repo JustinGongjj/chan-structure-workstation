@@ -26,6 +26,7 @@ const DEFENSE = require('./lib/defense');
 const PORTFOLIO = require('./lib/portfolio');
 const SYMNAMES = require('./lib/symbolnames');
 const SCORE = require('./lib/score');
+const CONSTC = require('./lib/constants');
 const { makeStore } = require('./lib/history');
 const C = require('./lib/chan');
 const V = require('./lib/divination');
@@ -525,7 +526,7 @@ function serveStatic(req, res, pathname) {
 
 /* ---------------- 回测：对比辅助 ---------------- */
 function describeCfg(kind, cfg) {
-  const MK = { A: 'A股', US: '美股', CR: '加密', CNF: '国内期货', HK: '港股', USF: '美期货' };
+  const MK = CONSTC.MARKETS;
   const p = [];
   p.push(kind === 'quant' ? '量化组合' : kind === 'batch' ? '批量回测' : '单标的');
   if (cfg.symbols) p.push(cfg.symbols.split(',').slice(0, 2).join('/'));
@@ -1024,6 +1025,15 @@ const routes = {
     const [ra, rb] = await Promise.all([runOne(a), runOne(b)]);
     return { ok: true, kind, a: ra, b: rb, diff: diffScores(ra, rb) };
   },
+  /* 共享常量（前端也从这里取，避免前后端各维护一份） */
+  '/api/constants': async () => ({
+    ok: true,
+    markets: CONSTC.MARKETS,
+    marketOrder: CONSTC.MARKET_ORDER,
+    periods: CONSTC.PERIODS,
+    signals: CONSTC.SIGNALS,
+    signalOrder: CONSTC.SIGNAL_ORDER,
+  }),
   '/api/overview': async () => overview(),
   // 宏观参照（免 key，FRED CSV）：美债收益率与 VIX，给择时/风险偏好做背景
   '/api/macro': async () => {

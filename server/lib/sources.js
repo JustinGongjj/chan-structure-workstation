@@ -46,10 +46,8 @@ const MARKETS = {
   USF: { key: 'USF', name: '美期货', currency: 'USD', tz: -5, intraday: true, periods: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'] },
 };
 
-const PERIOD_NAME = {
-  '1m': '1分钟', '5m': '5分钟', '15m': '15分钟', '30m': '30分钟', '60m': '60分钟',
-  '1h': '1小时', '4h': '4小时', day: '日线', week: '周线', month: '月线',
-};
+/* 周期名称统一从 constants 取（单一数据源） */
+const PERIOD_NAME = require('./constants').PERIODS;
 const PERIOD_MINUTES = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '60m': 60, '1h': 60, '4h': 240, day: 1440, week: 10080, month: 30240 };
 
 const A_SH_PREFIX = /^(60|68|9|5|11|13|50|51|58)/;

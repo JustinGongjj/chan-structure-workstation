@@ -1502,3 +1502,59 @@ test('周期：加密必须有月线（用户反馈"缺少了月线"）', () => 
   const list = hit[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   assert.ok(list.includes('month'), '加密周期必须包含 month（后端 Binance 支持 1M）');
 });
+
+/* ---------------- 配置单一数据源 ---------------- */
+test('常量：marketLabel 覆盖全部 6 个市场（回归：game.js 曾只写 4 个）', () => {
+  const C = require('../server/lib/constants');
+  const expect = { A: 'A股', HK: '港股', US: '美股', CR: '加密', CNF: '国内期货', USF: '美期货' };
+  for (const [k, v] of Object.entries(expect)) {
+    assert.equal(C.marketLabel(k), v, `${k} 应映射为 ${v}`);
+  }
+  assert.equal(C.marketLabel('ZZ'), 'ZZ', '未知市场回退为原代码');
+  assert.equal(C.MARKET_ORDER.length, 6);
+});
+
+test('常量：周期名称覆盖 10 种级别', () => {
+  const C = require('../server/lib/constants');
+  const ps = ['1m', '5m', '15m', '30m', '60m', '1h', '4h', 'day', 'week', 'month'];
+  for (const p of ps) {
+    assert.ok(C.periodLabel(p) && C.periodLabel(p) !== p, `${p} 应有中文名`);
+  }
+  assert.equal(C.periodLabel('month'), '月线');
+});
+
+test('漂移：市场/周期名称不得在 constants 之外重新定义字面量', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const targets = [];
+  const walk = (d) => {
+    for (const n of fs.readdirSync(d)) {
+      const p = path.join(d, n);
+      const st = fs.statSync(p);
+      if (st.isDirectory()) walk(p);
+      else if (/\.js$/.test(n)) targets.push(p);
+    }
+  };
+  walk(path.join(ROOT, 'server', 'lib'));
+  walk(path.join(ROOT, 'web', 'js'));
+  const ALLOW = ['server/lib/constants.js', 'web/js/ui.js'];  // ui.js 是有意兜底，会被 API 覆盖
+  const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
+  for (const f of targets) {
+    const r = rel(f);
+    if (ALLOW.includes(r)) continue;
+    const src = fs.readFileSync(f, 'utf8');
+    assert.ok(!/A:\s*['"]A股['"]/.test(src), `${r} 不应重新定义市场名称映射`);
+    assert.ok(!/day:\s*['"]日线['"],\s*week/.test(src), `${r} 不应重新定义周期名称映射`);
+  }
+});
+
+test('前后端一致：/api/constants 的市场与周期与后端模块相同', async () => {
+  const C = require('../server/lib/constants');
+  const base = process.env.TEST_BASE || 'http://127.0.0.1:8931';
+  let j;
+  try { j = await fetch(base + '/api/constants').then((r) => r.json()); } catch (e) { return; }
+  if (!j || !j.ok) return;
+  assert.deepEqual(j.markets, C.MARKETS, 'API 返回的市场名应与 constants 一致');
+  assert.deepEqual(j.periods, C.PERIODS, 'API 返回的周期名应与 constants 一致');
+});

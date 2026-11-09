@@ -13,7 +13,21 @@
     CNF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
     USF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
   };
-  const PNAME = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1时', '4h': '4时', day: '日线', week: '周线', month: '月线' };
+  /*
+    周期显示名：从共享常量 U.PERIOD_NAMES 派生短名（去掉"钟"字），
+    不再自己维护一份。按钮空间有限所以要短名：
+      后端 "1分钟" → 按钮 "1分"；"4小时" → 按钮 "4时"
+    U.PERIOD_NAMES 由 ui.js 在启动时从 /api/constants 同步。
+  */
+  // "1分钟"→"1分"、"4小时"→"4时"：去掉末尾的"钟"，再把"小时"收成"时"
+  const shortPeriod = (n) => String(n || '').replace(/钟$/, '').replace(/小时$/, '时');
+  const PNAME = new Proxy({}, {
+    get(_, key) {
+      const names = (window.U && window.U.PERIOD_NAMES) || {};
+      return shortPeriod(names[key]) || String(key);
+    },
+    has() { return true; },
+  });
   let chart = null;
   let lastData = null;
 

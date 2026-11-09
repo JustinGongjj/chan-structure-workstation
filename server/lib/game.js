@@ -12,6 +12,8 @@
  * 题型按主题分配：看未来（predict）/ 找买卖点（signal）/ 框中枢（pivot）/ 判背驰（beichi）。
  */
 'use strict';
+// 市场名称统一从 constants 取，避免各处各写一份导致漂移
+const CONST = require('./constants');
 
 const crypto = require('crypto');
 const S = require('./sources');
@@ -195,7 +197,8 @@ async function makeLevel(K, no) {
     title: level.title,
     gist: level.gist,
     market: plan.market,
-    marketLabel: { A: 'A股', HK: '港股', US: '美股', CR: '加密' }[plan.market] || plan.market,
+    /* 用共享常量：之前这里只写了 4 个市场，缺 CNF/USF，会显示原始代码 */
+    marketLabel: CONST.marketLabel(plan.market),
     period: 'day',
     visibleBars: visible,
     hidden: plan.hidden,

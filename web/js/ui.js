@@ -1,6 +1,31 @@
 /* 通用工具 */
 (function () {
-  const MK = { A: 'A股', HK: '港股', US: '美股', CR: '加密', CNF: '国内期货', USF: '美期货' };
+  /*
+    市场/周期名称：本地先放一份兜底值，启动后从 /api/constants 同步覆盖。
+    为什么这么做：这些名称原先在 5 个文件里各写一份（game.js 就漏了 CNF/USF），
+    迟早漂移。服务端 constants.js 是唯一数据源，前端启动时同步一次即可。
+    同步失败不影响使用（本地兜底值就是完整的一份）。
+  */
+  let MK = { A: 'A股', HK: '港股', US: '美股', CR: '加密', CNF: '国内期货', USF: '美期货' };
+  let PERIOD_NAMES = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', '1h': '1小时', '4h': '4小时', day: '日线', week: '周线', month: '月线' };
+
+  function syncConstants() {
+    if (typeof fetch !== 'function') return;
+    fetch('/api/constants')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j || !j.ok) return;
+        if (j.markets) MK = j.markets;
+        if (j.periods) PERIOD_NAMES = j.periods;
+        window.U.MK = MK;
+        window.U.PERIOD_NAMES = PERIOD_NAMES;
+      })
+      .catch(() => { /* 用本地兜底值 */ });
+  }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncConstants);
+    else setTimeout(syncConstants, 0);
+  }
 
   function fmt(v, d) {
     if (v == null || v === '' || !Number.isFinite(+v)) return '—';
@@ -111,5 +136,5 @@
   }
   const theme = { get: getTheme, set: setTheme, toggle: toggleTheme, sync: syncToggle };
 
-  window.U = { MK, fmt, pct, cls, esc, ts, tsFull, timeShort, stamp, toast, theme, debounce, $, $$, money, SIG_CLS, SIG_SHORT, POS_TXT };
+  window.U = { MK, PERIOD_NAMES, fmt, pct, cls, esc, ts, tsFull, timeShort, stamp, toast, theme, debounce, $, $$, money, SIG_CLS, SIG_SHORT, POS_TXT };
 })();

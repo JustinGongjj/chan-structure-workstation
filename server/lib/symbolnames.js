@@ -111,9 +111,8 @@ function tagsOf(market, code) {
   return t.length ? t : ['', ''];
 }
 
-const MARKET_LABEL = {
-  A: 'A股', HK: '港股', US: '美股', CR: '加密', CNF: '国内期货', USF: '美期货',
-};
+/* 市场名称统一从 constants 取 */
+const MARKET_LABEL = require('./constants').MARKETS;
 
 /** 取中文名；期货回退到 sectors 目录 */
 let futuresNames = null;

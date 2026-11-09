@@ -170,11 +170,49 @@ for (const f of files) {
   ruleCountInParen(f, src);
 }
 
+/*
+  规则⑤：同一份配置不许多处各写一份（配置漂移）
+  起因：市场名称映射在 5 个文件里各写一份，game.js 只写了 4 个市场（缺 CNF/USF）。
+  现在统一到 server/lib/constants.js，其他文件只允许引用、不允许重新定义字面量。
+*/
+/*
+  允许存在的"本地兜底"：
+  - web/js/ui.js：前端启动后会从 /api/constants 同步覆盖，本地的只是 API 不可用时的兜底
+  这类不算漂移，因为有一处会被权威值覆盖。
+*/
+const CANONICAL_SOURCES = ['server/lib/constants.js'];
+const ALLOWED_FALLBACK = ['web/js/ui.js'];
+const FORBIDDEN_LITERALS = [
+  { name: '市场名称映射', re: /A:\s*['"]A股['"]/ },
+  { name: '周期名称映射', re: /day:\s*['"]日线['"],\s*week/ },
+];
+function ruleConfigDrift() {
+  const scan = [...SCAN_DIRS, path.join(ROOT, 'server', 'lib')].flatMap((d) => walk(d));
+  for (const f of scan) {
+    const relPath = path.relative(ROOT, f).split(path.sep).join('/');
+    if (CANONICAL_SOURCES.includes(relPath)) continue;   // 唯一数据源允许定义
+    if (ALLOWED_FALLBACK.includes(relPath)) continue;    // 前端兜底（会被 API 覆盖）
+    const src = fs.readFileSync(f, 'utf8');
+    for (const { name, re } of FORBIDDEN_LITERALS) {
+      if (re.test(src)) {
+        const idx = src.search(re);
+        const line = src.slice(0, idx).split('\n').length;
+        problems.push({
+          file: f, line, rule: '配置漂移',
+          text: `${name} 在此重新定义`,
+          why: '应改为引用 server/lib/constants.js，避免多处各写一份导致不一致',
+        });
+      }
+    }
+  }
+}
+
 rulePeriodConsistency();
+ruleConfigDrift();
 
 const rel = (p) => path.relative(ROOT, p);
 if (!problems.length) {
-  console.log(`✅ 误导性文案审计通过（扫描 ${files.length} 个文件，4 条规则）`);
+  console.log(`✅ 误导性文案审计通过（扫描 ${files.length} 个文件，5 条规则）`);
   process.exit(0);
 }
 console.log(`❌ 发现 ${problems.length} 处可疑：`);

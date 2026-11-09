@@ -101,7 +101,7 @@ function makeStore(file) {
   }
 
   function labelOf(kind, input) {
-    const MK = { A: 'A股', US: '美股', CR: '加密', CNF: '国内期货', HK: '港股', USF: '美期货' };
+    const MK = require('./constants').MARKETS;
     const parts = [];
     if (kind === 'quant') parts.push('量化组合');
     else if (kind === 'batch') parts.push('因子回测·批量');
