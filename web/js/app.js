@@ -42,6 +42,11 @@
     },
     async render() {
       const page = this.state.page;
+      /*
+        动态背景只在总览页启用。结构分析/回测/量化等页面必须纯暗色 —
+        看 K 线和数据表时，背景任何运动都会干扰判断。
+      */
+      if (window.OverviewBg) window.OverviewBg.setActive(page === 'overview');
       try {
         if (page === 'overview') await PageOverview.render();
         else if (page === 'structure') await PageStructure.render();

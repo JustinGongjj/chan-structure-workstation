@@ -1021,3 +1021,76 @@ button{font-family:inherit}
   .hist-row .hist-sp{display:none}
   .hist-row .hist-sc{grid-column:2}
 }
+
+/* ===================================================================
+   概念辞典：左侧常驻目录 + 右侧四段式正文
+   借鉴 Duodecimal 的 Metrics Wiki 组织方式，但内容适配缠论深度
+   =================================================================== */
+.wiki-shell{display:grid;grid-template-columns:212px minmax(0,1fr);gap:22px;margin-bottom:16px;align-items:start}
+.wiki-toc{position:sticky;top:12px;max-height:calc(100vh - 120px);overflow-y:auto;
+  padding-right:6px;border-right:1px solid var(--line);min-width:0}
+.wiki-toc::-webkit-scrollbar{width:6px}
+.wiki-toc::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+.wiki-toc .toc-h{font-size:10px;color:var(--faint);letter-spacing:.08em;margin:0 0 8px 8px}
+.wiki-toc a{display:block;padding:4px 8px;border-radius:6px;font-size:12px;color:var(--muted);
+  text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.5}
+.wiki-toc a:hover{background:var(--panel2);color:var(--text)}
+.wiki-toc a.on{background:color-mix(in srgb,var(--gold) 14%,transparent);color:var(--gold);font-weight:600}
+.wiki-toc .toc-grp{font-size:10px;color:var(--faint);margin:10px 0 3px 8px;opacity:.75}
+
+.wiki-body{min-width:0}
+.wiki-item{padding:14px 0 16px;border-bottom:1px solid var(--line);scroll-margin-top:14px}
+.wiki-item:last-child{border-bottom:none}
+.wiki-item h4{font-size:15px;margin:0 0 3px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.wiki-item h4 .lv{font-size:10px;padding:1px 6px;border-radius:4px}
+.wiki-item .ol{font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.65}
+/* 四段式 */
+.wiki-sec{margin-bottom:9px}
+.wiki-sec .k{font-size:10.5px;color:var(--gold);font-weight:650;letter-spacing:.04em;margin-bottom:3px}
+.wiki-sec .v{font-size:12.5px;line-height:1.75;color:var(--text)}
+.wiki-sec .v ol,.wiki-sec .v ul{margin:3px 0;padding-left:18px}
+.wiki-sec .v li{margin-bottom:3px;line-height:1.65}
+.wiki-sec.miss .v{color:var(--muted)}
+@media (max-width:1100px){
+  .wiki-shell{grid-template-columns:minmax(0,1fr)}
+  .wiki-toc{position:static;max-height:none;border-right:none;border-bottom:1px solid var(--line);
+    padding-bottom:10px;margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px}
+  .wiki-toc .toc-h,.wiki-toc .toc-grp{width:100%}
+}
+
+/* 概念辞典：正文限宽 + 长段落可折叠，避免一屏密集文字 */
+.wiki-body{max-width:760px}
+.wiki-sec .v{max-width:100%}
+/* 「是什么」里原文要义默认折叠，点击展开（定义本身保持可见） */
+.wiki-orig{margin-top:5px}
+.wiki-orig summary{cursor:pointer;font-size:11.5px;color:var(--faint);list-style:none;user-select:none}
+.wiki-orig summary::-webkit-details-marker{display:none}
+.wiki-orig summary:hover{color:var(--muted)}
+.wiki-orig summary::before{content:'▸ ';font-size:9px}
+.wiki-orig[open] summary::before{content:'▾ '}
+.wiki-orig .o{font-size:12px;line-height:1.75;color:var(--muted);margin-top:4px;
+  padding-left:10px;border-left:2px solid var(--line2)}
+@media (max-width:1200px){ .wiki-body{max-width:100%} }
+
+/* ===================================================================
+   总览页动态背景（借鉴 Duodecimal 的 fixed canvas，但刻意更克制）
+   只在 #page-overview 内生效；其他页面保持纯暗色
+   =================================================================== */
+#page-overview{position:relative}
+.overview-underlay{
+  position:fixed;inset:0;width:100vw;height:100vh;
+  /*
+    z-index:-1 会让 canvas 掉到 body 背景之下、也会盖住侧栏的视觉层。
+    改用 0，并把页面内容抬到 1 —— 这样 canvas 只在页面内容之下、侧栏之上不到。
+  */
+  z-index:0;pointer-events:none;
+  opacity:.92;
+}
+/* 侧栏与顶栏必须在背景之上（否则文字被粒子盖住看不清） */
+.sidebar, .topbar, header{position:relative;z-index:3}
+.sidebar{background:var(--bg)}
+/* 总览页内容抬到背景之上 */
+#page-overview > *:not(.overview-underlay){position:relative;z-index:1}
+@media (prefers-reduced-motion: reduce){
+  .overview-underlay{opacity:.55}
+}

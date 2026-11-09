@@ -275,6 +275,11 @@
         </div>
       </div>
       <div class="stat-strip" id="theoryStats"></div>
+      <!-- 概念辞典：左侧常驻目录 + 右侧四段式正文（借鉴 Duodecimal 的 Metrics Wiki 组织方式） -->
+      <div class="wiki-shell" id="theoryWiki">
+        <aside class="wiki-toc" id="conceptToc"></aside>
+        <div class="wiki-body" id="conceptPane"></div>
+      </div>
       <div class="seg tab-seg" id="theoryTabs">
         <button class="sq active" data-tab="concepts">核心概念</button>
         <button class="sq" data-tab="questions">问缠 · 在哪里</button>
@@ -285,7 +290,9 @@
         <button class="sq" data-tab="meta">命理知识库</button>
         <button class="sq" data-tab="practices">实战流程</button>
       </div>
+      <!-- 非概念 tab 的通用容器（theory.js 一直引用 #theoryBody，但此前的 HTML 里缺失） -->
       <div id="theoryBody"></div>
+      <div id="wikiMain"></div>
     </section>
 
     <!-- ================= 算卦 ================= -->
@@ -627,6 +634,7 @@
 <script src="/js/pages/radar.js?v=__ASSET_V__"></script>
 <script src="/js/pages/theory.js?v=__ASSET_V__"></script>
 <script src="/js/pages/divination.js?v=__ASSET_V__"></script>
+<script src="/js/overview-bg.js?v=__ASSET_V__"></script>
 <script src="/js/pages/symbolpicker.js?v=__ASSET_V__"></script>
 <script src="/js/pages/scorewidget.js?v=__ASSET_V__"></script>
 <script src="/js/pages/backtest.js?v=__ASSET_V__"></script>

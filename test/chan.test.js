@@ -1664,3 +1664,43 @@ test('市场全集：后端自选股支持全部 6 个市场', () => {
   const C = require('../server/lib/constants');
   assert.deepEqual(C.MARKET_ORDER, ['A', 'HK', 'US', 'CR', 'CNF', 'USF'], '后端市场全集应为 6 个');
 });
+
+/* ---------------- 概念辞典 / 动态背景 ---------------- */
+test('概念辞典：四段式渲染函数存在且字段映射正确', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', 'theory.js'), 'utf8');
+  assert.ok(/function renderConceptsWiki/.test(js), '应有 renderConceptsWiki');
+  assert.ok(/function wikiItemHtml/.test(js), '应有 wikiItemHtml');
+  for (const sec of ['是什么', '怎么判定', '怎么读', '图上在哪']) {
+    assert.ok(js.includes(sec), `四段式应包含「${sec}」`);
+  }
+});
+
+test('概念辞典：HTML 必须有左侧目录与右侧正文容器', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html'), 'utf8');
+  assert.ok(/id="conceptToc"/.test(html), '缺少左侧目录容器');
+  assert.ok(/id="conceptPane"/.test(html), '缺少右侧正文容器');
+  // theory.js 一直引用 #theoryBody，HTML 里必须有
+  assert.ok(/id="theoryBody"/.test(html), '#theoryBody 必须存在（否则非概念 tab 全部渲染失败）');
+});
+
+test('动态背景：只在总览页启用，其他页关闭', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'app.js'), 'utf8');
+  assert.ok(/OverviewBg\.setActive\(page === 'overview'\)/.test(app), '背景只能在总览页启用');
+  const bg = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'overview-bg.js'), 'utf8');
+  assert.ok(/prefers-reduced-motion/.test(bg), '必须尊重减少动效偏好');
+});
+
+test('API 超时：慢接口必须有独立超时（雷达首包实测 17.4 秒）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'api.js'), 'utf8');
+  assert.ok(/SLOW_PATHS/.test(js), '应有慢接口超时配置');
+  assert.ok(/api\\\/radar/.test(js) || js.includes('/api/radar'), '雷达接口应单独放宽超时');
+  assert.ok(/timeoutFor/.test(js), '应有 timeoutFor 函数');
+});

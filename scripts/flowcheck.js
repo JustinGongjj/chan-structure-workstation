@@ -381,7 +381,16 @@ async function desktopFlows() {
     // 数据源页
     await cdp.eval(`document.querySelector('[data-page="sources"]').click()`);
     await sleep(3500);
-    const srcTxt = await cdp.eval(`document.body.innerText.match(/ok|可用|ms/g)?.length || 0`);
+    /*
+      数据源页要逐级探测 10 个外部接口，首次可能要 2 秒以上。
+      实测完整流程下 2 秒出结果，但 CI 环境偶尔更慢 —— 轮询而不是死等。
+    */
+    let srcTxt = 0;
+    for (let i = 0; i < 12; i++) {
+      srcTxt = await cdp.eval(`document.body.innerText.match(/ok|可用|ms/g)?.length || 0`);
+      if (srcTxt > 0) break;
+      await sleep(1000);
+    }
     check('桌面版·数据源页有探测结果', srcTxt > 0, `命中 ${srcTxt}`);
 
     check('桌面版·无 JS 报错', errors.length === 0, errors.slice(0, 2).join(' | '));

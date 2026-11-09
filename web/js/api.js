@@ -2,11 +2,28 @@
 (function () {
   const TIMEOUT = 20000;
 
+  /*
+    个别接口首次请求要冷启动抓全市场数据，20 秒不够。
+    实测 /api/radar?scope=all 首包 17.4 秒、之后 16 毫秒（有缓存），
+    离 20 秒只差 2.6 秒，网络一抖就 ERR_ABORTED —— 页面上会显示
+    「雷达暂不可用: signal is aborted without reason」。
+    给这类接口单独放宽超时。
+  */
+  const SLOW_PATHS = [
+    { match: /^\/api\/radar/, ms: 60000 },
+    { match: /^\/api\/overview/, ms: 40000 },
+    { match: /^\/api\/bt\/|^\/api\/quant\//, ms: 180000 },
+  ];
+  function timeoutFor(path) {
+    for (const p of SLOW_PATHS) if (p.match.test(path)) return p.ms;
+    return TIMEOUT;
+  }
+
   async function get(path, params) {
     const u = new URL(path, location.origin);
     if (params) for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, v);
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
+    const timer = setTimeout(() => ctrl.abort(), timeoutFor(path));
     try {
       const res = await fetch(u.toString(), { signal: ctrl.signal, headers: { Accept: 'application/json' } });
       const json = await res.json();
@@ -21,7 +38,7 @@
     const u = new URL(path, location.origin);
     if (params) for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, v);
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
+    const timer = setTimeout(() => ctrl.abort(), timeoutFor(path));
     try {
       const res = await fetch(u.toString(), {
         method,

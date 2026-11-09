@@ -50,8 +50,13 @@
     renderStats();
     const theory = T();
     const body = U.$('#theoryBody');
-    if (tab === 'concepts') body.innerHTML = renderConcepts(theory);
-    else if (tab === 'questions') body.innerHTML = renderQuestions(theory);
+    /* 概念 tab 用「左侧目录 + 四段式」，其他 tab 沿用原布局 */
+    const wiki = U.$('#theoryWiki');
+    if (wiki) wiki.style.display = tab === 'concepts' ? '' : 'none';
+    if (tab === 'concepts') {
+      body.innerHTML = '';
+      renderConceptsWiki(theory);
+    } else if (tab === 'questions') body.innerHTML = renderQuestions(theory);
     else if (tab === 'lessons') body.innerHTML = renderLessons(theory) + renderBibliography(theory);
     else if (tab === 'methods') body.innerHTML = renderMethods(theory);
     else if (tab === 'meta') {
@@ -286,6 +291,104 @@
     } catch (e) {
       box.innerHTML = `<div class="loading">知识库加载失败：${U.esc(e.message)}</div>`;
     }
+  }
+
+  /*
+    ===================================================================
+    概念辞典：左侧目录 + 右侧四段式
+    -------------------------------------------------------------------
+    借鉴 Duodecimal 的 Metrics Wiki：每个条目都用**固定四段**回答四个问题。
+    我们的字段刚好能覆盖：
+      oneLine + definition + original  → 是什么（定义 + 原文要义）
+      howTo                            → 怎么判定（可执行步骤）
+      mistakes                         → 怎么读（常见误读）
+      station                          → 图上在哪（对应 Duodecimal 的"出现在哪"）
+    四段都在、且顺序固定，读者扫一眼就知道去哪找想要的信息。
+    ===================================================================
+  */
+  function wikiItemHtml(c) {
+    const secs = [];
+    if (c.definition || c.original) {
+      /* 定义直接显示；原文要义折叠起来，避免一屏全是密集文字 */
+      const orig = c.original
+        ? `<details class="wiki-orig"><summary>原文要义</summary><div class="o">${U.esc(c.original)}</div></details>`
+        : '';
+      secs.push(`<div class="wiki-sec"><div class="k">是什么</div><div class="v">${U.esc(c.definition || '')}${orig}</div></div>`);
+    }
+    if (c.howTo && c.howTo.length) {
+      secs.push(`<div class="wiki-sec"><div class="k">怎么判定</div><div class="v"><ol>${
+        c.howTo.map((x) => `<li>${U.esc(x)}</li>`).join('')}</ol></div></div>`);
+    }
+    if (c.mistakes && c.mistakes.length) {
+      const ms = Array.isArray(c.mistakes) ? c.mistakes : [c.mistakes];
+      secs.push(`<div class="wiki-sec"><div class="k">怎么读（常见误读）</div><div class="v"><ul>${
+        ms.map((x) => `<li>${U.esc(x)}</li>`).join('')}</ul></div></div>`);
+    }
+    if (c.station) {
+      secs.push(`<div class="wiki-sec"><div class="k">图上在哪</div><div class="v">${U.esc(c.station)}</div></div>`);
+    }
+    return secs.join('');
+  }
+
+  function renderConceptsWiki(t) {
+    const items = filtered('concepts', t);
+    const tocBox = U.$('#conceptToc');
+    const pane = U.$('#conceptPane');
+    if (!tocBox || !pane) return;
+    if (!items.length) {
+      tocBox.innerHTML = '';
+      pane.innerHTML = '<div class="loading">没有匹配的概念</div>';
+      return;
+    }
+    /* 按 level 分组，和 Duodecimal 的 CONTENTS 一样给个分组标题 */
+    const groups = {};
+    for (const c of items) (groups[c.level] = groups[c.level] || []).push(c);
+    const ORDER = ['基础', '进阶', '高级', '实战'];
+    const levels = Object.keys(groups).sort((a, b) => {
+      const ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    tocBox.innerHTML = `<div class="toc-h">CONTENTS · ${items.length} 条</div>` + levels.map((lv) =>
+      `<div class="toc-grp">${U.esc(lv)}</div>` + groups[lv].map((c) =>
+        `<a href="#wiki-${U.esc(c.id)}" data-cid="${U.esc(c.id)}">${U.esc(c.name)}</a>`).join('')
+    ).join('');
+
+    pane.innerHTML = items.map((c, i) => `
+      <div class="wiki-item" id="wiki-${U.esc(c.id)}" data-concept="${i}" tabindex="0" role="button">
+        <h4>${U.esc(c.name)}<span class="lv ${U.esc(c.level)}">${U.esc(c.level)}</span>
+          ${c.alias ? `<span class="hint">${U.esc(c.alias)}</span>` : ''}</h4>
+        <div class="ol">${U.esc(c.oneLine)}</div>
+        ${wikiItemHtml(c)}
+      </div>`).join('');
+
+    /* 点击条目 → 打开详情弹窗（保留原卡片式的弹窗能力） */
+    U.$$('#conceptPane .wiki-item').forEach((el) => {
+      el.addEventListener('click', () => open('concepts', Number(el.dataset.concept)));
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open('concepts', Number(el.dataset.concept)); }
+      });
+    });
+
+    /* 点击目录 → 滚动；滚动 → 高亮当前条目 */
+    U.$$('a[data-cid]', tocBox).forEach((a) => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const el = U.$('#wiki-' + a.dataset.cid);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    if (pane._spyOff) pane._spyOff();
+    const onScroll = U.debounce(() => {
+      const top = pane.getBoundingClientRect().top + window.scrollY - 60;
+      let cur = null;
+      U.$$('.wiki-item', pane).forEach((el) => {
+        if (el.getBoundingClientRect().top + window.scrollY <= top) cur = el.id.replace('wiki-', '');
+      });
+      U.$$('a[data-cid]', tocBox).forEach((a) => a.classList.toggle('on', a.dataset.cid === cur));
+    }, 100);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    pane._spyOff = () => window.removeEventListener('scroll', onScroll);
+    onScroll();
   }
 
   function renderConcepts(t) {
