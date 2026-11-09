@@ -27,7 +27,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
       - name: Syntax check (server + web + scripts)
         run: |
           fail=0
@@ -49,7 +48,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - name: Boot server
         run: |
           PORT=8931 node server/index.js > /tmp/server.log 2>&1 &
@@ -79,7 +77,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - name: Install Chromium
         id: chromium
         run: |
