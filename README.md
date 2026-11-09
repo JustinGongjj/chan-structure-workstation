@@ -11,12 +11,12 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-e0b15a"></a>
   <a href="https://nodejs.org"><img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A520-3c873a"></a>
   <img alt="dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen">
-  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-71%20passing-22b884"></a>
-  <a href="CHANGELOG.md"><img alt="version" src="https://img.shields.io/badge/version-2.3.0-e0b15a"></a>
+  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-162%20passing-22b884"></a>
+  <a href="CHANGELOG.md"><img alt="version" src="https://img.shields.io/badge/version-3.12.1-e0b15a"></a>
 </p>
 
 > **A deterministic, dependency-free Chan-theory (缠论) structure engine + multi-market trading workstation.**
-> Parse any OHLC series into fractals → strokes → segments → pivots → divergence → 1st/2nd/3rd class buy-sell points, see exactly where each concept lives on the chart, and run the same engine over A-shares, HK, US stocks and crypto.
+> Parse any OHLC series into fractals → strokes → segments → pivots → divergence → 1st/2nd/3rd class buy-sell points, see exactly where each concept lives on the chart, and run the same engine over six markets: A-shares, HK, US stocks, crypto, CN futures and US futures.
 
 <p align="center">
   <img src="docs/assets/desktop-structure.png" alt="Structure analysis with teaching annotations" width="88%">
@@ -34,10 +34,10 @@ This project is the opposite: **a small, readable, deterministic engine** (≈90
 | --- | --- | --- |
 | Engine | embedded in a closed app / not reproducible | pure JS, deterministic, unit-tested, MIT |
 | Dependencies | pandas / TA-Lib / dozens of npm packages | **0** (Node ≥18 standard library only) |
-| Markets | one market, one data vendor | A-shares · HK · US · Crypto, multi-source with automatic fallback |
+| Markets | one market, one data vendor | **6 markets**: A-shares · HK · US · Crypto · CN futures · US futures, multi-source with automatic fallback |
 | Explainability | "the algorithm says so" | every band / pivot / signal can be **highlighted and explained on the chart** with real dates, prices and MACD areas |
 | Mobile | none | installable PWA with **two native-feeling skins** (iOS / Android) |
-| Learning | none | 20 concepts + 14 "where is it on the chart?" Q&A + 108-lesson guide + guided chart annotation |
+| Learning | none | 40 concepts + 14 "where is it on the chart?" Q&A + 108-lesson guide + factor backtests + guided chart annotation |
 
 ---
 
@@ -240,7 +240,7 @@ All responses are `{ ok: true, … }`; failures are `{ ok: false, error }` with 
 
 | 命令 | 覆盖 | 现状 |
 | --- | --- | --- |
-| `npm test` | 缠论引擎不变量、**中枢几何（进/离段、区间固定、扩展合并）**、干支锚点、农历/紫微/奇门、择时、算卦、手绘线校验、闯关关卡引擎 | **61 项** |
+| `npm test` | 缠论引擎不变量、**中枢几何（进/离段、区间固定、扩展合并）**、干支锚点、农历/紫微/奇门、择时、算卦、手绘线校验、闯关关卡引擎、回测与量化归因、配置漂移审计 | **162 项** |
 | `npm run check:api` | 逐条打 56 个接口（含国内期货 / 美期货的报价·K线·缠论）：四市场报价/K线/缠论、多级别、雷达、择时七法、择时验证、回测、算卦可变性、自选池增删+去重+垃圾代码拒绝、静态资源 | **39/39** |
 | `npm run check:ui` | 真实 Chromium(CDP)：桌面 1440/1024、iOS 390×844、Android 412×915 × 深浅色。查 JS 报错、横向溢出、**内容超出却滚不动**、轮询是否打回滚动位置、5 个 Tab 是否都有内容 | **6/6** |
 | `npm run check:sheet` | 弹层矩阵：5 Tab × 3 弹层 × 2 皮肤 × 2 主题，断言弹层背景不透明、不被页面压住、无零宽标题、无超宽元素 | **48/48** |
@@ -605,6 +605,7 @@ space/                Hugging Face Space (Docker SDK)
 
 | 日期 | 版本 | 内容 | 验证方式 |
 | --- | --- | --- | --- |
+| 2026-11-09 | v3.12.1 | **v3.x 大版本：从「看结构」到「验证结构有没有用」**——缠论因子回测（136 标的 / OOS / walk-forward）、27 项量化组合绩效归因、0–100 四维度评分与并排对比、真正的递归区间套、40 概念四段式辞典、配置单一数据源 `constants.js`、服务崩溃兜底与机检审计；完整清单见 `CHANGELOG.md` 与 v3.12.1 Release Notes | `npm test` 162/162 |
 | 2026-10-27 | v1.1 | **缓存链路重做**：服务端按 `web/` 内容算构建哈希，HTML 里的 `__ASSET_V__` 注入成 `?v=<sha10>`，CSS/JS 每次部署 URL 都变；静态资源加 ETag/304 + gzip（F7 CSS 526KB→77KB）；Service Worker 升到 v3（导航网络优先、带 `?v=` 资源不可变缓存、离线回退只对 HTML 生效、安装用 `allSettled` 不再被一次 404 卡死） | `curl -D- /m/ \| grep X-Asset-Version` 每次改样式都会变；`curl -H 'Accept-Encoding: gzip'` 看 Content-Encoding；断网刷新仍能打开外壳 |
 | 2026-10-27 | v1.1 | **手机端三处"死机"根因修复**：F7 的 `html,body{height:100%}`+`overflow:hidden` 把视口锁成不可滚动；`html` 的 `overflow-y:visible` 让视口继承 body 的 overflow；`overscroll-behavior` 加在 body 上会吞掉用户滚动。另加图表手势仲裁（纵向放行页面滚动，横向才接管平移） | `npm run check:ui`（断言"内容超出屏幕却滚不动"）；滚动容器=document、手势位移 506px |
 | 2026-10-27 | v1.1 | **弹层两层框架冲突**：`.view{z-index:5000}` 把页面压到弹层之上（文字叠在一起）；元素级 `button{width:100%}` 把弹层标题挤成 0 宽。同时修 toast 被 `.ios/.md .toast` 顶出屏幕、`.btn` 被 F7 的 `--f7-button-height` 裁字 | `npm run check:sheet`（48 组断言：背景/层级/零宽/超宽） |

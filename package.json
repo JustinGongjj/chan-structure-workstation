@@ -1,6 +1,6 @@
 {
   "name": "chan-structure-workstation",
-  "version": "3.7.0",
+  "version": "3.12.1",
   "description": "缠论工作站 · 零依赖 Node.js 的缠论（Chan Theory）技术分析平台：六市场实时行情、笔/线段/中枢/背驰/买卖点、手绘线 AI 复核、算卦择时、108 关闯关游戏",
   "keywords": [
     "chanlun",
