@@ -366,7 +366,12 @@
   function patchOverview(ov) {
     if (!ov) return;
     const p = ov.pulse || {};
-    ['A', 'HK', 'US', 'CR'].forEach((m) => {
+    /*
+      遍历全部市场。原来卡片生成时是 6 个市场、这里只更新 4 个，
+      导致 CNF/USF 的脉冲卡片永远是 0（真 bug）。
+      改为从 U.MK 派生，两边自动一致。
+    */
+    Object.keys(U.MK || {}).forEach((m) => {
       const card = document.querySelector(`.pulse[data-pulse="${m}"]`);
       if (!card) return;
       const x = p[m] || { avgPct: 0, up: 0, down: 0, heat: 50 };

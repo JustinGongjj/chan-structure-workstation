@@ -1627,3 +1627,40 @@ test('信号名：分析结果里带的 name 与 constants 一致', () => {
     }
   }
 });
+
+/* ---------------- 市场全集不得硬编码 ---------------- */
+test('市场全集：前端不得硬编码 [A,HK,US,CR] 子集', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const targets = [];
+  const walk = (d) => {
+    for (const n of fs.readdirSync(d)) {
+      const p = path.join(d, n);
+      const st = fs.statSync(p);
+      if (st.isDirectory()) walk(p);
+      else if (/\.js$/.test(n)) targets.push(p);
+    }
+  };
+  walk(path.join(ROOT, 'web', 'js'));
+  walk(path.join(ROOT, 'web', 'm', 'js'));
+  const BAD = /\[\s*['"]A['"]\s*,\s*['"]HK['"]\s*,\s*['"]US['"]\s*,\s*['"]CR['"]\s*\]/;
+  for (const f of targets) {
+    const src = fs.readFileSync(f, 'utf8');
+    assert.ok(!BAD.test(src), `${path.relative(ROOT, f)} 硬编码了 4 市场子集，会漏掉 CNF/USF`);
+  }
+});
+
+test('市场全集：雷达页与手机脉冲都从 U.MK 派生', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const radar = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', 'radar.js'), 'utf8');
+  const mobile = fs.readFileSync(path.join(__dirname, '..', 'web', 'm', 'js', 'mobile.js'), 'utf8');
+  assert.ok(/Object\.keys\(U\.MK/.test(radar), '雷达页应从 U.MK 派生市场列表');
+  assert.ok(/Object\.keys\(U\.MK/.test(mobile), '手机脉冲应从 U.MK 派生市场列表');
+});
+
+test('市场全集：后端自选股支持全部 6 个市场', () => {
+  const C = require('../server/lib/constants');
+  assert.deepEqual(C.MARKET_ORDER, ['A', 'HK', 'US', 'CR', 'CNF', 'USF'], '后端市场全集应为 6 个');
+});

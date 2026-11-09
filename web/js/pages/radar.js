@@ -62,10 +62,16 @@
 
   function renderWl() {
     const list = (WL.data && WL.data[WL.market]) || [];
-    U.$('#wlCount').textContent = `共 ${['A', 'HK', 'US', 'CR'].reduce((a, m) => a + ((WL.data[m] || []).length), 0)} 只`;
+    /*
+      市场全集从 U.MK 派生，不再硬编码 [A,HK,US,CR]。
+      原硬编码漏了 CNF/USF —— 后端自选股支持 6 个市场（实测期货各有 5 只），
+      但雷达页只显示 4 个，期货自选股完全看不到（真 bug）。
+    */
+    const MK_ALL = Object.keys(U.MK || {});
+    U.$('#wlCount').textContent = `共 ${MK_ALL.reduce((a, m) => a + ((WL.data[m] || []).length), 0)} 只`;
     U.$('#wlBody').innerHTML = `
       <div class="wl-tabs">
-        ${['A', 'HK', 'US', 'CR']
+        ${MK_ALL
           .map(
             (m) =>
               `<button class="sq ${m === WL.market ? 'active' : ''}" data-m="${m}">${U.MK[m]} · ${((WL.data && WL.data[m]) || []).length}</button>`

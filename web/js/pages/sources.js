@@ -17,7 +17,11 @@
         )
         .join('');
       if (mk) {
-        const markets = ['A', 'HK', 'US', 'CR'];
+        /*
+          市场列表从接口返回的 mk.markets 派生，不再硬编码 4 个。
+          后端实际有 6 个市场（含 CNF/USF），硬编码会导致数据源表漏掉期货。
+        */
+        const markets = Object.keys(mk.markets || {});
         const rows = markets
           .map((m) => {
             const mm = mk.markets[m];

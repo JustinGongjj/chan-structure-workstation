@@ -270,7 +270,11 @@
     }
     // 深链：?m=HK&c=00700&p=week#structure
     const q = new URLSearchParams(location.search);
-    if (q.get('m') && ['A', 'HK', 'US', 'CR', 'CNF', 'USF'].includes(q.get('m').toUpperCase())) App.state.market = q.get('m').toUpperCase();
+    /* 市场校验从 U.MK 派生，避免硬编码列表与后端漂移 */
+    {
+      const mv = (q.get('m') || '').toUpperCase();
+      if (mv && window.U && Object.keys(U.MK || {}).includes(mv)) App.state.market = mv;
+    }
     if (q.get('c')) {
       App.state.symbol[App.state.market] = q.get('c');
       App.state.hl = q.get('hl') || null; // 带标的进入 = 显式指定

@@ -187,6 +187,16 @@ const FORBIDDEN_LITERALS = [
   { name: '周期名称映射', re: /day:\s*['"]日线['"],\s*week/ },
   /* 信号中文名：chan.js 曾与 constants.js 各写一份，措辞不一致（第一类买点 vs 一类买点） */
   { name: '信号名称映射', re: /['"]1B['"]\s*:\s*['"][^'"]*买点['"]/ },
+  /*
+    市场全集子集：前端硬编码 ['A','HK','US','CR'] 会漏掉 CNF/USF。
+    实测两个真 bug：雷达页看不到期货自选股、数据源表漏掉期货。
+    注意只查"疑似全集"（4 个及以上连续市场代码），单个市场引用不算。
+  */
+  {
+    name: '市场全集硬编码',
+    re: /\[\s*['"]A['"]\s*,\s*['"]HK['"]\s*,\s*['"]US['"]\s*,\s*['"]CR['"]\s*\]/,
+    allowFiles: ['server/lib/sources.js'],   // 数据源能力声明，本身只覆盖这 4 个市场
+  },
 ];
 function ruleConfigDrift() {
   const scan = [...SCAN_DIRS, path.join(ROOT, 'server', 'lib')].flatMap((d) => walk(d));
@@ -195,7 +205,8 @@ function ruleConfigDrift() {
     if (CANONICAL_SOURCES.includes(relPath)) continue;   // 唯一数据源允许定义
     if (ALLOWED_FALLBACK.includes(relPath)) continue;    // 前端兜底（会被 API 覆盖）
     const src = fs.readFileSync(f, 'utf8');
-    for (const { name, re } of FORBIDDEN_LITERALS) {
+    for (const { name, re, allowFiles } of FORBIDDEN_LITERALS) {
+      if (allowFiles && allowFiles.includes(relPath)) continue;
       if (re.test(src)) {
         const idx = src.search(re);
         const line = src.slice(0, idx).split('\n').length;
