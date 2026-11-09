@@ -125,6 +125,43 @@ function ruleCountInParen(file, src) {
   }
 }
 
+/*
+  规则④：前后端周期列表必须一致
+  起因：用户反馈"缺少了月线"——前端 PERIODS.CR 漏了 month，后端却有数据；
+  同时后端 MARKETS.CR.periods 也漏写 month，两处一起漏。
+  这类"两边各维护一份列表"的结构必然漂移，做成规则长期盯住。
+*/
+const MARKETS_ALL = ['A', 'HK', 'US', 'CR', 'CNF', 'USF'];
+function rulePeriodConsistency() {
+  const bePath = path.join(ROOT, 'server', 'lib', 'sources.js');
+  const fePath = path.join(ROOT, 'web', 'js', 'pages', 'structure.js');
+  if (!fs.existsSync(bePath) || !fs.existsSync(fePath)) return;
+  const be = fs.readFileSync(bePath, 'utf8');
+  const fe = fs.readFileSync(fePath, 'utf8');
+  const blk = fe.slice(fe.indexOf('const PERIODS'), fe.indexOf('const PNAME'));
+  const parse = (src) => {
+    const out = {};
+    for (const m of MARKETS_ALL) {
+      const re = new RegExp('\\b' + m + ':\\s*(?:\\{[^}]*periods:)?\\s*\\[([^\\]]+)\\]');
+      const hit = src.match(re);
+      if (hit) out[m] = hit[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+    }
+    return out;
+  };
+  const BE = parse(be), FE = parse(blk);
+  for (const m of MARKETS_ALL) {
+    if (!BE[m] || !FE[m]) continue;
+    const onlyBE = BE[m].filter((x) => !FE[m].includes(x));
+    const onlyFE = FE[m].filter((x) => !BE[m].includes(x));
+    if (onlyBE.length) {
+      problems.push({ file: fePath, line: 0, rule: '周期不一致', text: `${m} 缺少 ${onlyBE.join(',')}`, why: '后端支持但前端没有按钮' });
+    }
+    if (onlyFE.length) {
+      problems.push({ file: bePath, line: 0, rule: '周期不一致', text: `${m} 后端未声明 ${onlyFE.join(',')}`, why: '前端有按钮但后端 periods 未声明' });
+    }
+  }
+}
+
 const files = SCAN_DIRS.flatMap((d) => walk(d));
 for (const f of files) {
   const src = fs.readFileSync(f, 'utf8');
@@ -133,9 +170,11 @@ for (const f of files) {
   ruleCountInParen(f, src);
 }
 
+rulePeriodConsistency();
+
 const rel = (p) => path.relative(ROOT, p);
 if (!problems.length) {
-  console.log(`✅ 误导性文案审计通过（扫描 ${files.length} 个文件，3 条规则）`);
+  console.log(`✅ 误导性文案审计通过（扫描 ${files.length} 个文件，4 条规则）`);
   process.exit(0);
 }
 console.log(`❌ 发现 ${problems.length} 处可疑：`);

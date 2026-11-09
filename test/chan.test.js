@@ -1463,3 +1463,42 @@ test('算卦：nonce 递增必须导致卦名变化（用真实 API 验证）', 
   if (!okCount) return;  // 服务未运行时跳过（不误判为失败）
   assert.ok(names.size >= 4, `6 次起卦应至少出现 4 个不同本卦，实际 ${names.size}`);
 });
+
+/* ---------------- 周期完整性 ---------------- */
+test('周期：前端 PERIODS 与后端 MARKETS.periods 必须完全一致', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const be = fs.readFileSync(path.join(ROOT, 'server', 'lib', 'sources.js'), 'utf8');
+  const fe = fs.readFileSync(path.join(ROOT, 'web', 'js', 'pages', 'structure.js'), 'utf8');
+  const blk = fe.slice(fe.indexOf('const PERIODS'), fe.indexOf('const PNAME'));
+  const MK = ['A', 'HK', 'US', 'CR', 'CNF', 'USF'];
+  const parse = (src) => {
+    const o = {};
+    for (const m of MK) {
+      const re = new RegExp('\\b' + m + ':\\s*(?:\\{[^}]*periods:)?\\s*\\[([^\\]]+)\\]');
+      const hit = src.match(re);
+      if (hit) o[m] = hit[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+    }
+    return o;
+  };
+  const BE = parse(be), FE = parse(blk);
+  for (const m of MK) {
+    if (!BE[m] || !FE[m]) continue;
+    const onlyBE = BE[m].filter((x) => !FE[m].includes(x));
+    const onlyFE = FE[m].filter((x) => !BE[m].includes(x));
+    assert.equal(onlyBE.length, 0, `${m}: 后端有但前端缺 [${onlyBE.join(',')}]`);
+    assert.equal(onlyFE.length, 0, `${m}: 前端有但后端未声明 [${onlyFE.join(',')}]`);
+  }
+});
+
+test('周期：加密必须有月线（用户反馈"缺少了月线"）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const fe = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'pages', 'structure.js'), 'utf8');
+  const blk = fe.slice(fe.indexOf('const PERIODS'), fe.indexOf('const PNAME'));
+  const hit = blk.match(/\bCR:\s*\[([^\]]+)\]/);
+  assert.ok(hit, '应找到 CR 的周期列表');
+  const list = hit[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  assert.ok(list.includes('month'), '加密周期必须包含 month（后端 Binance 支持 1M）');
+});

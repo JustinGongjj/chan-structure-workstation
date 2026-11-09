@@ -4,7 +4,12 @@
     A: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
     HK: ['day', 'week', 'month'],
     US: ['day', 'week', 'month'],
-    CR: ['day', 'week', '4h', '60m', '15m', '5m', '1m'],
+    /*
+      加密必须有 month：后端 Binance 支持 1M（month=112 根实测可用），
+      之前这里漏了 month，导致切到加密时周期按钮里没有月线（用户反馈）。
+      所有市场的周期列表都应与 server/lib/sources.js 的 MARKETS[x].periods 保持一致。
+    */
+    CR: ['day', 'week', 'month', '4h', '60m', '30m', '15m', '5m', '1m'],
     CNF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
     USF: ['day', 'week', 'month', '60m', '30m', '15m', '5m', '1m'],
   };
