@@ -185,6 +185,8 @@ const ALLOWED_FALLBACK = ['web/js/ui.js'];
 const FORBIDDEN_LITERALS = [
   { name: '市场名称映射', re: /A:\s*['"]A股['"]/ },
   { name: '周期名称映射', re: /day:\s*['"]日线['"],\s*week/ },
+  /* 信号中文名：chan.js 曾与 constants.js 各写一份，措辞不一致（第一类买点 vs 一类买点） */
+  { name: '信号名称映射', re: /['"]1B['"]\s*:\s*['"][^'"]*买点['"]/ },
 ];
 function ruleConfigDrift() {
   const scan = [...SCAN_DIRS, path.join(ROOT, 'server', 'lib')].flatMap((d) => walk(d));

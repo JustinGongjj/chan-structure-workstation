@@ -1590,3 +1590,40 @@ test('规范化：CHANGE-CHECKLIST 文档存在且覆盖五类高危改动', () 
   }
   assert.ok(/手机版/.test(txt), '必须强调手机版');
 });
+
+/* ---------------- 信号名称单一数据源 ---------------- */
+test('信号名：chan.js 必须引用 constants，不得各写一份', () => {
+  const C = require('../server/lib/chan');
+  const K = require('../server/lib/constants');
+  assert.deepEqual(C.SIGNAL_NAME, K.SIGNALS, 'chan.SIGNAL_NAME 应与 constants.SIGNALS 完全相同');
+  // 六种信号齐全
+  for (const s of ['1B', '2B', '3B', '1S', '2S', '3S']) {
+    assert.ok(K.SIGNALS[s], `${s} 应有中文名`);
+  }
+});
+
+test('信号名：用户可见措辞是「第一类买点」（不能改成「一类买点」）', () => {
+  const K = require('../server/lib/constants');
+  assert.equal(K.SIGNALS['1B'], '第一类买点', '用户已看到「第一类买点」，统一时不能改动可见文案');
+  assert.equal(K.SIGNALS['3B'], '第三类买点');
+  assert.equal(K.SIGNALS['2S'], '第二类卖点');
+});
+
+test('信号名：分析结果里带的 name 与 constants 一致', () => {
+  const C = require('../server/lib/chan');
+  const K = require('../server/lib/constants');
+  const S = require('../server/lib/sources');
+  // 造一段简单数据触发分析（不依赖网络）
+  const bars = [];
+  let c = 100;
+  for (let i = 0; i < 300; i++) {
+    c += Math.sin(i / 7) * 2 + (i % 13 === 0 ? 3 : 0);
+    bars.push({ t: 1.6e12 + i * 86400000, o: c, h: c * 1.012, l: c * 0.988, c, v: 1000 });
+  }
+  const r = C.analyze(bars);
+  for (const sig of (r.signals || [])) {
+    if (sig.name && K.SIGNALS[sig.type]) {
+      assert.equal(sig.name, K.SIGNALS[sig.type], `${sig.type} 的 name 应为 ${K.SIGNALS[sig.type]}`);
+    }
+  }
+});

@@ -24,10 +24,8 @@ const PERIOD_META = {
   month: { levelNo: 8, levelName: '月线级别', short: 'M' },
 };
 
-const SIGNAL_NAME = {
-  '1B': '第一类买点', '2B': '第二类买点', '3B': '第三类买点',
-  '1S': '第一类卖点', '2S': '第二类卖点', '3S': '第三类卖点',
-};
+/* 信号中文名统一从 constants 取（原此处与 constants 各写一份，措辞曾不一致） */
+const SIGNAL_NAME = require('./constants').SIGNALS;
 
 /* ------------------------------------------------------------------ */
 /* 指标                                                                */
