@@ -188,7 +188,20 @@ async function mobileFlows() {
     // 3) 算卦：连点两次起卦 → 占次 +1、卦名变化
     await cdp.eval(`document.querySelector('[data-tab="divination"]').click()`);
     await sleep(4500);
-    const readCast = () => cdp.eval(`(() => { const t = document.getElementById('view').innerText; return { name: (t.match(/^([乾兑离震巽坎艮坤][^\\s]{1,3}(?:为[乾兑离震巽坎艮坤][^\\s]{1,2})?)/m)||[])[1] || '', occ: (t.match(/第\\s*(\\d+)\\s*占/)||[])[1] || '' }; })()`);
+    /*
+      抓卦名要抓「本卦」那一行，不能抓宫位。
+      页面里先出现的是「离宫 / 兑宫」（八宫归属），旧正则 ^(乾|兑|离|…)
+      会先命中它，导致两次都拿到宫名、判成"卦名没变"的假失败（实测踩到）。
+      改为：优先取「第 N 卦」前面的卦名；退化到含"卦"的短行。
+    */
+    const readCast = () => cdp.eval(`(() => {
+      const t = document.getElementById('view').innerText;
+      const occ = (t.match(/第\\s*(\\d+)\\s*占/)||[])[1] || '';
+      // 形如 "山水蒙 第 4 卦 · 第 1 占 ..."
+      let name = (t.match(/([\\u4e00-\\u9fa5]{2,6})\\s*第\\s*\\d+\\s*卦/)||[])[1] || '';
+      if (!name) name = (t.match(/卦名[:：]\\s*([\\u4e00-\\u9fa5]{2,6})/)||[])[1] || '';
+      return { name, occ };
+    })()`);
     const c1 = await readCast();
     await cdp.eval(`document.getElementById('dCast').click()`);
     await sleep(3600);

@@ -37,14 +37,15 @@
     "check:api": "node scripts/apicheck.js",
     "check:ui": "node scripts/uicheck.js",
     "check:flow": "node scripts/flowcheck.js",
-    "check:all": "node --test test/*.test.js && node scripts/htmlcheck.js && node scripts/cssaudit.js && node scripts/apicheck.js && node scripts/uicheck.js && node scripts/sheetcheck.js && node scripts/flowcheck.js && node scripts/perfcheck.js",
+    "check:all": "node --test test/*.test.js && node scripts/htmlcheck.js && node scripts/cssaudit.js && node scripts/apicheck.js && node scripts/uicheck.js && node scripts/sheetcheck.js && node scripts/flowcheck.js && node scripts/perfcheck.js && npm run check:misleading",
     "check:sheet": "node scripts/sheetcheck.js",
     "check:css": "node scripts/cssaudit.js",
     "check:perf": "node scripts/perfcheck.js",
     "check:pivot": "node scripts/pivotviz.js",
     "check:matrix": "node scripts/matrixcheck.js",
     "check:sources": "node scripts/srcaudit.js",
-    "check:html": "node scripts/htmlcheck.js"
+    "check:html": "node scripts/htmlcheck.js",
+    "check:misleading": "node scripts/audit-misleading.js"
   },
   "engines": {
     "node": ">=20"

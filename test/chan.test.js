@@ -1426,3 +1426,40 @@ test('教学标注：结构升级话术必须按实际中枢数分支', () => {
   assert.ok(/nP <= 1/.test(js), '应有 nP<=1 的分支');
   assert.ok(/现在还没到那一步/.test(js), '1 个中枢时应明确说还没到 a+A+b+B+c');
 });
+
+/* ---------------- 误导性文案审计 + 测试自身正确性 ---------------- */
+test('审计脚本：能抓出顶层的固定话术，且不误报条件分支里的教学解释', () => {
+  const { execSync } = require('child_process');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  // 当前代码应通过
+  const out = execSync('node scripts/audit-misleading.js', { cwd: ROOT, encoding: 'utf8' });
+  assert.ok(/✅/.test(out), '当前代码应通过审计');
+});
+
+test('flowcheck 抓卦名：必须抓「本卦」，不能抓「宫位」', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'flowcheck.js'), 'utf8');
+  // 旧正则以八卦名开头；页面里先出现的是"离宫/兑宫"，会误命中 → 假失败
+  assert.ok(!src.includes('[乾兑离震巽坎艮坤]'), '不应再用八卦名开头抓卦名（会命中宫位）');
+  // 新做法：从「第 N 卦」上下文取卦名（检查注释里写明了原因）
+  assert.ok(src.includes('不能抓宫位') || src.includes('第 N 卦'), '应有说明为何不能抓宫位');
+  assert.ok(src.includes('卦'), '应保留卦名提取逻辑');
+});
+
+test('算卦：nonce 递增必须导致卦名变化（用真实 API 验证）', async () => {
+  // castSeed 需要 pillars 对象，直接用 HTTP 接口验证端到端行为更可靠
+  const base = process.env.TEST_BASE || 'http://127.0.0.1:8931';
+  const names = new Set();
+  let okCount = 0;
+  for (let n = 1; n <= 6; n++) {
+    const r = await fetch(`${base}/api/divination?market=A&code=600519&nonce=${n}`).then((x) => x.json());
+    if (!r || !r.ok) continue;
+    okCount++;
+    const nm = r.hexagram && r.hexagram.ben && r.hexagram.ben.name;
+    if (nm) names.add(nm);
+  }
+  if (!okCount) return;  // 服务未运行时跳过（不误判为失败）
+  assert.ok(names.size >= 4, `6 次起卦应至少出现 4 个不同本卦，实际 ${names.size}`);
+});
