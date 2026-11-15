@@ -706,6 +706,111 @@ function structureLabel(pivots) {
   return `a + A + b + B + c + …　趋势延伸 · ${n} 个中枢`;
 }
 
+/**
+ * 逐根因果结构状态序列
+ * =====================================================================
+ * 为什么需要：`trend.type` / `stats.position` 是**基于整段 K 线**算出来的快照。
+ * 拿它当"某一天的状态"去回测，就是前视偏差——星图那边曾因此测出 IC 0.2556 的假象。
+ *
+ * 本函数的规则只有一条：**在 bar t 上，只使用 i1 <= t 的结构元素。**
+ *   · 笔：bi.i1 <= t
+ *   · 已确认中枢：pivot.i1 <= t
+ *   · 进行中中枢：i0 <= t < i1，单独记在 cs_ongoing，不进 cs_pivots
+ *   · 信号/背驰：barIdx <= t，并给出 age = t - barIdx
+ *   · 走势类型：由已确认中枢关系**本地重算**，不取 trend.type
+ *
+ * 输出 19 个字段，可直接按 date 对齐到任意面板模型。
+ */
+function buildStateSeries({ bars, bis, pivots, signals, beichi, macd }) {
+  const n = bars.length;
+  const hist = (macd && macd.hist) || [];
+  const side = { '1B': 1, '2B': 1, '3B': 1, '1S': -1, '2S': -1, '3S': -1 };
+
+  const bisSorted = [...bis].sort((a, b) => a.i1 - b.i1);
+  const pvSorted = [...pivots].sort((a, b) => a.i1 - b.i1);
+  const sigAt = new Map();
+  for (const s of signals) if (s.barIdx != null) sigAt.set(s.barIdx, s);
+  const beiAt = new Map();
+  for (const b of beichi) if (b.barIdx != null) beiAt.set(b.barIdx, b);
+
+  const trendOf = (ps) => {
+    if (ps.length < 2) return [0, 0];
+    const rels = [];
+    for (let i = 1; i < ps.length; i++) {
+      if (ps[i].zd > ps[i - 1].zg) rels.push(1);
+      else if (ps[i].zg < ps[i - 1].zd) rels.push(-1);
+      else rels.push(0);
+    }
+    let dir = 0, run = 0;
+    for (let i = rels.length - 1; i >= 0; i--) {
+      if (rels[i] === 0) break;
+      if (dir === 0) { dir = rels[i]; run = 1; }
+      else if (rels[i] === dir) run++;
+      else break;
+    }
+    return [dir, run];
+  };
+
+  const rows = [];
+  let biI = 0, pvI = 0, lastBi = null, lastSig = null, lastSigBar = null, lastBei = null, lastBeiBar = null;
+  const confirmed = [];
+
+  for (let t = 0; t < n; t++) {
+    while (biI < bisSorted.length && bisSorted[biI].i1 <= t) lastBi = bisSorted[biI++];
+    while (pvI < pvSorted.length && pvSorted[pvI].i1 <= t) confirmed.push(pvSorted[pvI++]);
+
+    let ongoing = null;
+    for (const p of pivots) if (p.i0 <= t && t < p.i1) { ongoing = p; break; }
+
+    if (sigAt.has(t)) { lastSig = sigAt.get(t); lastSigBar = t; }
+    if (beiAt.has(t)) { lastBei = beiAt.get(t); lastBeiBar = t; }
+
+    const ref = confirmed.length ? confirmed[confirmed.length - 1] : null;
+    const c = bars[t].c;
+    let pos = 0, posPct = null, ph = null;
+    if (ref) {
+      ph = Math.max(ref.zg - ref.zd, 1e-9);
+      posPct = (c - (ref.zd + ph / 2)) / ph;
+      pos = c > ref.zg ? 1 : c < ref.zd ? -1 : 0;
+    }
+    const [tdir, trun] = trendOf(confirmed);
+
+    let biArea = null;
+    if (lastBi) {
+      let acc = 0, ok = false;
+      for (let k = lastBi.i0; k <= lastBi.i1 && k < hist.length; k++) {
+        const v = hist[k];
+        if (Number.isFinite(v)) { acc += Math.abs(v); ok = true; }
+      }
+      if (ok) biArea = acc;
+    }
+
+    rows.push({
+      t: bars[t].t,
+      cs_pivots: confirmed.length,
+      cs_trend: tdir,
+      cs_trend_run: trun,
+      cs_pos: pos,
+      cs_pos_pct: posPct,
+      cs_pivot_h: ph,
+      cs_pivot_w: ref && c > 0 ? ph / c : null,
+      cs_pivot_age: ref ? t - ref.i1 : null,
+      cs_bi_dir: lastBi ? lastBi.dir : 0,
+      cs_bi_len: lastBi ? lastBi.i1 - lastBi.i0 + 1 : null,
+      cs_bi_age: lastBi ? t - lastBi.i1 : null,
+      cs_bi_area: biArea,
+      cs_sig: lastSig ? (side[lastSig.type] || 0) : 0,
+      cs_sig_age: lastSigBar != null ? t - lastSigBar : null,
+      cs_sig_kind: lastSig ? lastSig.type : '',
+      cs_bei: lastBei ? 1 : 0,
+      cs_bei_ratio: lastBei && lastBei.areaRatio != null ? lastBei.areaRatio : null,
+      cs_bei_age: lastBeiBar != null ? t - lastBeiBar : null,
+      cs_ongoing: ongoing ? 1 : 0,
+    });
+  }
+  return rows;
+}
+
 /* ------------------------------------------------------------------ */
 /* 主入口                                                              */
 /* ------------------------------------------------------------------ */
@@ -824,6 +929,8 @@ function analyze(rawBars, opts = {}) {
     signals: signals.map((s) => ({ ...s, typeName: s.name })),
     trend,
     structure: structureLabel(pivots),
+    /* 逐根因果状态序列：回测/面板对齐必须用这个，不能用 trend/stats 的快照 */
+    stateSeries: opts.withState === false ? undefined : buildStateSeries({ bars, bis, pivots, signals, beichi, macd: md }),
     summary,
     stats: {
       bars: bars.length,
