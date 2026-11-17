@@ -491,7 +491,19 @@ function buildCaveats(stats, trades, P) {
   if (stats.excessPct < 0) out.push('跑输买入持有：这套规则在这个标的/区间上没有优势');
   if (stats.maxDrawdownPct > 30) out.push(`最大回撤 ${stats.maxDrawdownPct}%，超出多数人可承受范围`);
   if (stats.trades && stats.avgHoldBars < 3) out.push('平均持仓不足 3 根：可能是信号过于频繁，成本占比过高');
-  if (!P.stopPct) out.push('未设置止损：单笔风险不可控');
+  /* 止损的措辞按实测改写：
+     16 只标的分组回测（2026-11 星图同步），不止损胜率 57.9%、5% 止损 32.8%、8% 止损 44.2%。
+     结论是「个股止损在本市场降胜率」，所以不再把"未设止损"当成风险提示，
+     而是在设了止损时提示它可能降低胜率。 */
+  if (P.stopPct) {
+    // 用该止损档位自己的实测数据，避免"设 8% 却引用 5% 的数字"
+    const REF = { 5: '32.8%', 8: '44.2%', 15: '53.7%' };
+    const ref = REF[Math.round(P.stopPct)];
+    const tail = ref ? `（不设 57.9% → ${P.stopPct}% 止损 ${ref}）` : '（不设止损 57.9%）';
+    out.push(`已设 ${P.stopPct}% 止损：实测个股止损在本市场会降低胜率${tail}，请对照未设止损的结果再看`);
+  }
+  else out.push('本次未设止损：这是实测胜率更高的配置，但需靠仓位与组合层回撤控制风险');
+
   out.push('回测结果依赖历史，未来不保证重现；信号含确认延迟（次日开盘成交），实盘滑点可能更大');
   return out;
 }

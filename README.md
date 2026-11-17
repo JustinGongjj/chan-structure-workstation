@@ -293,6 +293,7 @@ UI 五条用 `chrome-headless-shell` + CDP over WebSocket（Node 22 内置 WebSo
 | **缠论买卖点到底有没有用**（不含代码） | [docs/缠论因子研究报告.md](docs/缠论因子研究报告.md) |
 | 回测方法论、口径、踩过的坑 | [docs/BACKTEST.md](docs/BACKTEST.md) |
 | 五轮结论汇总 | [docs/BACKTEST-CONCLUSIONS.md](docs/BACKTEST-CONCLUSIONS.md) |
+| **量化侧实测同步**（止损/仓位/组合风控，来自星图） | [docs/QUANT-SYNC.md](docs/QUANT-SYNC.md) |
 | 理论概念与实践的结合 | [docs/THEORY-TO-PRACTICE.md](docs/THEORY-TO-PRACTICE.md) |
 | 架构与部署 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DEPLOY.md](docs/DEPLOY.md) |
 
