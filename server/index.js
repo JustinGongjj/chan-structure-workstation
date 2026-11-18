@@ -19,6 +19,8 @@ const EXPANSION = require('./lib/expansion');
 const DECOMP = require('./lib/decomposition');
 const BTENGINE = require('./lib/btengine');
 const BTBATCH = require('./lib/batch');
+const PICKS = require('./lib/picks');
+const PICKVALIDATE = require('./lib/pickvalidate');
 const UNIV = require('./lib/universe');
 const OOS = require('./lib/oos');
 const ROLLWF = require('./lib/rollwf');
@@ -767,6 +769,45 @@ const routes = {
     };
   },
   // 参数扫描：找出更优规则组合
+  /* ---------------- 量化推票 ---------------- */
+  /* 全市场扫描 → 流动性筛选 → 缠论结构 + 量化因子打分 → 取头部
+     方向默认中性；传 dirs=1 会用 validate 现算的方向（较慢） */
+  '/api/picks': async (u) => {
+    const o = {
+      topN: Number(u.searchParams.get('topN') || 300),
+      pickCount: Number(u.searchParams.get('pickCount') || 10),
+      period: u.searchParams.get('period') || 'day',
+      minAmount: Number(u.searchParams.get('minAmount') || 5e7),
+      exclude: u.searchParams.get('exclude') || '',
+    };
+    // dirs 可选：JSON，如 {"mom20":-1,"ret5":-1}
+    const dirsRaw = u.searchParams.get('dirs');
+    if (dirsRaw) {
+      try {
+        const parsed = JSON.parse(dirsRaw);
+        if (parsed && typeof parsed === 'object') o.dirs = parsed;
+      } catch (e) { /* 忽略非法 JSON，退回中性 */ }
+    }
+    return await PICKS.runScan(o);
+  },
+  /* 因子方向估计：用滚动历史现算每个因子的方向与显著性
+     返回 dir=0 表示 |t|<2，不建议使用该因子 */
+  '/api/picks/directions': async (u) =>
+    await PICKVALIDATE.estimateDirections({
+      topN: Number(u.searchParams.get('topN') || 200),
+      cuts: Number(u.searchParams.get('cuts') || 6),
+      horizon: Number(u.searchParams.get('horizon') || 10),
+      period: u.searchParams.get('period') || 'day',
+    }),
+  /* 推票打分的历史检验：分组回测，看打分有没有区分度 */
+  '/api/picks/validate': async (u) =>
+    await PICKVALIDATE.runValidation({
+      topN: Number(u.searchParams.get('topN') || 150),
+      cuts: Number(u.searchParams.get('cuts') || 6),
+      horizon: Number(u.searchParams.get('horizon') || 10),
+      groups: Number(u.searchParams.get('groups') || 5),
+      period: u.searchParams.get('period') || 'day',
+    }),
   '/api/bt/sweep': async (u) => {
     /* 参数扫描：12 组参数 × N 个标的
        ---------------------------------

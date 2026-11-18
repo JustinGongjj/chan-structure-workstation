@@ -14,7 +14,7 @@
     },
     pages: {},
     go(page, opts) {
-      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'backtest', 'quant', 'sectors', 'game', 'sources'].includes(page)) page = 'overview';
+      if (!['overview', 'structure', 'radar', 'theory', 'divination', 'picks', 'backtest', 'quant', 'sectors', 'game', 'sources'].includes(page)) page = 'overview';
       this.state.page = page;
       U.$$('.page').forEach((el) => el.classList.toggle('active', el.id === 'page-' + page));
       U.$$('#nav .nav-item').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
@@ -53,6 +53,7 @@
         else if (page === 'radar') await PageRadar.render();
         else if (page === 'theory') PageTheory.render();
         else if (page === 'divination') await PageDivination.render();
+        else if (page === 'picks') await PagePicks.render();
         else if (page === 'backtest') await PageBacktest.renderPage();
         else if (page === 'quant') await PageQuant.renderPage();
         else if (page === 'sectors') await PageSectors.render();
