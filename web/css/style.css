@@ -1125,3 +1125,6 @@ button{font-family:inherit}
   .pk-table th:nth-child(5),.pk-table td:nth-child(5){display:none}
   .pk-gc{flex:1 1 64px;min-width:64px;padding:7px 5px}
 }
+.pk-badge{display:inline-block;padding:1px 6px;border-radius:5px;font-size:10.5px;margin-left:5px;vertical-align:middle}
+.pk-badge.ok{background:color-mix(in srgb,var(--down) 18%,transparent);color:var(--down)}
+.pk-badge.warn{background:color-mix(in srgb,var(--up) 18%,transparent);color:var(--up)}

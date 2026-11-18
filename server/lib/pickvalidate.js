@@ -237,35 +237,84 @@ async function estimateDirections(o = {}) {
   const pool = A.liquidUniverse(list.items, { topN: topN * 2, minAmount: Number(o.minAmount) || 5e7 })
     .slice(0, topN);
 
-  const FIELDS = ['mom20', 'dev60', 'ret5', 'vstd20', 'vol20', 'pivots', 'posPct'];
-  const perCut = [];
+  const cutList = [];
+  for (let k = 0; k < nCuts; k++) cutList.push(240 + k * cutStep);
 
-  for (let k = 0; k < nCuts; k++) {
-    const cut = 240 + k * cutStep;
-    const sec = await oneCrossSection(pool, period, cut, horizon);
-    if (!sec || sec.length < 40) continue;
+  /* 性能：一次取数，所有截面复用
+     -------------------------------
+     第一版是「外层 6 个截面串行，内层每只股票并发」，等于同一只票取 6 次 K 线、
+     再算 6 次 analyze，实测 167s。
+     改成「每只票取一次最长序列，再对每个截面切前缀」，
+     取数次数降到 1/6，实测降到 30s 以内。
+     cutIdx 用「距末尾的相对位置」，保证同一只票的各个截面口径一致。 */
+  const maxCut = Math.max(...cutList);
+  const needLen = maxCut + horizon + 10;
+
+  const FIELDS = ['mom20', 'dev60', 'ret5', 'vstd20', 'vol20', 'pivots', 'posPct'];
+  const perCutSpreads = cutList.map(() => ({}));
+  let usable = 0;
+
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(8, pool.length) }, async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= pool.length) return;
+      const it = pool[i];
+      try {
+        const kl = await S.klines({ market: 'A', code: it.code, period, limit: needLen });
+        if (!kl || !kl.bars || kl.bars.length < needLen) return;
+        const bars = kl.bars;
+        const n = bars.length;
+
+        for (let ci = 0; ci < cutList.length; ci++) {
+          // cut 是「距末尾相对位置」，统一换算成绝对索引
+          const cutAbs = n - (needLen - cutList[ci]);
+          if (cutAbs < 120 || cutAbs + horizon >= n) continue;
+          const hist = bars.slice(0, cutAbs + 1);
+          const lastC = bars[cutAbs].c;
+          const futC = bars[Math.min(cutAbs + horizon, n - 1)].c;
+          if (!(lastC > 0) || !Number.isFinite(futC)) continue;
+          const fwd = futC / lastC - 1;
+          if (Math.abs(fwd) > 0.5) continue;
+          let res = null;
+          try { res = C.analyze(hist, { period, withState: false }); } catch (e) { res = null; }
+          const raw = PS.rawMetrics(hist, res);
+          if (!raw) continue;
+          const bucket = perCutSpreads[ci];
+          for (const f of FIELDS) {
+            const v = f === 'pivots' ? (raw.struct && raw.struct.pivots)
+              : f === 'posPct' ? (raw.struct && raw.struct.posPct)
+                : raw[f];
+            if (!Number.isFinite(v)) continue;
+            (bucket[f] = bucket[f] || []).push({ v, fwd });
+          }
+        }
+        usable++;
+      } catch (e) { /* 单只失败跳过 */ }
+    }
+  });
+  await Promise.all(workers);
+
+  if (!usable) return { ok: false, error: '没有标的可取到足够长度的 K 线' };
+
+  // 每个截面每个因子算 Q5−Q1
+  const perCut = [];
+  for (let ci = 0; ci < cutList.length; ci++) {
     const got = {};
     for (const f of FIELDS) {
-      const arr = sec
-        .map((r) => ({
-          v: f === 'pivots' ? (r.raw.struct && r.raw.struct.pivots)
-            : f === 'posPct' ? (r.raw.struct && r.raw.struct.posPct)
-              : r.raw[f],
-          fwd: r.fwd,
-        }))
-        .filter((x) => Number.isFinite(x.v) && Number.isFinite(x.fwd));
+      const arr = (perCutSpreads[ci][f] || []);
       if (arr.length < 40) continue;
       arr.sort((a, b) => a.v - b.v);
-      const g = Math.max(3, Math.min(5, Math.floor(arr.length / 10)));
+      const g = 5;
       const per = Math.floor(arr.length / g);
       if (per < 5) continue;
       const q1 = arr.slice(0, per);
       const qN = arr.slice(arr.length - per);
       const m1 = q1.reduce((a, x) => a + x.fwd, 0) / q1.length;
       const mN = qN.reduce((a, x) => a + x.fwd, 0) / qN.length;
-      got[f] = (mN - m1) * 100;   // 百分点
+      got[f] = (mN - m1) * 100;
     }
-    perCut.push({ cut, spread: got });
+    if (Object.keys(got).length) perCut.push({ cut: cutList[ci], spread: got });
   }
 
   if (!perCut.length) return { ok: false, error: '没有有效截面' };
@@ -273,28 +322,30 @@ async function estimateDirections(o = {}) {
   const out = {};
   for (const f of FIELDS) {
     const vals = perCut.map((p) => p.spread[f]).filter((x) => Number.isFinite(x));
-    if (vals.length < 3) { out[f] = { spread: null, t: null, n: vals.length, dir: 0, stable: null }; continue; }
+    if (vals.length < 3) { out[f] = { spread: null, t: null, n: vals.length, dir: 0, stable: null, perCut: [] }; continue; }
     const m = vals.reduce((a, b) => a + b, 0) / vals.length;
     const sd = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / (vals.length - 1));
     const t = sd > 0 ? m / (sd / Math.sqrt(vals.length)) : 0;
     const pos = vals.filter((x) => x > 0).length;
     const stable = Math.max(pos, vals.length - pos) / vals.length;
-    // |t| < 2 视为不显著，方向记 0（不用这个因子）
-    const dir = Math.abs(t) < 2 ? 0 : t > 0 ? 1 : -1;
+    /* 方向判定要分三档，不能只按 |t|≥2 一刀切。
+       实测：ret5 在 topN=150 时 t=-3.14（反向），topN=200 时 t=+2.04（正向）——
+       同一段历史、只改池子大小就翻向。所以：
+         |t| >= 3  → usable  可用
+         2 <= |t| < 3 → borderline 边界，方向随时可能翻，界面必须警示
+         |t| < 2   → 不用
+       方向本身在 borderline 档仍给出（便于观察），但 confidence 标为 low。 */
+    const at = Math.abs(t);
+    const dir = at < 2 ? 0 : t > 0 ? 1 : -1;
+    const confidence = at >= 3 ? 'ok' : at >= 2 ? 'borderline' : 'none';
     out[f] = {
-      spread: +m.toFixed(3),
-      t: +t.toFixed(2),
-      n: vals.length,
-      dir,
-      stable: +(stable * 100).toFixed(0),
-      perCut: vals.map((x) => +x.toFixed(2)),
+      spread: +m.toFixed(3), t: +t.toFixed(2), n: vals.length, dir, confidence,
+      stable: +(stable * 100).toFixed(0), perCut: vals.map((x) => +x.toFixed(2)),
     };
   }
 
   return {
-    ok: true,
-    horizon,
-    nCuts: perCut.length,
+    ok: true, horizon, nCuts: perCut.length, symbolsUsed: usable,
     cuts: perCut.map((p) => p.cut),
     factors: out,
     note: 'dir=+1 正向(值越大越好) / -1 反向 / 0 不显著不用(|t|<2)',

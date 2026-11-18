@@ -28,12 +28,14 @@
       vstd20: '量能波动', vol20: '价格波动', pivots: '中枢数量', posPct: '中枢位置',
     };
     const rows = Object.entries(d.factors).map(([k, v]) => {
-      const sig = Math.abs(v.t) >= 2;
+      const conf = v.confidence || (Math.abs(v.t) >= 3 ? 'ok' : Math.abs(v.t) >= 2 ? 'borderline' : 'none');
+      const badge = conf === 'ok' ? '<span class="pk-badge ok">可用</span>'
+        : conf === 'borderline' ? '<span class="pk-badge warn">边界</span>' : '';
       return `<tr>
         <td>${U.esc(names[k] || k)}</td>
         <td class="${v.spread > 0 ? 'up' : v.spread < 0 ? 'down' : ''}">${v.spread > 0 ? '+' : ''}${v.spread}%</td>
-        <td class="${sig ? (Math.abs(v.t) >= 3 ? 'up' : '') : 'muted'}">${v.t}</td>
-        <td class="${dirClass(v.dir)}">${dirText(v.dir)}</td>
+        <td class="${conf === 'none' ? 'muted' : ''}">${v.t}</td>
+        <td class="${dirClass(v.dir)}">${dirText(v.dir)} ${badge}</td>
         <td>${v.stable}%</td>
         <td class="muted tiny">${(v.perCut || []).join(' / ')}</td>
       </tr>`;
@@ -49,7 +51,10 @@
         <thead><tr><th>因子</th><th>Q5−Q1</th><th>t 值</th><th>方向</th><th>一致度</th><th>各期价差(%)</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <div class="pk-hint">判定：|t| ≥ 2 才算显著；一致度 = 同向截面占比。两者都低时不要相信这个方向。</div>`;
+      <div class="pk-hint">
+        判定：|t| ≥ 3 标「可用」；2 ≤ |t| < 3 标「边界」——<b>边界档的方向随时可能翻转</b>
+        （实测同一因子换池子大小就从 −3.14 翻到 +2.04）。一致度 = 同向截面占比。
+      </div>`;
   }
 
   /* ---------- 推票结果 ---------- */
