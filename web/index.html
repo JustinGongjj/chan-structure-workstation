@@ -432,6 +432,8 @@
           <button class="btn sm" id="pkBtnDirs">估计因子方向</button>
           <button class="btn sm primary" id="pkBtnScan">扫描全市场</button>
           <button class="btn sm" id="pkBtnValidate">历史检验</button>
+          <button class="btn sm gold" id="pkBtnRecord">记录当前推票</button>
+          <button class="btn sm" id="pkBtnSettle">结算到期</button>
         </div>
       </div>
 
@@ -461,6 +463,19 @@
       <div class="card">
         <h3 class="card-title">推票结果</h3>
         <div id="pkResult"><div class="empty">点「扫描全市场」运行</div></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">
+          推票台账 <span class="muted tiny">记录 → 到期用真实行情结算 → 累计胜率</span>
+          <button class="btn xs" id="pkBtnRefresh" style="float:right">刷新</button>
+        </h3>
+        <div class="pk-hint" style="margin-bottom:10px">
+          结算口径：T 日推票 → <b>T+1 开盘价成交</b>（须落在买入区间）→ 触及止损/目标即结算，否则持有满 N 日按收盘价算。
+          样本 &lt; 30 条时不报胜率结论。
+        </div>
+        <div id="pkLedgerStats"><div class="loading">加载中…</div></div>
+        <div id="pkLedgerList"></div>
       </div>
     </section>
 

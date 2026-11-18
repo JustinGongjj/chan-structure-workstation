@@ -21,6 +21,7 @@ const BTENGINE = require('./lib/btengine');
 const BTBATCH = require('./lib/batch');
 const PICKS = require('./lib/picks');
 const PICKVALIDATE = require('./lib/pickvalidate');
+const PICKS_LEDGER = require('./lib/picksledger');
 const UNIV = require('./lib/universe');
 const OOS = require('./lib/oos');
 const ROLLWF = require('./lib/rollwf');
@@ -790,6 +791,46 @@ const routes = {
     }
     return await PICKS.runScan(o);
   },
+  /* ---------------- 推票台账 ---------------- */
+  /* 记录一批推票（默认把当前扫描结果写进台账） */
+  '/api/picks/ledger/record': async (u) => {
+    const topN = Math.min(Number(u.searchParams.get('topN') || 200), 600);
+    const pickCount = Math.min(Number(u.searchParams.get('pickCount') || 10), 30);
+    const holdDays = Number(u.searchParams.get('holdDays') || 10);
+    const dirsRaw = u.searchParams.get('dirs');
+    let dirs = {};
+    if (dirsRaw) { try { dirs = JSON.parse(dirsRaw) || {}; } catch (e) { dirs = {}; } }
+    const scan = await PICKS.runScan({ topN, pickCount, dirs });
+    if (!scan.ok) return { ok: false, error: scan.error || '扫描失败' };
+    const rec = PICKS_LEDGER.record(scan.picks, {
+      date: u.searchParams.get('date') || undefined,
+      holdDays,
+      source: 'scan',
+    });
+    return { ok: true, ...rec, picks: scan.picks.length };
+  },
+  /* 结算所有未结算条目（用真实 K 线） */
+  '/api/picks/ledger/settle': async () => {
+    const r = await PICKS_LEDGER.settleAll(async (code) => {
+      const kl = await S.klines({ market: 'A', code, period: 'day', limit: 300 });
+      return kl && kl.bars ? kl.bars : [];
+    });
+    return { ok: true, ...r, stats: PICKS_LEDGER.stats() };
+  },
+  /* 战绩统计 */
+  '/api/picks/ledger/stats': async () => ({ ok: true, ...PICKS_LEDGER.stats() }),
+  /* 台账明细 */
+  '/api/picks/ledger': async (u) => ({
+    ok: true,
+    ...PICKS_LEDGER.list({
+      status: u.searchParams.get('status') || '',
+      limit: Number(u.searchParams.get('limit') || 100),
+    }),
+  }),
+  /* 清空台账（危险操作，需确认参数） */
+  '/api/picks/ledger/clear': async (u) =>
+    (u.searchParams.get('confirm') === 'yes' ? { ok: true, ...PICKS_LEDGER.clear() } : { ok: false, error: '需要 confirm=yes' }),
+
   /* 因子方向估计：用滚动历史现算每个因子的方向与显著性
      返回 dir=0 表示 |t|<2，不建议使用该因子 */
   '/api/picks/directions': async (u) =>

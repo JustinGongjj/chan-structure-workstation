@@ -1128,3 +1128,5 @@ button{font-family:inherit}
 .pk-badge{display:inline-block;padding:1px 6px;border-radius:5px;font-size:10.5px;margin-left:5px;vertical-align:middle}
 .pk-badge.ok{background:color-mix(in srgb,var(--down) 18%,transparent);color:var(--down)}
 .pk-badge.warn{background:color-mix(in srgb,var(--up) 18%,transparent);color:var(--up)}
+.btn.xs{padding:3px 9px;font-size:11.5px;border-radius:6px}
+.empty{padding:22px 12px;text-align:center;color:var(--faint);font-size:12.5px}

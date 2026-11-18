@@ -195,6 +195,105 @@
     U.$('#pkBtnDirs')?.addEventListener('click', loadDirs);
     U.$('#pkBtnScan')?.addEventListener('click', runScan);
     U.$('#pkBtnValidate')?.addEventListener('click', runValidate);
+    U.$('#pkBtnRecord')?.addEventListener('click', recordPicks);
+    U.$('#pkBtnSettle')?.addEventListener('click', settleLedger);
+    U.$('#pkBtnRefresh')?.addEventListener('click', loadLedger);
+  }
+
+  /* ---------- 台账 ---------- */
+  function renderLedgerStats(s) {
+    const box = U.$('#pkLedgerStats');
+    if (!box) return;
+    if (!s || !s.ok) { box.innerHTML = `<div class="loading">${U.esc((s && s.error) || '读取失败')}</div>`; return; }
+    const bad = !s.conclusive;
+    const winRate = s.winRate === null ? '—' : s.winRate + '%';
+    box.innerHTML = `
+      <div class="pk-note${bad ? ' warn' : ''}">
+        台账 <b>${s.total}</b> 条 · 未结算 <b>${s.open}</b> · 已结算 <b>${s.settled}</b>
+        （成交 ${s.filled} / 未成交 ${s.notFilled}）<br>
+        胜率 <b>${winRate}</b> · 平均收益 <b>${s.avgRetPct ?? '—'}%</b> ·
+        胜 ${s.wins} / 负 ${s.losses}
+        <br><b>${U.esc(s.verdict || '')}</b>
+      </div>
+      <div class="pk-groups">
+        <span class="pk-gc">达标<b class="up">${s.byResult.hit_target}</b></span>
+        <span class="pk-gc">到期盈<b class="up">${s.byResult.expired_win}</b></span>
+        <span class="pk-gc">到期亏<b class="down">${s.byResult.expired_loss}</b></span>
+        <span class="pk-gc">止损<b class="down">${s.byResult.stopped}</b></span>
+        <span class="pk-gc">未成交<b>${s.byResult.not_filled}</b></span>
+      </div>`;
+  }
+
+  function renderLedgerList(d) {
+    const box = U.$('#pkLedgerList');
+    if (!box) return;
+    if (!d || !d.ok) { box.innerHTML = `<div class="loading">${U.esc((d && d.error) || '读取失败')}</div>`; return; }
+    if (!d.entries.length) { box.innerHTML = '<div class="empty">台账为空，点「记录当前推票」开始积累</div>'; return; }
+    const resMap = {
+      hit_target: '达标', expired_win: '到期盈', expired_loss: '到期亏',
+      stopped: '止损', not_filled: '未成交',
+    };
+    const rows = d.entries.map((e) => {
+      const cls = /hit_target|expired_win/.test(e.result) ? 'up' : /stopped|expired_loss/.test(e.result) ? 'down' : 'muted';
+      return `<tr>
+        <td>${U.esc(e.pickDate)}</td>
+        <td><b>${U.esc(e.name || '')}</b><div class="muted tiny">${U.esc(e.code)}</div></td>
+        <td class="muted tiny">${e.buyLow}~${e.buyHigh}</td>
+        <td class="muted tiny">${e.stop} / ${e.target}</td>
+        <td class="${cls}">${e.status === 'settled' ? (resMap[e.result] || e.result) : '持有中'}</td>
+        <td class="muted tiny">${Number.isFinite(e.retPct) ? e.retPct + '%' : (e.settlePx ? '—' : '—')}</td>
+      </tr>`;
+    }).join('');
+    box.innerHTML = `<table class="pk-table">
+      <thead><tr><th>推票日</th><th>标的</th><th>买入区间</th><th>止损/目标</th><th>结果</th><th>收益</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      <div class="pk-hint">共 ${d.total} 条，显示最近 ${d.entries.length} 条。结算口径：T 日推票 → T+1 开盘价成交 → 持有 N 日或触及止损/目标。</div>`;
+  }
+
+  async function loadLedger() {
+    try {
+      const [s, d] = await Promise.all([
+        API.get('/api/picks/ledger/stats'),
+        API.get('/api/picks/ledger?limit=60'),
+      ]);
+      renderLedgerStats(s);
+      renderLedgerList(d);
+    } catch (e) {
+      renderLedgerStats({ ok: false, error: String(e.message || e) });
+    }
+  }
+
+  async function recordPicks() {
+    const box = U.$('#pkLedgerStats');
+    if (box) box.innerHTML = '<div class="loading">扫描并记录（约 40 秒）…</div>';
+    let dirs = null;
+    const raw = (U.$('#pkDirsJson')?.value || '').trim();
+    if (raw) { try { dirs = JSON.parse(raw); } catch (e) { dirs = null; } }
+    try {
+      const r = await API.get('/api/picks/ledger/record?' + qs({
+        topN: Number(U.$('#pkPool')?.value || 200),
+        pickCount: Number(U.$('#pkCount')?.value || 10),
+        holdDays: Number(U.$('#pkHorizon')?.value || 10),
+        dirs: dirs || '',
+      }));
+      if (!r.ok) { U.toast('记录失败：' + (r.error || '')); return; }
+      U.toast(`已记录：新增 ${r.added} 条，重复跳过 ${r.duplicates} 条`);
+      await loadLedger();
+    } catch (e) {
+      U.toast('记录失败：' + (e.message || e));
+    }
+  }
+
+  async function settleLedger() {
+    const box = U.$('#pkLedgerStats');
+    if (box) box.innerHTML = '<div class="loading">结算未到期条目…</div>';
+    try {
+      const r = await API.get('/api/picks/ledger/settle');
+      U.toast(`结算完成：${r.settled} 条，失败 ${r.failed} 条`);
+      await loadLedger();
+    } catch (e) {
+      U.toast('结算失败：' + (e.message || e));
+    }
   }
 
   /* 与其它页面统一：router 调 render() */
@@ -203,7 +302,8 @@
     if (!bound) { bind(); bound = true; }
     // 首次进入先跑方向估计，让用户立刻看到"当前有没有可靠方向"
     if (!lastDirs) await loadDirs();
+    await loadLedger();
   }
 
-  window.PagePicks = { render, runScan, runValidate, loadDirs };
+  window.PagePicks = { render, runScan, runValidate, loadDirs, loadLedger, recordPicks, settleLedger };
 })();
