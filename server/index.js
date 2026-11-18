@@ -768,29 +768,84 @@ const routes = {
   },
   // 参数扫描：找出更优规则组合
   '/api/bt/sweep': async (u) => {
+    /* 参数扫描：12 组参数 × N 个标的
+       ---------------------------------
+       实测（优化后）单次回测约 717ms（800 根日线）。
+       含 136 个标的 = 1632 次 = 约 20 分钟，远超 HTTP 超时 ——
+       这正是本接口此前 600s 无响应的原因（返回 HTTP 000）。
+
+       现在的约束：
+         · 默认只用 24 个标的（按市场均衡抽样），约 3.5 分钟
+         · maxSymbols 可调，上限 40（约 6 分钟）
+         · markets 可限定市场，如 markets=A
+         · 响应带 elapsedMs / estimatedFullMs，让调用方知道"扩到全样本要多久"
+    */
+    const t0 = Date.now();
     const period = u.searchParams.get('period') || 'day';
     const limit = Math.min(Number(u.searchParams.get('limit') || 800), 1500);
-    const symbols = [];
-    for (const it of BT_DEFAULT_SYMBOLS) {
-      try { const kl = await S.klines({ market: it.market, code: it.code, period, limit }); symbols.push({ ...it, bars: kl.bars }); } catch (e) {}
+    const maxSymbols = Math.max(6, Math.min(Number(u.searchParams.get('maxSymbols') || 24), 40));
+    const mkFilter = (u.searchParams.get('markets') || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
+
+    // 候选池：可限定市场
+    let pool = BT_DEFAULT_SYMBOLS;
+    if (mkFilter.length) pool = pool.filter((it) => mkFilter.includes(it.market));
+
+    // 均衡抽样：每个市场按比例取，避免全被 A 股占满
+    const byMarket = {};
+    for (const it of pool) (byMarket[it.market] = byMarket[it.market] || []).push(it);
+    const mkKeys = Object.keys(byMarket);
+    const picked = [];
+    let round = 0;
+    while (picked.length < maxSymbols && round < 200) {
+      let added = false;
+      for (const mk of mkKeys) {
+        const g = byMarket[mk];
+        if (round < g.length && picked.length < maxSymbols) { picked.push(g[round]); added = true; }
+      }
+      if (!added) break;
+      round++;
     }
+
+    const symbols = [];
+    let fetchFail = 0;
+    for (const it of picked) {
+      try {
+        const kl = await S.klines({ market: it.market, code: it.code, period, limit });
+        if (kl && kl.bars && kl.bars.length >= 60) symbols.push({ ...it, bars: kl.bars });
+        else fetchFail++;
+      } catch (e) { fetchFail++; }
+    }
+
     const grid = { signalTypes: [['3B'], ['3B', '2B'], null], stopPct: [0, 8], takePct: [0, 20] };
     const out = [];
     for (const st of grid.signalTypes) for (const sp of grid.stopPct) for (const tp of grid.takePct) {
       const opts = { period, exitOn: 'signal', entry: 'buy', signalTypes: st, stopPct: sp, takePct: tp, maxConfirmLag: 3 };
-      let n = 0, win = 0, sumPct = 0, beat = 0;
+      let n = 0, win = 0, sumPct = 0, beat = 0, used = 0;
       for (const s of symbols) {
         const r = BTENGINE.runBacktest(s.bars, opts);
         if (!r.ok) continue;
+        used++;
         n += r.stats.trades;
         win += r.trades.filter((t) => t.net > 0).length;
         sumPct += r.trades.reduce((a, t) => a + t.netPct, 0);
         if (r.stats.excessPct > 0) beat++;
       }
-      out.push({ signals: st ? st.join('+') : '全部', stopPct: sp, takePct: tp, trades: n, winRate: n ? +(win / n * 100).toFixed(1) : 0, avgNetPct: n ? +(sumPct / n).toFixed(2) : 0, beat });
+      out.push({ signals: st ? st.join('+') : '全部', stopPct: sp, takePct: tp, trades: n, winRate: n ? +(win / n * 100).toFixed(1) : 0, avgNetPct: n ? +(sumPct / n).toFixed(2) : 0, beat, symbolsUsed: used });
     }
     out.sort((a, b) => b.avgNetPct - a.avgNetPct);
-    return { ok: true, symbols: symbols.length, rows: out };
+    const elapsedMs = Date.now() - t0;
+    const perRun = symbols.length ? elapsedMs / (symbols.length * 12) : 0;
+    return {
+      ok: true,
+      symbols: symbols.length,
+      symbolsSampled: picked.length,
+      poolSize: pool.length,
+      fetchFail,
+      rows: out,
+      elapsedMs,
+      estimatedFullMs: Math.round(perRun * 12 * pool.length),
+      note: `本次 ${symbols.length} 个标的 × 12 组，耗时 ${(elapsedMs / 1000).toFixed(1)}s；全池 ${pool.length} 个标的预计需 ${(perRun * 12 * pool.length / 60000).toFixed(1)} 分钟`,
+    };
   },
   // 标的池信息
   // 标的池（带中文名/行业/风格标签，供选标的器使用）
