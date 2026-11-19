@@ -13,6 +13,10 @@
     { match: /^\/api\/radar/, ms: 60000 },
     { match: /^\/api\/overview/, ms: 40000 },
     { match: /^\/api\/bt\/|^\/api\/quant\//, ms: 180000 },
+    /* 推票：全市场扫描（5577 只 → 候选池取 K 线 → 缠论分析）
+       实测 300 只池约 40s；方向估计要多跑 6 个截面，约 60–90s。
+       默认 20s 会直接 abort，页面显示 "signal is aborted without reason"。 */
+    { match: /^\/api\/picks/, ms: 300000 },
   ];
   function timeoutFor(path) {
     for (const p of SLOW_PATHS) if (p.match.test(path)) return p.ms;

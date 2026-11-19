@@ -10,9 +10,9 @@
   <a href="https://github.com/JustinGongjj/chan-structure-workstation/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JustinGongjj/chan-structure-workstation/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-e0b15a"></a>
   <a href="https://nodejs.org"><img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A520-3c873a"></a>
-  <img alt="dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen">
-  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-162%20passing-22b884"></a>
-  <a href="CHANGELOG.md"><img alt="version" src="https://img.shields.io/badge/version-3.12.1-e0b15a"></a>
+  <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen">
+  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-169%20passing-22b884"></a>
+  <a href="CHANGELOG.md"><img alt="version" src="https://img.shields.io/badge/version-3.16.0-e0b15a"></a>
 </p>
 
 > **A deterministic, dependency-free Chan-theory (缠论) structure engine + multi-market trading workstation.**
@@ -293,6 +293,7 @@ UI 五条用 `chrome-headless-shell` + CDP over WebSocket（Node 22 内置 WebSo
 | **缠论买卖点到底有没有用**（不含代码） | [docs/缠论因子研究报告.md](docs/缠论因子研究报告.md) |
 | 回测方法论、口径、踩过的坑 | [docs/BACKTEST.md](docs/BACKTEST.md) |
 | 五轮结论汇总 | [docs/BACKTEST-CONCLUSIONS.md](docs/BACKTEST-CONCLUSIONS.md) |
+| **量化侧实测同步**（止损/仓位/组合风控，来自星图） | [docs/QUANT-SYNC.md](docs/QUANT-SYNC.md) |
 | 理论概念与实践的结合 | [docs/THEORY-TO-PRACTICE.md](docs/THEORY-TO-PRACTICE.md) |
 | 架构与部署 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DEPLOY.md](docs/DEPLOY.md) |
 
@@ -605,6 +606,7 @@ space/                Hugging Face Space (Docker SDK)
 
 | 日期 | 版本 | 内容 | 验证方式 |
 | --- | --- | --- | --- |
+| 2026-11-19 | v3.16.0（未发布） | **本地整合待审**：因果结构状态序列、A股截面量化推票与滚动置信度检验、真实行情推票台账；修复台账持有期未满即按少量行情提前判胜负的问题。公开下载仍为 v3.12.1，未生成或发布 v3.16.0 包 | `npm run check:all`：169 个单测及全量门禁 |
 | 2026-11-09 | v3.12.1 | **v3.x 大版本：从「看结构」到「验证结构有没有用」**——缠论因子回测（136 标的 / OOS / walk-forward）、27 项量化组合绩效归因、0–100 四维度评分与并排对比、真正的递归区间套、40 概念四段式辞典、配置单一数据源 `constants.js`、服务崩溃兜底与机检审计；完整清单见 `CHANGELOG.md` 与 v3.12.1 Release Notes | `npm test` 162/162 |
 | 2026-10-27 | v1.1 | **缓存链路重做**：服务端按 `web/` 内容算构建哈希，HTML 里的 `__ASSET_V__` 注入成 `?v=<sha10>`，CSS/JS 每次部署 URL 都变；静态资源加 ETag/304 + gzip（F7 CSS 526KB→77KB）；Service Worker 升到 v3（导航网络优先、带 `?v=` 资源不可变缓存、离线回退只对 HTML 生效、安装用 `allSettled` 不再被一次 404 卡死） | `curl -D- /m/ \| grep X-Asset-Version` 每次改样式都会变；`curl -H 'Accept-Encoding: gzip'` 看 Content-Encoding；断网刷新仍能打开外壳 |
 | 2026-10-27 | v1.1 | **手机端三处"死机"根因修复**：F7 的 `html,body{height:100%}`+`overflow:hidden` 把视口锁成不可滚动；`html` 的 `overflow-y:visible` 让视口继承 body 的 overflow；`overscroll-behavior` 加在 body 上会吞掉用户滚动。另加图表手势仲裁（纵向放行页面滚动，横向才接管平移） | `npm run check:ui`（断言"内容超出屏幕却滚不动"）；滚动容器=document、手势位移 506px |

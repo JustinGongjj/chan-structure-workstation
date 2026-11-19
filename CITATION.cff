@@ -7,8 +7,7 @@ authors:
 repository-code: "https://github.com/JustinGongjj/chan-structure-workstation"
 url: "https://github.com/JustinGongjj/chan-structure-workstation"
 license: MIT
-version: 3.12.1
-date-released: "2026-11-09"
+version: 3.16.0
 keywords:
   - chan theory
   - 缠论

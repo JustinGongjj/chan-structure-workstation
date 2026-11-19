@@ -1775,3 +1775,44 @@ test('服务：必须有 uncaughtException / unhandledRejection 兜底（否则�
   // 必须写日志，否则崩溃查不到原因
   assert.ok(/server-crash\.log/.test(s), '崩溃应写日志文件');
 });
+
+/* ---------------- 因果结构状态序列 ---------------- */
+test('stateSeries：逐根状态只用 i1<=t 的已完成元素（无前视）', () => {
+  const C = require('../server/lib/chan.js');
+  const S = require('../server/lib/sources');
+  return S.klines({ market: 'A', code: '600519', period: 'day', limit: 800 }).then((k) => {
+    const r = C.analyze(k.bars);
+    assert.ok(Array.isArray(r.stateSeries), '必须有 stateSeries');
+    assert.equal(r.stateSeries.length, r.bars.length, '行数应等于 K 线数');
+    // 随机抽点核对中枢计数不超前
+    for (let t = 0; t < r.stateSeries.length; t += 37) {
+      const exp = r.pivots.filter((p) => p.i1 <= t).length;
+      assert.equal(r.stateSeries[t].cs_pivots, exp, `t=${t} 中枢数超前`);
+    }
+    // 最近信号不得早于其 barIdx
+    const lastRow = r.stateSeries.at(-1);
+    assert.ok(lastRow.cs_sig_age == null || lastRow.cs_sig_age >= 0, '信号 age 不应为负');
+  });
+});
+
+test('stateSeries：字段完整，笔力度可算', () => {
+  const C = require('../server/lib/chan.js');
+  const S = require('../server/lib/sources');
+  return S.klines({ market: 'A', code: '600519', period: 'day', limit: 800 }).then((k) => {
+    const r = C.analyze(k.bars);
+    const need = ['cs_pivots', 'cs_trend', 'cs_pos', 'cs_pos_pct', 'cs_bi_dir', 'cs_bi_area',
+      'cs_sig', 'cs_sig_age', 'cs_bei', 'cs_bei_ratio', 'cs_ongoing'];
+    for (const kk of need) assert.ok(kk in r.stateSeries[0], `缺字段 ${kk}`);
+    const nz = r.stateSeries.filter((x) => x.cs_bi_area != null).length;
+    assert.ok(nz > r.stateSeries.length * 0.5, `cs_bi_area 应有大部分非空，实际 ${nz}`);
+  });
+});
+
+test('stateSeries：可关闭（withState=false）以节省带宽', () => {
+  const C = require('../server/lib/chan.js');
+  const S = require('../server/lib/sources');
+  return S.klines({ market: 'A', code: '600519', period: 'day', limit: 300 }).then((k) => {
+    const r = C.analyze(k.bars, { withState: false });
+    assert.equal(r.stateSeries, undefined, 'withState=false 时不应返回');
+  });
+});

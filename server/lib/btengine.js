@@ -129,6 +129,17 @@ function runBacktest(bars, opts = {}) {
   let baseShares = 0, baseEntry = 0, baseCost = 0;
   let baseInit = false;
 
+  /* 关于「前缀分析缓存」——试过，放弃了
+     --------------------------------------
+     12 组参数扫描会对同一份 K 线重复做 800 次前缀分析，看似可以缓存共享。
+     实测（600519，800 根，12 组参数）：
+       · 有缓存 8227ms，无缓存 6147ms  → 缓存反而慢 0.7x
+     原因：缓存要保留 680 份完整结构对象（每份含 bars/bis/pivots/signals），
+     CPU profile 显示 GC 占 11.9%，缓存把内存压力放大到超过计算收益。
+
+     真正的优化是下面这一行 withState:false —— 单选就快 39%。
+  */
+
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
 
@@ -165,9 +176,15 @@ function runBacktest(bars, opts = {}) {
     /* ② 分析前缀 [0, i]：只用已发生的数据 */
     if (i >= P.warmup && i < bars.length - 1) {
       let res = null;
-      try {
-        res = C.analyze(bars.slice(0, i + 1), { period: P.period, biStyle: P.biStyle });
-      } catch (e) { res = null; }
+      {
+        try {
+          /* withState:false —— 回测只用 signals/bis/pivots 等结构，
+             不需要逐根因果状态序列（19 字段 × 800 行）。
+             CPU profile 显示 buildStateSeries 占回测总耗时 10%，
+             且它会放大 GC 压力（额外 11.9%）。 */
+          res = C.analyze(bars.slice(0, i + 1), { period: P.period, biStyle: P.biStyle, withState: false });
+        } catch (e) { res = null; }
+      }
 
       if (res && res.ok) {
         /* 只认"新出现"的信号；已被修正消失的不会再次触发 */
@@ -491,7 +508,19 @@ function buildCaveats(stats, trades, P) {
   if (stats.excessPct < 0) out.push('跑输买入持有：这套规则在这个标的/区间上没有优势');
   if (stats.maxDrawdownPct > 30) out.push(`最大回撤 ${stats.maxDrawdownPct}%，超出多数人可承受范围`);
   if (stats.trades && stats.avgHoldBars < 3) out.push('平均持仓不足 3 根：可能是信号过于频繁，成本占比过高');
-  if (!P.stopPct) out.push('未设置止损：单笔风险不可控');
+  /* 止损的措辞按实测改写：
+     16 只标的分组回测（2026-11 星图同步），不止损胜率 57.9%、5% 止损 32.8%、8% 止损 44.2%。
+     结论是「个股止损在本市场降胜率」，所以不再把"未设止损"当成风险提示，
+     而是在设了止损时提示它可能降低胜率。 */
+  if (P.stopPct) {
+    // 用该止损档位自己的实测数据，避免"设 8% 却引用 5% 的数字"
+    const REF = { 5: '32.8%', 8: '44.2%', 15: '53.7%' };
+    const ref = REF[Math.round(P.stopPct)];
+    const tail = ref ? `（不设 57.9% → ${P.stopPct}% 止损 ${ref}）` : '（不设止损 57.9%）';
+    out.push(`已设 ${P.stopPct}% 止损：实测个股止损在本市场会降低胜率${tail}，请对照未设止损的结果再看`);
+  }
+  else out.push('本次未设止损：这是实测胜率更高的配置，但需靠仓位与组合层回撤控制风险');
+
   out.push('回测结果依赖历史，未来不保证重现；信号含确认延迟（次日开盘成交），实盘滑点可能更大');
   return out;
 }

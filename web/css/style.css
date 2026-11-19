@@ -1094,3 +1094,39 @@ button{font-family:inherit}
 @media (prefers-reduced-motion: reduce){
   .overview-underlay{opacity:.55}
 }
+
+/* ================= 量化推票页 ================= */
+.pk-note{padding:10px 13px;border-radius:9px;background:var(--panel2);border:1px solid var(--line2);
+  font-size:12.5px;line-height:1.7;color:var(--muted);margin-bottom:12px}
+.pk-note.warn{border-color:color-mix(in srgb,var(--up) 45%,var(--line2));
+  background:color-mix(in srgb,var(--up) 7%,transparent);color:var(--text)}
+.pk-note b{color:var(--text)}
+.pk-hint{font-size:12px;line-height:1.65;color:var(--faint);margin-top:10px}
+.pk-hint.warn{color:var(--up)}
+.pk-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.pk-table th{text-align:left;padding:7px 8px;color:var(--muted);font-weight:500;
+  border-bottom:1px solid var(--line2);white-space:nowrap;font-size:11.5px}
+.pk-table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.pk-table tr:last-child td{border-bottom:none}
+.pk-table tr:hover td{background:var(--panel2)}
+.pk-rank{color:var(--faint);font-variant-numeric:tabular-nums;width:34px}
+.pk-total{font-weight:600;font-variant-numeric:tabular-nums;color:var(--gold,#e0b15a);white-space:nowrap}
+.pk-groups{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}
+.pk-gc{flex:1 1 90px;min-width:90px;padding:9px 10px;border-radius:8px;background:var(--panel2);
+  border:1px solid var(--line2);text-align:center;font-size:11.5px;color:var(--muted)}
+.pk-gc b{display:block;margin-top:3px;font-size:14px;font-variant-numeric:tabular-nums}
+.tiny{font-size:11px}
+.muted{color:var(--muted)}
+.up{color:var(--up)}
+.down{color:var(--down)}
+@media (max-width:720px){
+  .pk-table{font-size:11.5px}
+  .pk-table th:nth-child(4),.pk-table td:nth-child(4),
+  .pk-table th:nth-child(5),.pk-table td:nth-child(5){display:none}
+  .pk-gc{flex:1 1 64px;min-width:64px;padding:7px 5px}
+}
+.pk-badge{display:inline-block;padding:1px 6px;border-radius:5px;font-size:10.5px;margin-left:5px;vertical-align:middle}
+.pk-badge.ok{background:color-mix(in srgb,var(--down) 18%,transparent);color:var(--down)}
+.pk-badge.warn{background:color-mix(in srgb,var(--up) 18%,transparent);color:var(--up)}
+.btn.xs{padding:3px 9px;font-size:11.5px;border-radius:6px}
+.empty{padding:22px 12px;text-align:center;color:var(--faint);font-size:12.5px}

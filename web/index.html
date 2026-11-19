@@ -27,6 +27,7 @@
       <a class="nav-item" data-page="radar"><span class="ico">◎</span><span>买卖点雷达</span><em>Signals</em></a>
       <a class="nav-item" data-page="theory"><span class="ico">▤</span><span>缠论理论</span><em>Theory</em></a>
       <a class="nav-item" data-page="divination"><span class="ico">☯</span><span>算卦择时</span><em>I Ching</em></a>
+      <a class="nav-item" data-page="picks"><span class="ico">◎</span><span>量化推票</span><em>Picks</em></a>
       <a class="nav-item" data-page="backtest"><span class="ico">◱</span><span>因子回测</span><em>Backtest</em></a>
       <a class="nav-item" data-page="quant"><span class="ico">◧</span><span>量化组合</span><em>Quant</em></a>
       <a class="nav-item" data-page="sectors"><span class="ico">▦</span><span>商品板块</span><em>Sectors</em></a>
@@ -421,6 +422,63 @@
       <div class="card"><div class="card-head"><h3>品种贡献排行</h3><span class="hint" id="qByHint"></span></div><div id="qBySymbol"></div></div>
     </section>
 
+    <section class="page" id="page-picks">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">量化推票 <span class="tag-live">全市场扫描 · 缠论结构 + 量化因子</span></h1>
+          <p class="page-desc">全 A 股逐只算缠论结构，叠加动量/波动/流动性因子做截面打分，输出候选清单。同时提供<b>因子方向估计</b>与<b>历史检验</b>——先看这套打分在历史上有没有区分度，再看它推了什么。</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn sm" id="pkBtnDirs">估计因子方向</button>
+          <button class="btn sm primary" id="pkBtnScan">扫描全市场</button>
+          <button class="btn sm" id="pkBtnValidate">历史检验</button>
+          <button class="btn sm gold" id="pkBtnRecord">记录当前推票</button>
+          <button class="btn sm" id="pkBtnSettle">结算到期</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="bt-row">
+          <label>候选池 <input id="pkPool" class="inp" type="number" value="300" min="60" max="1500" style="width:80px" title="按成交额取前 N 只作为候选"></label>
+          <label>推票数 <input id="pkCount" class="inp" type="number" value="10" min="3" max="50" style="width:70px"></label>
+          <label>截面数 <input id="pkCuts" class="inp" type="number" value="6" min="3" max="12" style="width:64px" title="历史检验抽样几个时点"></label>
+          <label>未来N日 <input id="pkHorizon" class="inp" type="number" value="10" min="3" max="40" style="width:64px"></label>
+          <label title="由方向估计自动填入；留空则全部因子方向中性">方向 <input id="pkDirsJson" class="inp" type="text" placeholder='{"ret5":-1}' style="width:180px"></label>
+        </div>
+        <div class="pk-hint">
+          打分只表示"在这批候选里的相对位置"，不是收益预测。方向留空时排序主要由流动性与结构决定。
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">因子方向估计 <span class="muted tiny">用滚动历史现算，|t|≥2 才采用</span></h3>
+        <div id="pkDirs"><div class="loading">加载中…</div></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">打分历史检验 <span class="muted tiny">分组回测：分数真的能区分未来收益吗</span></h3>
+        <div id="pkValidate"><div class="empty">点「历史检验」运行</div></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">推票结果</h3>
+        <div id="pkResult"><div class="empty">点「扫描全市场」运行</div></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">
+          推票台账 <span class="muted tiny">记录 → 到期用真实行情结算 → 累计胜率</span>
+          <button class="btn xs" id="pkBtnRefresh" style="float:right">刷新</button>
+        </h3>
+        <div class="pk-hint" style="margin-bottom:10px">
+          结算口径：T 日推票 → <b>T+1 开盘价成交</b>（须落在买入区间）→ 触及止损/目标即结算，否则持有满 N 日按收盘价算。
+          样本 &lt; 30 条时不报胜率结论。
+        </div>
+        <div id="pkLedgerStats"><div class="loading">加载中…</div></div>
+        <div id="pkLedgerList"></div>
+      </div>
+    </section>
+
     <section class="page" id="page-backtest">
       <div class="page-head">
         <div>
@@ -489,7 +547,7 @@
         </div>
         <div class="bt-row">
           <label>笔标准 <select id="btBiStyle" class="inp"><option value="new">新笔</option><option value="old">老笔</option></select></label>
-          <label>止损% <input id="btStop" class="inp" type="number" value="0" style="width:76px"></label>
+          <label title="实测：止损会降低胜率。16 只标的回测，不止损胜率 57.9%，加 5% 止损降到 32.8%、8% 降到 44.2%。建议保持 0">止损% <input id="btStop" class="inp" type="number" value="0" style="width:76px"></label>
           <label>止盈% <input id="btTake" class="inp" type="number" value="0" style="width:76px"></label>
           <label>手续费bps <input id="btFee" class="inp" type="number" value="8" style="width:76px"></label>
           <label>滑点bps <input id="btSlip" class="inp" type="number" value="4" style="width:76px"></label>
@@ -638,6 +696,7 @@
 <script src="/js/pages/symbolpicker.js?v=__ASSET_V__"></script>
 <script src="/js/pages/scorewidget.js?v=__ASSET_V__"></script>
 <script src="/js/pages/backtest.js?v=__ASSET_V__"></script>
+  <script src="/js/pages/picks.js?v=__ASSET_V__"></script>
 <script src="/js/pages/quant.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sectors.js?v=__ASSET_V__"></script>
 <script src="/js/pages/sources.js?v=__ASSET_V__"></script>

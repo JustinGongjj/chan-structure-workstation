@@ -115,6 +115,14 @@ async function cleanWatch(code) {
   }
 }
 const check = (name, ok, detail) => { steps.push({ name, ok: !!ok, detail: detail || '' }); };
+async function waitFor(cdp, expression, timeoutMs = 30000, intervalMs = 300) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await cdp.eval(expression)) return true;
+    await sleep(intervalMs);
+  }
+  return !!(await cdp.eval(expression));
+}
 
 async function mobileFlows() {
   await cleanWatch('600036');
@@ -142,7 +150,10 @@ async function mobileFlows() {
 
     // 2) 自选池：新增 → 校验 → 删除
     await cdp.eval(`document.querySelector('[data-tab="overview"]').click()`);
-    await sleep(3000);
+    // 总览要先等行情聚合与今日信息接口返回，再插入 #ovEdit；固定 3 秒会在慢行情源下误报。
+    const overviewReady = await waitFor(cdp, `!!document.getElementById('ovEdit')`);
+    check('手机版·总览自选池入口加载', overviewReady, overviewReady ? '等待异步总览渲染完成' : '30 秒内未出现 #ovEdit');
+    if (!overviewReady) return;
     await cdp.eval(`document.getElementById('ovEdit').click()`);
     await sleep(1800);
     const sheetHas = await cdp.eval(`(() => { const i=document.getElementById('wCode'); return { hasInput: !!i, hasAdd: !!document.getElementById('wAdd'), ids: [...document.querySelectorAll('#sheet input,#sheet button')].map(e=>e.id||e.className).join(',') }; })()`);
